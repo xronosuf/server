@@ -60,7 +60,7 @@
     "method-override": "*",
     "serve-static": "*",
     "errorhandler": "*",
-    "github": "0.2.4",
+    "github": "*",
     "bufferutil": "*",
     "utf-8-validate": "*",
     "eonasdan-bootstrap-datetimepicker": "*",
@@ -72,7 +72,7 @@
     "jquery": "*",
     "sly": "https://github.com/darsain/sly",
     "isotope-layout": "*",
-    "jquery-ui": "1.10.5",
+    "jquery-ui": "*",
     "font-awesome": "*",
     "mathjax": "*"
   },
@@ -112,3 +112,4 @@
     "yargs": "*"
   }
 }
+

@@ -76,13 +76,7 @@ app.set('view engine', 'jade');
 // all environments
 app.set('port', process.env.PORT || 3000);
 
-var rootUrl = 'http://localhost:' + app.get('port');
-if (process.env.DEPLOYMENT === 'production') {
-    rootUrl = 'http://ximera.osu.edu';
-} else {
-    // Temporarily use NGROK for the server    
-    rootUrl = 'http://5304979f.ngrok.com';
-}
+    rootUrl = 'http://xronos.clas.ufl.edu';
 
 
 app.use(logger('dev'));

@@ -34,10 +34,10 @@ config.description    = pkg.description;
 config.company        = pkg.company;
 config.author         = pkg.author;
 config.keywords       = pkg.keywords;
-config.environment    = process.env.NODE_ENV || 'development';
+config.environment    = process.env.NODE_ENV || 'production';
 
 config.port = process.env.PORT || 3000;
-config.root = process.env.ROOT_URL || ('http://localhost:' + config.port);
+config.root = process.env.ROOT_URL || ('https://xronos.clas.ufl.edu');// + config.port);
 
 config.logging = false;
 
@@ -79,8 +79,8 @@ config.session.cookie.maxAge   = process.env.SESSION_MAX_AGE || week;
  */
 
 config.smtp                    = {};
-config.smtp.name               = process.env.SMTP_FROM_NAME    || 'Ximera Team';
-config.smtp.address            = process.env.SMTP_FROM_ADDRESS || 'ximera@math.osu.edu';
+config.smtp.name               = process.env.SMTP_FROM_NAME    || 'Xronos Team';
+config.smtp.address            = process.env.SMTP_FROM_ADDRESS || 'XronosUF@GMail.com';
 
 /**
  * Authorization Configuration
@@ -94,8 +94,8 @@ if (config.environment == 'development') {
 // Github
 config.githubAuth              = true;
 config.github                  = {};
-config.github.clientID         = process.env.GITHUB_CLIENT_ID    || 'Your Key';
-config.github.clientSecret     = process.env.GITHUB_CLIENT_SECRET || 'Your Secret';
+config.github.clientID         = process.env.GITHUB_CLIENT_ID    || '0a6c17bc5fcf0ecb3a50';
+config.github.clientSecret     = process.env.GITHUB_CLIENT_SECRET || '8351323fff8d2295e543fc7e1adbd1b29c1ed864';
 
 // Twitter
 config.twitterAuth             = true;
@@ -106,13 +106,13 @@ config.twitter.consumerSecret  = process.env.TWITTER_CONSUMER_SECRET || 'Your Se
 // Google
 config.googleAuth              = true;
 config.google                  = {};
-config.google.clientID         = process.env.GOOGLE_CLIENT_ID    || 'Your Key';
-config.google.clientSecret     = process.env.GOOGLE_CLIENT_SECRET || 'Your Secret';
+config.google.clientID         = process.env.GOOGLE_CLIENT_ID    || '963783591793-vrq45adu2davr3a4pcg29g73053t6qde.apps.googleusercontent.com';
+config.google.clientSecret     = process.env.GOOGLE_CLIENT_SECRET || 'BW4q3smjIUyJPyY6d8ShmccP';
 
 // LTI
 config.ltiAuth        = true;
 config.lti            = {};
-config.lti.key        = process.env.LTI_KEY    || 'Your Key';
-config.lti.secret     = process.env.LTI_SECRET || 'Your Secret';
+config.lti.key        = process.env.LTI_KEY    || 'YGuaEYuEKx6btPU6z5f4mk5s5H';
+config.lti.secret     = process.env.LTI_SECRET || '9UPzoQFj8VSoCzYrWU0E8SypU2UkeoC2CJTzfFbqjC6sqv8JbQrXfk1HibtWSkJ';
 
 module.exports = config;

@@ -136,16 +136,6 @@ passport.deserializeUser(function(id, done) {
    });
 });
 
-function addUserImplicitly(req, res, next) {
-    if ('user' in req)
-	res.locals.user = req.user;
-    else {
-	res.locals.user = req.user = {};
-    }
-    
-    next();
-}
-
     app.version = require('./package.json').version;
 
     function redirectUnnormalizeRepositoryName( req, res, next ) {
@@ -218,7 +208,6 @@ function addUserImplicitly(req, res, next) {
     app.use(passport.session());
     
     app.use(guests.middleware);
-    app.use(addUserImplicitly);
     
     ////////////////////////////////////////////////////////////////
     // Landing page and associated routes
@@ -432,13 +421,9 @@ function addUserImplicitly(req, res, next) {
     ////////////////////////////////////////////////////////////////
     // State storage    
     
-    var state = require('./routes/state.js')(io);
-    app.get('/state/:activityHash', state.get);
-    app.put('/state/:activityHash', state.put);
-    app.delete('/state/:activityHash', state.remove);
-
-    app.put('/completion/:activityHash', state.completion);
-    app.get('/users/:id/completions', state.getCompletions);
+    var state = require('./routes/state.js');
+    state.io = io;
+    io.on( 'connection', state.connection );
 
     app.get( '/:repository/:path(*)/gradebook',
 	     normalizeRepositoryName,
@@ -458,7 +443,7 @@ function addUserImplicitly(req, res, next) {
 
     app.get( '/:repository/:path(*)',
 	     remember,
-	     redirectUnnormalizeRepositoryName,	     	     
+	     redirectUnnormalizeRepositoryName,
 	     page.activitiesFromRecentCommitsOnMaster,
 	     page.chooseMostRecentBlob,
 	     parallel([page.fetchMetadataFromActivity,
@@ -475,34 +460,7 @@ function addUserImplicitly(req, res, next) {
 	    console.log('Express server listening on port ' + app.get('port'));
         });		    
     }
-    
-    io.on('connection', function (socket) {
-	/*
-	
-	socket.on('activity', function (activityHash) {
-	    var userId = socket.handshake.session.guestUserId;
-	    if (socket.handshake.session.passport) {
-		userId = socket.handshake.session.passport.userId || userId;
-	    }
-	    socket.join(activityHash + '/' + userId);
-	});
-	
-	socket.on('persistent-data', function (data) {
-	    var userId = socket.handshake.session.guestUserId;
-	    if (socket.handshake.session.passport) {
-		userId = socket.handshake.session.passport.userId || userId;
-	    }
-	    
-	    if (socket.handshake.session.userdata)
-	      socket.handshake.session.userdata = socket.handshake.session.userdata + 1;
-	    else
-		socket.handshake.session.userdata = 0;
-	    
-	    socket.to(data.activityHash + '/' + userId).emit('persistent-data', data);
-	});
-	*/
-    });
-    
+        
     // If nothing else matches, it is a 404
     app.use(function(req, res, next){
         res.status(404).render('404', { status: 404, url: req.url });
@@ -522,6 +480,7 @@ function addUserImplicitly(req, res, next) {
 	if (res.headersSent) {
 	    return next(err);
 	}
+
 	res.render('500', {
 	    message: err
 	});

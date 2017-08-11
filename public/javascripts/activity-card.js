@@ -1,24 +1,9 @@
 var $ = require('jquery');
 var _ = require('underscore');
 var gradebook = require('./gradebook');
+var database = require('./database');
 
-var completions = $.Deferred();
-
-$(function() {
-    // Load the completion data
-    var userId = $('[data-user]').attr('data-user');
-    
-    if (userId) {
-	$.ajax({
-	    url: '/users/' + userId + '/completions' + '?' + (new Date().getTime().toString()),
-	    type: 'GET',
-	    success: function( result ) {
-		completions.resolve( result );
-	    }	    
-	});
-    }
-    
-});
+var users = require('./users');
 
 var displayProgress = function( card, progress ) {
     var progressBar = $('.progress-bar', card);
@@ -35,18 +20,10 @@ var createActivityCard = function() {
     var activityPath = activityCard.attr('data-path');
 
     if (repositoryName) {
-	$.when(completions).done(function(completions) {
-	    var maxCompletion = 0;
-	    
-	    _.each( completions, function(c) {
-		if ((c.activityPath == activityPath) && (c.repositoryName == repositoryName)) 
-		    if (c.complete > maxCompletion)
-			maxCompletion = c.complete;
-	    });
-
-	    displayProgress( activityCard, maxCompletion );
-	    activityCard.attr('data-max-completion', maxCompletion );
-	    gradebook.update();
+	database.onCompletion( repositoryName, activityPath, function(c) {
+	    displayProgress( activityCard, c );
+	    activityCard.attr('data-max-completion', c );
+	    gradebook.update();	    
 	});
     }
 };

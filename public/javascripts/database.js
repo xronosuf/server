@@ -6,76 +6,106 @@ var $ = require('jquery');
 var _ = require('underscore');
 var async = require('async');
 var io = require('socket.io-client');
+var jsondiffpatch = require('jsondiffpatch');
 
-var socket;
-    
+var CANON = require('canon');
+var XXH = require('xxhashjs');
+function checksumObject(object) {
+    return XXH.h32( CANON.stringify( object ), 0x1337 ).toString(16);
+}
+
+var socket = undefined;
+
 var SAVE_WORK_BUTTON_ID = '#save-work-button';
 var RESET_WORK_BUTTON_ID = '#reset-work-button';    
-    
-var DATABASES = {};
-var REMOTES = {};
 
-module.exports.DATABASES = DATABASES;
-    
-var reseting = false;
-    
-var findActivityHash = _.memoize( function( element ) {
-    if ($(element).hasClass('activity'))
-	return $(element).attr( 'data-activity' );
-    
-    return $(element).parents( "[data-activity]" ).attr( 'data-activity' );
+var DATABASE = undefined;
+var SHADOW = undefined;
+var COMPLETIONS = {};
+var completionCallbacks = {};
+
+module.exports.DATABASE = DATABASE;
+
+var wantPageUpdates = [];
+module.exports.onPageUpdate = function(callback) {
+    wantPageUpdates.unshift(callback);
+};
+
+/****************************************************************/
+// At various points in storing page state, we want to refer to the
+// activity by its hash
+var activityHash = undefined;
+
+var findActivityHash = _.memoize( function( ) {
+    return $('main').attr( 'data-hash' );
 });
 
 $.fn.extend({ activityHash: function() {
-    return findActivityHash( this );
+    return findActivityHash();
 }});
 
-var findActivityPath = _.memoize( function( element ) {
-    if ($(element).hasClass('activity'))
-	return $(element).attr( 'data-path' );
-    
-    return $(element).parents( "[data-activity]" ).attr( 'data-path' );
+var findActivityPath = _.memoize( function( ) {
+    return $('main.activity').attr( 'data-path' );
 });
 
 $.fn.extend({ activityPath: function() {
     return findActivityPath( this );
 }});
 
+
+function differentialSynchronization() {
+    if ((!socket) || (!(socket.connected))) {
+	$(SAVE_WORK_BUTTON_ID).children('span').not('#work-saved-error').hide();
+	$(SAVE_WORK_BUTTON_ID).children('#work-saved-error').show();
+	saveButtonOnlyGrows();    
+	
+	return;
+    }
+
+    var delta = jsondiffpatch.diff( SHADOW, DATABASE );
+    
+    if (delta !== undefined) {
+	$(SAVE_WORK_BUTTON_ID).children('span').not('#work-saving').hide();
+	$(SAVE_WORK_BUTTON_ID).children('#work-saving').show();
+	saveButtonOnlyGrows();    
+	
+	socket.emit( 'patch', delta, checksumObject(SHADOW) );
+	
+	SHADOW = jsondiffpatch.clone(DATABASE);
+    }
+}
+
+var differentialSynchronizationDebounced = _.debounce( differentialSynchronization, 1000 );
+
 var findRepositoryName = _.memoize( function( element ) {
     if ($(element).hasClass('activity'))
 	return $(element).attr( 'data-repository-name' );
     
-    return $(element).parents( "[data-activity]" ).attr( 'data-repository-name' );
+    return $(element).parents( "[data-hash]" ).attr( 'data-repository-name' );
 });
 
 $.fn.extend({ repositoryName: function() {
     return findRepositoryName( this );
 }});
 
-// Return the database hash associated to the given element; the
-// element must be under a "data-activity" field.  Data-activity
-// combined with the element's ID is used for the key.
+// Return the database hash associated to the given element
 module.exports.get = function(element) {
-    var activityHash = findActivityHash(element);
-    
-    if (!(activityHash in DATABASES)) {
+    if (DATABASE === undefined) {
 	throw "Database not loaded.";
     }
     
-    var database = DATABASES[activityHash];	
     var identifier = $(element).attr('id');
     
-    if (!(identifier in database))
-	database[identifier] = {};
+    if (!(identifier in DATABASE))
+	DATABASE[identifier] = {};
     
-    return database[identifier];
+    return DATABASE[identifier];
 };
 
 function saveButtonOnlyGrows() {
   // This is less important when the save button is on the lefthand side
   // $(SAVE_WORK_BUTTON_ID).css('min-width', $(SAVE_WORK_BUTTON_ID).css('width') );
 }
-
 
 // Commit some changes to the database (which will propagate them to other instances)
 module.exports.commit = _.throttle( function() {
@@ -87,7 +117,6 @@ module.exports.commit = _.throttle( function() {
 
 // Register a listener to be called whenever the database changes
 module.exports.listen = function(element, callback) {
-    var activityHash = findActivityHash(element);
     var identifier = $(element).attr('id');
     
     $(element).on('ximera:database', $(element).database(),
@@ -111,14 +140,15 @@ $.fn.extend({
     database: function() {
 	var element = $(this);
 	var db = module.exports.get(this);
-	var originalDatabase = JSON.stringify(db);
+	var originalDatabase = jsondiffpatch.clone(db);
 	
 	// If we change the database...
 	_.defer( function() {
-	    if (JSON.stringify(db) != originalDatabase) {
+	    if (jsondiffpatch.diff(db, originalDatabase) !== undefined) {
 		// Trigger a remote update
 		module.exports.commit();
 		element.trigger( 'ximera:database' );
+		differentialSynchronizationDebounced();
 	    }
 	});
 	
@@ -144,196 +174,206 @@ $.fn.extend({
 	_.defer( function() {    
 	    module.exports.commit();
 	    element.trigger( 'ximera:database' );
-	});
-	
-	socket.emit( 'persistent-data', {
-	    activityHash: findActivityHash(this),
-	    identifier: $(element).attr('id'),
-	    key: key,
-	    value: value
+	    differentialSynchronizationDebounced();
 	});
 	
 	return this;
     }
 });
 
-// Upload our local copy (if needed) of the database to the server
-module.exports.save = function(callback) {
-    
-    if (reseting)
-	return false;
-
-    async.each( _.keys(DATABASES),
-		function(activityHash, callback) {
-		    var json = JSON.stringify(DATABASES[activityHash]);
-
-		    // BADBAD: I do not have to save anything if we agree with the remote -- unless I changed this in another browser!
-		    if ((activityHash == "undefined") || (json == REMOTES[activityHash])) {
-			callback(null);
-		    } else {
-			$.ajax({
-			    url: '/state/' + activityHash,
-			    type: 'PUT',
-			    data: json,
-			    contentType: 'application/json',
-			    success: function( result ) {
-				if (result['ok']) {
-				    REMOTES[activityHash] = json;
-				    callback(null);
-				} else {
-				    callback(result);
-				}
-			    },
-			});
-		    }
-		},
-		function(err) {
-		    callback(err);
-		});	
-};
+var fetcherCallbacks = [];
 
 // activity.js will use this to download the database from the server
 $.fn.extend({ fetchData: function(callback) {
-    var activity = $(this);
-    var activityHash = activity.attr( 'data-activity' );
-
-    $.ajax({
-	url: '/state/' + activityHash + '?' + (new Date().getTime().toString()),
-	type: 'GET',
-	dataType: 'json',
-	success: function( result ) {
-	    // I am merge this in with whatever might already be
-	    // there, but there SHOULDN'T be anything in there
-	    REMOTES[activityHash] = JSON.stringify(result);
-	    
-	    if (!(activityHash in DATABASES))
-		DATABASES[activityHash] = {};
-	    
-	    _.each( result,
-		    function( database, identifier, list ) {
-			if (identifier in DATABASES[activityHash])
-			    _.extend( DATABASES[activityHash][identifier], database );
-			else
-			    DATABASES[activityHash][identifier] = database;
-		    });
-	    
-	    socket.emit( 'activity', activityHash );
-	    
-	    _.each( DATABASES[activityHash],
-		    function( database, identifier, list ) {
-			$( "#" + identifier, activity ).trigger( 'ximera:database' );
-		    });
-
-	    callback( DATABASES[activityHash] );
-	},
-    });
+    if (DATABASE !== undefined)
+	callback(DATABASE);
+    else 
+	fetcherCallbacks.unshift( callback );
 }});
 
+function synchronizePageWithDatabase() {
+    _.each( DATABASE,
+	    function( database, identifier, list ) {
+		$( "#" + identifier ).trigger( 'ximera:database' );
+	    });
+}
+
 $(document).ready(function() {
+    var activityHash = findActivityHash();
+    
+    if (!activityHash)
+	return;
+    
     try {
 	socket = io.connect();
     } catch (err) {
-	// If we don't have socket.io, just silently fake it
+	alert( "Could not connect.  Your work is not being saved." );
 	socket = { on: function() {}, emit: function() {} };
     }
+
+    socket.emit( 'watch', null, findActivityHash() );
+
+    var repositoryName = $('main').attr('data-repository-name');
+    var filename = $('main').attr('data-path');
     
-    socket.on( 'persistent-data', function(data) {
-	var activity = $( "[data-activity=" + data.activityHash + "]" );
+    socket.emit( 'want-commit', repositoryName, filename );
+    socket.on('push', function() {
+	socket.emit( 'want-commit', repositoryName, filename );	
+    });
+    
+    socket.on('reconnect', function () { 
+	socket.emit( 'watch', null, findActivityHash() );
+    });
+
+    socket.on('commit', function (remoteRepositoryName, remoteFilename, commitHash, remoteContentHash) {
+	if (remoteContentHash != activityHash) {
+	    $('#update-version-button').attr('href', window.location.pathname + "?" + commitHash );
+	    $('#pageUpdate').show();
+	}
+    });    
+
+    socket.on( 'sync', function(remoteDatabase) {
+	SHADOW = jsondiffpatch.clone(remoteDatabase);
+
+	if (DATABASE === undefined) {
+	    DATABASE = {};
 	
-	if (data.activityHash in DATABASES) {
-	    DATABASES[data.activityHash][data.identifier][data.key] = data.value;
-	    $( "#" + data.identifier, activity ).trigger( 'ximera:database' );
+	    _.each( remoteDatabase,
+		    function( database, identifier, list ) {
+			// It's possible that, for some reason, I've
+			// already made changes to the database, so I
+			// just want to merge in the remote
+			if (identifier in DATABASE)
+			    _.extend( DATABASE[identifier], database );
+			else {
+			    DATABASE[identifier] = database;
+			}
+		    });
+	    
+	    synchronizePageWithDatabase();
+
+	    _.each( fetcherCallbacks, function(callback) {
+		callback(DATABASE);
+	    });
+	}
+    });    
+    
+    socket.on( 'out-of-sync', function() {
+	socket.emit( 'sync', SHADOW );
+    });
+
+    var wantDifferential = _.debounce( function() {
+	socket.emit( 'want-differential' );
+    }, 100 );
+    
+    socket.on( 'have-differential', function() {
+	wantDifferential();
+    });
+
+    socket.on( 'disconnect', function(err) {
+	$(SAVE_WORK_BUTTON_ID).children('span').not('#work-saved-error').hide();
+	$(SAVE_WORK_BUTTON_ID).children('#work-saved-error').show();
+	saveButtonOnlyGrows();    
+    });
+    
+    socket.on( 'patched', function(err) {
+	if (err) {
+	    $(SAVE_WORK_BUTTON_ID).children('span').not('#work-saved-error').hide();
+	    $(SAVE_WORK_BUTTON_ID).children('#work-saved-error').show();
+	    saveButtonOnlyGrows();    
+	} else {
+	    $(SAVE_WORK_BUTTON_ID).children('span').not('#work-saved').hide();
+	    $(SAVE_WORK_BUTTON_ID).children('#work-saved').show();
+	    saveButtonOnlyGrows();
 	}
     });
-});		
+    
+    socket.on( 'patch', function( delta, checksum ) {
+	// Apply patch to the client state...
+	jsondiffpatch.patch( DATABASE, delta);
 
-////////////////////////////////////////////////////////////////
-// Code for the "save button" is below
+	synchronizePageWithDatabase();	
+	
+	// Confirm that our shadow now matches their shadow
+	if (checksumObject(SHADOW) != checksum) {
+	    // We are out of sync, and should request synchronization
+	    socket.emit( 'out-of-sync' );
+	} else {
+	    jsondiffpatch.patch(SHADOW, delta);
+	}
+    });
+
+    socket.on( 'completions', function(completions) {
+	_.each( completions, function(c) {
+	    var url = c.repositoryName + '/' + c.activityPath;
+	    var changed = false;
+	    if (url in COMPLETIONS) {
+		if (COMPLETIONS[url] < c.complete) {
+		    COMPLETIONS[url] = c.complete;
+		    changed = true;
+		}
+	    } else {
+		COMPLETIONS[url] = c.complete;
+		changed = true;		
+	    }
+
+	    if ((changed) && (completionCallbacks[url])) {
+		_.each( completionCallbacks[url], function(callback) {
+		    callback(c.complete);
+		});
+	    }
+	});
+    });
+});
+
+module.exports.setCompletion = function(repositoryName, activityPath, complete) {
+    if ((!socket) || (!(socket.connected))) return;
+
+    socket.emit( 'completion', {repositoryName: repositoryName, activityPath: activityPath, complete: complete} );
+};
+
+module.exports.onCompletion = function(repositoryName, activityPath, callback) {
+    var url = repositoryName + '/' + activityPath;
+    
+    if (!(url in completionCallbacks))
+	completionCallbacks[url] = [];
+
+    completionCallbacks[url].unshift(callback);
+
+    if (COMPLETIONS[url]) {
+	callback(COMPLETIONS[url]);
+    }
+};
 
 // No need to confirm with the user to delete work---that happens via a Bootstrap Modal
 var clickResetWorkButton = function() {
-    reseting = true;
+    var keys = _.keys( DATABASE );
 
-    async.each( _.keys(DATABASES),
-		function(activityHash, callback) {
+    _.each( keys,
+	    function( identifier ) {
+		// Want to empty the object but can't throw away the reference
+		var hash = DATABASE[identifier];
+		for( var i in hash ) {
+		    delete hash[i];
+		}
+	    });
 
-		    var keys = _.keys( DATABASES[activityHash] );
-
-		    $.ajax({
-			url: '/state/' + activityHash,
-			type: 'DELETE',
-			dataType: 'json',
-			error: function( jqXHR, err, exception ) {
-			    callback( err );
-			},
-			success: function( result ) {
-			    if (result['ok']) {
-				REMOTES[activityHash] = {};
-				
-				_.each( keys,
-					function( identifier ) {
-					    // Want to empty the object but can't throw away the reference
-					    var hash = DATABASES[activityHash][identifier];
-					    for( var i in hash ) {
-						delete hash[i];
-					    }
-					});
-
-				_.each( keys,
-					function( identifier ) {
-					    $( "#" + identifier, '[data-activity=' + activityHash + ']' ).trigger( 'ximera:database' );
-					});
-
-				callback(null);
-				
-			    } else {
-				callback('error');
-			    }
-			},
-		    });
-		},
-		function(err) {
-		    reseting = false;
-		    
-		    if (err) {
-			alert(err);
-		    }
-		});	
-};
-
-// Animate the process of saving the database to the server
-var clickSaveWorkButton = function() {
-    $(SAVE_WORK_BUTTON_ID).children('span').not('#work-saving').hide();
-    $(SAVE_WORK_BUTTON_ID).children('#work-saving').show();
-
-    saveButtonOnlyGrows();
-
-    module.exports.save(function(err){
-	if (err) {
-	    throw "Could not save database.";
-	}
-
-	$(SAVE_WORK_BUTTON_ID).children('span').not('#work-saved').hide();
-	$(SAVE_WORK_BUTTON_ID).children('#work-saved').show();
-
-	saveButtonOnlyGrows();
-    });
+    synchronizePageWithDatabase();
+    differentialSynchronization();
 };
 
 // After the document loads, every 7000 milliseconds, make sure the database is saved.
-$(document).ready(function() {    
-    window.setInterval(function(){
-	clickSaveWorkButton();
-    }, 1000);
-
+$(document).ready(function() {
+    activityHash = findActivityHash();
+    
     window.onbeforeunload = function() {
 	// Before the page disappears, let's test to see if there is unsaved data
-	if (_.some( _.keys(DATABASES), function(hash) { return (JSON.stringify(DATABASES[hash]) != REMOTES[hash]); } )) {
+	if (jsondiffpatch.diff( SHADOW, DATABASE ) !== undefined) {
 	    return "There is unsaved data on this page.";
 	}
     };
     
-    $(SAVE_WORK_BUTTON_ID).click( clickSaveWorkButton );
+    $(SAVE_WORK_BUTTON_ID).click( differentialSynchronization );
     $(RESET_WORK_BUTTON_ID).click( clickResetWorkButton );
 });
 

@@ -1,8 +1,13 @@
 // bootstrap is expecting a global jQuery object
 var $ = window.$ = window.jQuery = require('jquery');
+
+// jsondiffpatch expects this loaded globally
+window.diff_match_patch = require('diff-match-patch');
+
+require('./cache-bust');
+
 var jqueryUI = require('jquery-ui');
 var jqueryTransit = require('jquery.transit');
-var waypoint = require('waypoints/lib/jquery.waypoints.min.js');
 var tether = require('tether');
 window.Tether = tether;
 var bootstrap = require('bootstrap');
@@ -30,10 +35,8 @@ var imageEnvironment = require('./image-environment');
 var youtube = require('./youtube');
 var instructor = require('./instructor');
 
-var invigilator = require('./invigilator');
-var clock = require('./clock');
-
 var rowclick = require('./rowclick');
+var supervision = require('./supervision');
 
 var references = require('./references');
 var Desmos = require('./desmos');
@@ -344,6 +347,8 @@ $(document).ready(function() {
     });
     
     $(".dropdown-toggle").dropdown();
+
+    $('[data-toggle="tooltip"]').tooltip();
 
     // This could go in "init" above, but it needs to be after the end process hook
     MathJax.Hub.Startup.onload();

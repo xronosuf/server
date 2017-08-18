@@ -5,14 +5,32 @@ $modal-lg:                    1000px;
 $modal-md:                    700px;
 $modal-sm:                    400px;
 
+$red:    #bb0000 !default;
+
 // Bootstrap v4 ftw
 @import "./node_modules/bootstrap/scss/bootstrap.scss";
+
+.xourse-card.card:hover {
+    transition: background-color 0.2s ease-in;
+    background-color: $gray-lightest;
+}
+
+.activity-card.card:not(.active):not(.part):hover  {
+    transition: background-color 0.1s ease-in;
+    background-color: $gray-lightest;
+}
+
+.btn-secondary:not(.active):hover {
+    background-color: $gray-lightest;
+}
+
 
 // A lot of buttons pulsate
 @import "pulsate";
 
-// Use Font Awesome to replace the glypicons from bootstrap
-@import "/node_modules/font-awesome/css/font-awesome.min.css";
+// Font-awesome includes its own cache busting code
+$fa-font-path:        '/node_modules/font-awesome/fonts/';
+@import "./node_modules/font-awesome/scss/font-awesome.scss";
 
 /* The theorem environments live in theorems.scss. If you add more
 theorem environments to ximera.cls, you should tell theorems.scss
@@ -28,8 +46,6 @@ about it and choose the background color. */
 @import "abstract";
 
 @import "certificate";
-
-@import "./node_modules/bootstrap/scss/bootstrap.scss";
 
 // Animate the progress bar motion
 .progress-bar {
@@ -60,6 +76,13 @@ about it and choose the background color. */
 // The first (and only) anchor inside a card covers the whole card,
 // making it clickable.
 .activity-card a {
+    z-index: 900;
+    position: absolute;
+    top: 0; left: 0;
+    height: 100%; width: 100%;
+}
+
+.xourse-card a {
     z-index: 900;
     position: absolute;
     top: 0; left: 0;

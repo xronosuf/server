@@ -27,6 +27,7 @@ var express = require('express')
   , page = require('./routes/page')
   , keyserver = require('./routes/gpg')
   , hashcash = require('./routes/hashcash')
+  , supervising = require('./routes/supervising')
   , async = require('async')
   , fs = require('fs')
   , favicon = require('serve-favicon' )
@@ -39,6 +40,7 @@ var express = require('express')
   , methodOverride = require('method-override')
   , errorHandler = require('errorhandler')
   , sendSeekable = require('send-seekable')
+  , url = require('url')
   , versionator = require('versionator')
   ;
 
@@ -76,7 +78,8 @@ app.use(logger('dev'));
 app.use(favicon(path.join(__dirname, 'public/images/icons/favicon/favicon.ico')));
 
 app.use(function(req, res, next) {
-    res.locals.path = req.path;    
+    res.locals.path = req.path;
+    res.locals.absoluteUrl = url.resolve(config.root, req.url);
     next();
 });
 
@@ -106,6 +109,16 @@ mdb.initialize(function (err) {
 
     console.log( "Session setup." );
 
+    // We may have a default LTI key
+    if (config.ltiAuth) {
+	mdb.KeyAndSecret.update(
+	    {ltiKey: config.lti.key},
+	    {ltiKey: config.lti.key, ltiSecret: config.lti.secret},
+	    {upsert: true},
+	    function(err) {
+	    });
+    }
+    
     if (config.logging) {
 	app.use(expressWinston.logger({
 	    transports: [
@@ -172,6 +185,7 @@ passport.deserializeUser(function(id, done) {
     
     app.get( '/gpg/token/:keyid', keyserver.token );
     app.get( '/gpg/tokens/:keyid', keyserver.token );
+    app.get( '/gpg/secret/:ltiKey/:keyid', keyserver.ltiSecret );
     app.post( '/pks/add', keyserver.add );
 
     app.post( '/:repository.git', normalizeRepositoryName, keyserver.authorization );
@@ -192,9 +206,8 @@ passport.deserializeUser(function(id, done) {
 	if (url.match(/^\/public\//)) {
 	    return url.replace(/^\/public\//, '/public/v' + app.version + '/' );
 	}
-	return url;
 	if (url.match(/^\/node_modules\//)) {
-	    return url.replace(/^\/node_modules\//, '/node_modules/v' + app.version + '/' );
+	    return url.replace(/^\/node\_modules\//, '/node_modules/v' + app.version + '/' );
 	}
 	return url;	
     };
@@ -245,8 +258,9 @@ passport.deserializeUser(function(id, done) {
     app.put('/users/:id/secret', function( req, res ) { user.putSecret( req, res ); } );
 
     app.delete('/users/:id/bridges/:bridge', function( req, res, next ) { user.deleteBridge( req, res, next ); } );    
-    
-    
+
+    app.get('/supervise', supervising.watch );
+
     ////////////////////////////////////////////////////////////////
     // BADBAD: some permanent redirects for OSU courses from old URLs
     app.get( '/course', function( req, res ) { res.redirect('/mooculus'); });
@@ -348,7 +362,7 @@ passport.deserializeUser(function(id, done) {
     // Activity page rendering
 
     app.get( '/:repository/:path(*)/certificate',
-	     redirectUnnormalizeRepositoryName,	     
+	     redirectUnnormalizeRepositoryName,
 	     page.activitiesFromRecentCommitsOnMaster,
 	     page.chooseMostRecentBlob,
 	     page.parseActivity,
@@ -356,21 +370,22 @@ passport.deserializeUser(function(id, done) {
 
     // BADBAD: i also need to serve pngs and pdfs and such from the repo here
 
-    app.get( '/:repository/:path/lti.xml',
+    app.get( '/:repository/:path(*)/lti.xml',
 	     redirectUnnormalizeRepositoryName,
 	     page.activitiesFromRecentCommitsOnMaster,
-	     page.ltiConfig );
+	     page.ltiConfig );    
     
     var serveContent = function( regexp, callback ) {
+	// Just ignore masquerades for non-page resources
+	app.get( '/users/:masqueradingUserId/:repository/:path(' + regexp + ')',
+		 normalizeRepositoryName,
+		 page.activitiesFromRecentCommitsOnMaster,		 
+		 callback );
+	
 	app.get( '/:repository/:path(' + regexp + ')',
 		 redirectUnnormalizeRepositoryName,
 		 page.activitiesFromRecentCommitsOnMaster,
 		 callback );
-
-	app.get( '/users/:masqueradingUserId/:repository/:path(' + regexp + ')',
-		 normalizeRepositoryName,
-		 page.activitiesFromRecentCommitsOnMaster,		 
-		 callback );	
     };
 
     serveContent( '*.svg', page.serve('image/svg+xml') );
@@ -380,20 +395,10 @@ passport.deserializeUser(function(id, done) {
     serveContent( '*.js',  page.serve('text/javascript') );
 
     app.get( '/:repository/:path(*.tex)',
-	     redirectUnnormalizeRepositoryName,	     
+	     redirectUnnormalizeRepositoryName,
 	     page.activitiesFromRecentCommitsOnMaster,
 	     page.source );
     
-    app.get( '/users/:masqueradingUserId/:repository/:path(*)',
-	     //supervising.findUser,
-	     remember,
-	     redirectUnnormalizeRepositoryName,	     	     
-	     page.activitiesFromRecentCommitsOnMaster,
-	     page.chooseMostRecentBlob,
-	     parallel([page.fetchMetadataFromActivity,
-		       page.parseActivity]),
-	     page.renderWithETag );
-
     function parallel(middlewares) {
 	return function (req, res, next) {
 	    async.each(middlewares, function (mw, cb) {
@@ -433,17 +438,26 @@ passport.deserializeUser(function(id, done) {
 	     gradebook.record );    
 
     // Instructors should be based around a context instead?
-    app.get( '/:repository/:path/instructors',
-	     redirectUnnormalizeRepositoryName,	     	     
+    app.get( '/:repository/:path(*)/instructors',
+	     redirectUnnormalizeRepositoryName,
 	     page.activitiesFromRecentCommitsOnMaster,
 	     page.chooseMostRecentBlob,
 	     parallel([page.fetchMetadataFromActivity,
 		       page.parseActivity]),	     
 	     instructors.index );
 
+    app.get( '/users/:masqueradingUserId/:repository/:path(*)',
+	     redirectUnnormalizeRepositoryName,	     	     
+	     supervising.masquerade,
+	     page.activitiesFromRecentCommitsOnMaster,
+	     page.chooseMostRecentBlob,
+	     parallel([page.fetchMetadataFromActivity,
+		       page.parseActivity]),
+	     page.renderWithETag );        
+    
     app.get( '/:repository/:path(*)',
-	     remember,
 	     redirectUnnormalizeRepositoryName,
+	     remember,
 	     page.activitiesFromRecentCommitsOnMaster,
 	     page.chooseMostRecentBlob,
 	     parallel([page.fetchMetadataFromActivity,

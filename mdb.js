@@ -51,7 +51,8 @@ exports.initialize = function initialize(callback) {
 				      visibility: String,
 				      remoteAddress: String,
                                       isGuest: Boolean,
-                                      isAuthor: Boolean, // BADBAD: this is what permits a user to use xake publish
+                                      isAuthor: Boolean, // BADBAD: this is just for fun -- it's not used anywhere
+				      instructorRepositoryPaths: [String],				      
                                       lastUrlVisited: String,
 				      lastSeen: Date,
 				      instructor: Mixed,
@@ -83,7 +84,7 @@ exports.initialize = function initialize(callback) {
 					   lisResultSourcedid: String,
 					   lisOutcomeServiceUrl: String,
 
-					   instructionalStaff: Boolean,
+					   instructionalStaff: {type: Boolean, index: true},
 					   
 					   repository: {type: String, index: true},
 					   path: {type: String, index: true},					   
@@ -133,6 +134,15 @@ exports.initialize = function initialize(callback) {
 					   keyid: {type: String, index: true},
 					   token: {type: String, index: true}
 				       }));
+
+    exports.KeyAndSecret = mongoose.model("KeyAndSecret",
+					  new mongoose.Schema({
+					      keyid: {type: String, index: true},
+					      ltiKey: {type: String, index: true},
+					      ltiSecret: String,
+					      encryptedSecret: String
+					  }));
+
     
     //mongoose.set('debug', true);    
     

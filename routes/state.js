@@ -4,6 +4,8 @@ var mdb = require('../mdb');
 var util = require('util');
 var crypto = require('crypto');
 var repositories = require('./repositories');
+var mongo = require('mongodb');
+var unique = require('uniq');
 
 var CANON = require('canon');
 var XXHash = require('xxhash');
@@ -25,6 +27,55 @@ exports.connection = function( socket ) {
 	    socket.emit( 'commit', repositoryName, filename, activities[0].sourceSha, activities[0].hash );
 	});
     });
+
+    socket.on('supervise', function() {
+	var userId = socket.handshake.session.guestUserId;
+	if (socket.handshake.session.passport) {
+	    userId = socket.handshake.session.passport.user || userId;
+	}
+
+	// Join rooms to watch activities of any of my students
+	mdb.LtiBridge.find( {user: new mongo.ObjectID(userId)}, function(err,bridges) {
+	    if (err) return;
+
+	    bridges = bridges.filter( function(b) {
+		return (b.roles.some( function(r) {
+		    return r.match(/Instructor/) || r.match(/TeachingAssistant/);
+		}));
+	    });
+	    
+	    var contexts = unique(bridges.map( function(b) { return b.contextId; } ));
+
+	    contexts.forEach( function(context) {
+		socket.join("contexts/" + context);
+	    });	
+	});	
+    });
+
+    function toInstructors( socket, message, payload ) {
+	var userId = socket.userId;
+	
+	// And tell any instructors what this student is doing
+	mdb.LtiBridge.find( {user: new mongo.ObjectID(userId)}, function(err,bridges) {
+	    if (err) return;
+	    
+	    var contexts = unique(bridges.map( function(b) { return b.contextId; } ));
+	    
+	    contexts.forEach( function(context) {
+		socket.to("contexts/" + context).emit(message, payload);
+	    });	
+	});
+    }
+
+    socket.on('disconnect', function() {
+	var realUserId = socket.handshake.session.guestUserId;
+	
+	if (socket.handshake.session.passport) {
+	    realUserId = socket.handshake.session.passport.user || realUserId;
+	}
+
+	toInstructors( socket, 'leave', { userId: realUserId, repositoryName: socket.repositoryName, activityPath: socket.activityPath } );
+    });
     
     socket.on('watch', function(userId, activityHash) {
 	// BADBAD: Need some security here...
@@ -37,6 +88,11 @@ exports.connection = function( socket ) {
 	    }
 	}
 	
+	var realUserId = socket.handshake.session.guestUserId;
+	if (socket.handshake.session.passport) {
+	    realUserId = socket.handshake.session.passport.user || realUserId;
+	}
+	
 	mdb.Completion.find({user: userId}, { activityPath: 1, repositoryName: 1, complete: 1 }, function (err, completions) {
 	    if (!err && completions)
 		socket.emit('completions', completions);
@@ -45,6 +101,11 @@ exports.connection = function( socket ) {
 	socket.userId = userId;
 	socket.userRoom = `/users/${userId}`;
 	socket.join( socket.userRoom );
+
+	mdb.User.findOne({_id: realUserId}, { name: 1, imageUrl: 1, email: 1 }, function (err, user) {
+	    if (!err && user)
+		toInstructors( socket, 'enter', user);			
+	});	
 	
 	if (!activityHash)
 	    return;
@@ -170,10 +231,19 @@ exports.connection = function( socket ) {
 	}
 	
 	mdb.Completion.update(query, {$set: {complete: c.complete, date: new Date()}}, {upsert: true}, function (err, affected, raw) {
+	    var payload = [{activityPath: c.activityPath,
+			    userId: userId,
+			    repositoryName: c.repositoryName,
+			    complete: c.complete}];
+	    
 	    // Tell other browsers viewing this user
-	    socket.broadcast.to(socket.userRoom).emit('completions', [{activityPath: c.activityPath,
-								       repositoryName: c.repositoryName,
-								       complete: c.complete}]);
+	    socket.broadcast.to(socket.userRoom).emit('completions', payload);
+
+	    // And tell any instructors what this student is doing
+	    toInstructors( socket, 'completions', payload);
+
+	    socket.activityPath = c.activityPath;
+	    socket.repositoryName = c.repositoryName;
 	});
     });
 };

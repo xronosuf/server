@@ -31,10 +31,10 @@ mixin displayBridge(bridge)
       if bridge.lisResultSourcedid && bridge.lisOutcomeServiceUrl && bridge.pointsPossible
         | &nbsp;<span class="badge badge-success badge-pill">#{bridge.pointsPossible} points</span>       
     p
-      if bridge.roles.filter( f => f.match( /Instructor/ ) )
+      if bridge.roles.filter( f => f.match( /Instructor/ ) ).length > 0
         <span class="badge badge-default">Instructor</span>&nbsp;            
       else
-        if bridge.roles.filter( f => f.match( /TeachingAssistant/ ) )
+        if bridge.roles.filter( f => f.match( /TeachingAssistant/ ) ).length > 0
           <span class="badge badge-default">Instructor</span>&nbsp;             
         else    
           for role in bridge.roles 
@@ -42,11 +42,11 @@ mixin displayBridge(bridge)
       | in&nbsp;
       a(href=`/${bridge.repository}/${bridge.path}`)
         code #{bridge.repository}/#{bridge.path}
-
-    if bridge.lisResultSourcedid && bridge.lisOutcomeServiceUrl
-      p #{bridge.dueDate}
-
-
+      if bridge.lisResultSourcedid && bridge.lisOutcomeServiceUrl && bridge.dueDate
+        | &nbsp;due&nbsp;
+        i.fa.fa-clock-o.mr-1      
+        time(class="relative-date", datetime=bridge.dueDate)
+          | #{bridge.dueDate}
 					   
   
 block content
@@ -69,7 +69,7 @@ block content
               .card-title #{person.name}          
           ul.list-group.list-group-flush(data-toggle="tooltip" data-placement="bottom" title=whyVisible)
             if (!(person.visibility )) || (person.visibility == "none")
-              li.list-group-item <i class="fa fa-eye-slash"></i>&nbsp;Only visible to&nbsp;<strong>#{person.pronouned}</strong>
+              li.list-group-item <i class="fa fa-eye-slash"></i>&nbsp;Visible to&nbsp;<strong>staff</strong>
             if (person.visibility == "users")
               li.list-group-item <i class="fa fa-eye"></i>&nbsp;Visible to other&nbsp;<strong>learners</strong>
             if (person.visibility == "everyone")

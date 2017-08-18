@@ -11,7 +11,8 @@ var _ = require('underscore');
 var repositories = require('./repositories');
 var metadata = require('./metadata');
 var ETag = require('./etag');
-
+var striptags = require('striptags');
+var url = require('url');
 var config = require('../config');
 
 function authorization(req,res,next) {
@@ -32,7 +33,7 @@ function authorization(req,res,next) {
     } else {
 	var token = "";
 	var parts = authorization.split(' ');
-	console.log(authorization);
+
 	if (parts[0].match(/Bearer/)) {
 	    token = parts.reverse()[0];
 	}
@@ -46,8 +47,6 @@ function authorization(req,res,next) {
 
 	repositories.readRepositoryToken( repositoryName )
 	    .then(function(buf) {
-		console.log("Buf=",buf);
-		console.log("token=",token);		
 		if (buf == token) {
 		    next();
 		} else
@@ -77,7 +76,6 @@ exports.create = function(req, res) {
 exports.activitiesFromRecentCommitsOnMaster = function(req, res, next) {
     var repositoryName = req.params.repository;
     req.repositoryName = req.params.repository;
-    
     repositories.activitiesFromRecentCommitsOnMaster( repositoryName, req.params.path )
 	.then( function(activities) {
 	    req.activities = activities;
@@ -91,7 +89,7 @@ exports.activitiesFromRecentCommitsOnMaster = function(req, res, next) {
 
 exports.parseActivity = function(req,res,next) {
     if (req.activity.hash) {
-	metadata.parseActivityBlob( req.repositoryName, req.activity.hash, function(err, activity) {
+	metadata.parseActivityBlob( req.repositoryName, req.activity.path, req.activity.hash, function(err, activity) {
 	    req.activity = _.extend( req.activity, activity );
 	    next();
 	});
@@ -108,7 +106,7 @@ exports.renderWithETag = function(req, res, next) {
     ETag.checkIfNoneMatch( req, res, etag,
 			   function( setETag ) {
 			       setETag(res);
-			       res.set('Cache-Control', 'public, max-age=3600');
+			       res.set('Cache-Control', 'private, max-age=3600');
 			       exports.render( req, res, next );
 			   } );
 };
@@ -121,9 +119,18 @@ exports.render = function(req, res, next) {
 	xourse.path = req.activity.path;
 	if (xourse.path) {
 	    xourse.path = xourse.path.replace(/\.html$/,'')
-	}		
+	}
+
+	var logo = undefined;
+	if (xourse.logo) {
+	    logo = url.resolve(config.root, path.join( req.repositoryName, xourse.logo ) );
+	}
+	
 	res.render('xourses/view', { xourse: xourse,
-			       repositoryName: req.repositoryName });
+				     url: req.url,
+				     logo: logo,
+				     learner: req.learner,
+				     repositoryName: req.repositoryName });
 	return;
     }
     
@@ -135,7 +142,7 @@ exports.render = function(req, res, next) {
     }
     
     if (req.activity.xourse) {
-	metadata.parseXourseBlob( req.repositoryName, req.activity.xourse.hash, function(err,xourse) {
+	metadata.parseXourseBlob( req.repositoryName, req.activity.path, req.activity.xourse.hash, function(err,xourse) {
 	    xourse.path = req.activity.xourse.path;
 	    xourse.hash = req.activity.xourse.hash;
 	    
@@ -179,9 +186,11 @@ exports.render = function(req, res, next) {
 	    }
 	    
 	    res.render('page', { activity: activity,
+				 description: striptags(activity.description ? activity.description : ""),
 				 repositoryName: req.repositoryName,
 				 repositoryMetadata: req.repositoryMetadata,
 				 nextActivity: nextActivity,
+				 learner: req.learner,
 				 previousActivity: previousActivity,
 				 url: req.url });		    
 	});
@@ -189,8 +198,10 @@ exports.render = function(req, res, next) {
 	activity.xourse = {};
 	activity.xourse.activityList = [];
 	res.render('page', { activity: activity,
+			     description: striptags(activity.description ? activity.description : ""),			     
 			     repositoryMetadata: req.repositoryMetadata,
 			     repositoryName: req.repositoryName,
+			     learner: req.learner,			     
 			     url: req.url
 			   });
     }
@@ -206,14 +217,14 @@ exports.chooseMostRecentBlob = function(req, res, next) {
 
     var shas = Object.keys(req.query);
     var sha = null;
-    
+
     if (shas.length > 0) {
 	sha = shas[0];
 	activities = activities.filter( function(activity) { return activity.sourceSha == sha; });
     }
-    
+
     async.waterfall(
-	[
+	[		
 	    function(callback) {
 		// There may be duplicates here because the same
 		// activity can appear in multiple commits
@@ -222,8 +233,17 @@ exports.chooseMostRecentBlob = function(req, res, next) {
 		activityHashes = activityHashes.filter(function(item, pos) {
 		    return activityHashes.indexOf(item) == pos;
 		});
+
+		// This is crucial, because otherwise we may load old data?
+		activityHashes = activityHashes.filter(function(item) {
+		    return item !== undefined;
+		});		
+
+		var userId = req.user._id;
+		if (req.learner)
+		    userId = req.learner._id;
 		
-		mdb.State.find({user: req.user._id, activityHash: { $in: activityHashes }}).exec( callback );
+		mdb.State.find({user: userId, activityHash: { $in: activityHashes }}).exec( callback );
 	    },
 	    function( states, callback ) {
 		var activity = activities[0];
@@ -251,8 +271,18 @@ exports.chooseMostRecentBlob = function(req, res, next) {
 		if (activities[0].activityHash != activity.activityHash) {
 		    activity.freshestCommit = activities[0].sourceSha;
 		}
+
+		// store empty state for it so the next time we visit
+		// the page, we'll go to this sha
+		var userId = req.user._id;
+		if (req.learner)
+		    userId = req.learner._id;
 		
-		callback( null, activity );
+		mdb.State.update({activityHash: activity.activityHash, user: userId},
+				 {$setOnInsert: {data: {}}}, {upsert: true},
+				 function (err, affected, raw) {
+				     callback( err, activity );				     
+				 });
 	    },
 	], function(err, activity) {
 	    if (err) {
@@ -301,7 +331,7 @@ exports.source = function(req, res, next) {
 
 exports.ltiConfig = function(req, res) {
     var file = req.activities[0];
-        
+
     var hash = {
 	title: 'Ximera ' + file.path.replace(/\.html$/,''),
 	description: '',

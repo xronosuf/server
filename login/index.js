@@ -7,6 +7,7 @@ var GoogleStrategy = require('passport-google-openidconnect').Strategy
   , mdb =  require('../mdb')
   , config =  require('../config')
   , githubApi = require('github')
+  , moment = require('moment')
   , path = require('path');
 
 module.exports.githubStrategy = function(rootUrl) {
@@ -86,8 +87,6 @@ module.exports.localStrategy = function(rootUrl) {
 module.exports.lmsStrategy = function (rootUrl) {
     return new LtiStrategy({
         returnURL: '/just-logged-in',
-        consumerKey: config.lti.key,
-        consumerSecret: config.lti.secret,	
     }, function (req, identifier, profile, done) {
         addLmsAccount(req, identifier, profile, done);
     });
@@ -306,15 +305,22 @@ function addLmsAccount(req, identifier, profile, done) {
 	    
 	    if (bridge) {
 		// update the bridge, roles, etc.
-		bridge.roles = roles;
-		bridge.dueDate = profile.custom_due_at;
-		bridge.pointsPossible = profile.custom_canvas_assignment_points_possible;
-		bridge.untilDate = profile.custom_lock_at;
-		bridge.lisResultSourcedid = profile.lis_result_sourcedid;
-		
+		if (roles)
+		    bridge.roles = roles;
+		if ((profile.custom_due_at) && (moment(profile.custom_due_at).isValid()))
+                    bridge.dueDate = profile.custom_due_at;
+		if (profile.custom_canvas_assignment_points_possible)
+                    bridge.pointsPossible = profile.custom_canvas_assignment_points_possible;
+		if ((profile.custom_lock_at) && (moment(profile.custom_lock_at).isValid()))
+                    bridge.untilDate = profile.custom_lock_at;
+		if (profile.lis_result_sourcedid)	
+                    bridge.lisResultSourcedid = profile.lis_result_sourcedid;
+		if (profile.oauth_consumer_key)
+                    bridge.oauthConsumerKey = profile.oauth_consumer_key;
+
 	    } else {
 		// make a new bridge
-		bridge = new mdb.LtiBridge({
+		var hash = {
 		    ltiId: identifier,
 		    
 		    toolConsumerInstanceGuid: profile.tool_consumer_instance_guid,
@@ -324,13 +330,9 @@ function addLmsAccount(req, identifier, profile, done) {
 		    contextTitle: profile.context_title,
 		    
 		    resourceLinkId: profile.resource_link_id,
-                    dueDate: profile.custom_due_at,
-                    untilDate: profile.custom_lock_at,
-		    pointsPossible: profile.custom_canvas_assignment_points_possible,
 		    
 		    oauthConsumerKey: profile.oauth_consumer_key,
 		    oauthSignatureMethod: profile.oauth_signature_method,
-		    lisResultSourcedid: profile.lis_result_sourcedid,
 		    lisOutcomeServiceUrl: profile.lis_outcome_service_url,
 
 		    instructionalStaff: instructionalStaff,
@@ -338,9 +340,21 @@ function addLmsAccount(req, identifier, profile, done) {
 		    repository: profile.custom_repository,
 		    path: profile.custom_xourse,		    
 		    
-                    user: req.user._id,
-		    roles: roles
-		});
+                    user: req.user._id
+		};
+
+		if (roles)
+		    hash.roles = roles;
+		if ((profile.custom_due_at) && (moment(profile.custom_due_at).isValid()))
+		    hash.dueDate = profile.custom_due_at;
+		if (profile.custom_canvas_assignment_points_possible)
+		    hash.pointsPossible = profile.custom_canvas_assignment_points_possible;
+		if ((profile.custom_lock_at) && (moment(profile.custom_lock_at).isValid()))
+		    hash.untilDate = profile.custom_lock_at;
+		if (profile.lis_result_sourcedid)
+		    hash.lisResultSourcedid = profile.lis_result_sourcedid;		
+
+		bridge = new mdb.LtiBridge(hash);
 	    }
 
 	    bridge.save(function(err) {
@@ -366,10 +380,36 @@ function addLmsAccount(req, identifier, profile, done) {
 
 	    if ('user_image' in profile)
 		updates.imageUrl = profile.user_image
-	    
-    	    mdb.User.findOneAndUpdate({_id: bridge.user},
-				      updates,
-				      callback);
+
+	    // Some denormalization is desirable in the user object
+	    // since we often have to determine whether or not someone
+	    // is an instructor in a course
+    	    mdb.LtiBridge.find({user: bridge.user}, function(err, bridges) {
+		if (!err) {
+		    updates.instructorRepositoryPaths = [];
+		
+		    bridges.forEach( function(b) {
+			b.roles.forEach( function(role) {
+			    var isInstructor = false;
+			    console.log(role);
+			    if (role.match(/Instructor/)) isInstructor = true;
+			    if (role.match(/TeachingAssistant/)) isInstructor = true;
+			    if (role.match(/Administrator/)) isInstructor = true;
+			    if (role.match(/ContentDeveloper/)) isInstructor = true;						
+			    
+			    if (isInstructor) {
+				var url = b.repository + "/" + b.path;
+				// Add it if we haven't already
+				if (updates.instructorRepositoryPaths.indexOf(url) < 0)
+				    updates.instructorRepositoryPaths.unshift(url);
+			    }
+			});
+		    });
+		}
+		mdb.User.findOneAndUpdate({_id: bridge.user},
+					  updates,
+					  callback);
+	    });
 	}
     ], function(err, result) {
 	if (err)

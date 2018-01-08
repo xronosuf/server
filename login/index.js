@@ -236,6 +236,12 @@ function normalizeRepositoryName( name ) {
 function addLmsAccount(req, identifier, profile, done) {
     console.log(profile);
 
+    // Nowadays we set the custom parameters just via the launch URL
+    if (req.params.repository)
+	profile.custom_repository = req.params.repository;
+    if (req.params.path)
+	profile.custom_xourse = req.params.path;
+    
     if (profile.custom_repository)
 	profile.custom_repository = normalizeRepositoryName(profile.custom_repository);
 
@@ -266,6 +272,10 @@ function addLmsAccount(req, identifier, profile, done) {
 	
 	// See if we have already logged in with this narrow context
 	function(user, callback) {
+	    // It is possible that the user has changed, so we need to
+	    // replace our old user with the new user
+	    req.user = user;
+	    
 	    console.log("Looking up bridge for ltiId = ", identifier);
 	    
 	    var hash = {ltiId: identifier,
@@ -317,7 +327,8 @@ function addLmsAccount(req, identifier, profile, done) {
                     bridge.lisResultSourcedid = profile.lis_result_sourcedid;
 		if (profile.oauth_consumer_key)
                     bridge.oauthConsumerKey = profile.oauth_consumer_key;
-
+		if (profile.lis_outcome_service_url)
+                    bridge.lisOutcomeServiceUrl = profile.lis_outcome_service_url;
 	    } else {
 		// make a new bridge
 		var hash = {

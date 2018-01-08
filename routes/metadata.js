@@ -16,13 +16,16 @@ exports.parseActivityBlob = function( repositoryName, filename, blobHash, callba
 			 var $ = cheerio.load( source, {xmlMode: true} );
 
 			 var isXourse = $('meta[name="description"]').attr('content') == 'xourse';
-
+			 
 			 if (isXourse) {
 			     activity = parseXourseDocument( $, filename );
 			 } else {
 			     $('a').each( function() {
-				 if ($(this).attr('id'))
-				     $(this).remove();
+				 if ($(this).attr('class') != 'ximera-label') {
+				     if ($(this).attr('id'))
+					 $(this).remove();
+				 } else {
+				 }
 			     });
 			     
 			     activity.title = $('title').html();
@@ -31,9 +34,13 @@ exports.parseActivityBlob = function( repositoryName, filename, blobHash, callba
 			     activity.description = $('div.abstract').html();
 
 			     if (!(activity.title)) {
-				 activity.title = blobHash.substr(0,6) + "&hellip;: &rdquo;" + poetry.poeticName(filename.replace(/\.html/,'')) + "&ldquo;";
+				 activity.title = blobHash.substr(0,6) + "&hellip;: &ldquo;" + poetry.poeticName(filename.replace(/\.html/,'')) + "&rdquo;";
 			     }
 			 }
+
+			 var author = $('meta[name="author"]').attr('content');
+			 if (author && author.match(/[A-z]/))
+			     activity.author = author;
 			 
 			 callback(null, activity);
 		     })

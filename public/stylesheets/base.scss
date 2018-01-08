@@ -1,3 +1,5 @@
+@import "/node_modules/guppymath/build/guppy.min.css";
+
 $enable-rounded: false;
 
 // Need bigger modals for our lengthy buttons
@@ -39,6 +41,25 @@ about it and choose the background color. */
 
 @import "mathjax";
 
+// Body text is in a math-compatible font...
+.container-fluid {
+    font-family: MJX_Main;
+}
+.btn-group-vertical button {
+    font-family: MJX_Main;    
+}
+.activity-card .card-text {
+    font-family: MJX_Main;   
+}
+// But navigation stuff is a system font
+nav {
+    font-family: -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+// as are headings
+.sectionHead, .likesectionHead, .subsectionHead, .likesubsectionHead {
+    font-family:  -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
 @import "footer";
 
 @import "activity";
@@ -47,113 +68,14 @@ about it and choose the background color. */
 
 @import "certificate";
 
+body {
+  counter-reset: practice;
+}
+
 // Animate the progress bar motion
 .progress-bar {
     transition: width .4s ease;
     -webkit-transition: width .4s;
-}
-
-// Activity cards are square
-.activity-card.card {
-    width: 11rem;
-    max-width: 11rem;
-    min-width: 11rem;
-    max-height: 11rem;
-    height: 11rem;
-    overflow: hidden;
-}
-
-// Practice cards just include the progress bar
-.activity-card.practice {
-    width: 2rem;
-    max-width: 2rem;
-    min-width: 2rem;
-    max-height: 11rem;
-    height: 11rem;
-    overflow: hidden;
-}
-
-// The first (and only) anchor inside a card covers the whole card,
-// making it clickable.
-.activity-card a {
-    z-index: 900;
-    position: absolute;
-    top: 0; left: 0;
-    height: 100%; width: 100%;
-}
-
-.xourse-card a {
-    z-index: 900;
-    position: absolute;
-    top: 0; left: 0;
-    height: 100%; width: 100%;
-}
-
-// The section title cards are highlighted
-.card-sectionheading {
-    background-color: $gray-lighter;
-    border-color: $gray-lighter;
-    h4 {
-	font-weight: bold;
-    }
-}
-
-// The section title cards are highlighted
-.card.chapter {
-    background-color: $gray-lightest;
-}
-
-// The active card is displayed in an active way
-.activity-card.active {
-    //@extend .card-info;
-    background-color: $gray-dark;
-    border-color: $gray-dark;    
-    @extend .card-inverse;
-}
-
-// Activity cards are often used in a scrolling carousel
-.scroll {
-  display: flex;
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  -ms-overflow-style: -ms-autohiding-scrollbar;
-}
-
-// some activtiy cards have vertical progress bars
-.vertical {
-    /*width: 176px;
-    position: relative;
-    left: -176px;
-   */
-    //-webkit-transform: rotate(-90deg);
-    //-webkit-transform-origin: top right;
-    //transform: rotate(-90deg);
-    //
-    //transform-origin: bottom center;
-    //padding: 0;
-    //margin: 0;
-    transform-origin: top right;
-    transform: rotate(-90deg);
-    position: relative;
-    left: -10rem;
-    width: 10rem;
-    margin: 0.5rem;
-}
-
- 
-// At least on webkit we can get rid of the basically useless thumb
-// buttons
-div.scroll::-webkit-scrollbar {
-    width: 12pt;
-}
-
-div.scroll::-webkit-scrollbar-track {
-    background-color: $gray-lighter;
-}
-
-div.scroll::-webkit-scrollbar-thumb {
-    background-color: $gray-dark;
 }
 
 @import "dialogue";
@@ -180,3 +102,25 @@ height: auto;
 }
 
 @import "hints";
+
+@import "byline";
+
+@import "chat";
+
+@import "print";
+
+@import "xourse";
+
+/* I do not understand why this is in bootstrap, but without it there
+   is space between my breadcrumb'd navbar and the content */
+nav .breadcrumb {
+    margin-bottom: 0;
+}
+
+/* tex4ht generates enumerate-enumitem as description lists.  I want
+   them inline. */
+dt.enumerate-enumitem {
+    float: left;
+    padding-right: 0.5em;
+}
+

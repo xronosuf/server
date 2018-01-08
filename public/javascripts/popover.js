@@ -24,10 +24,14 @@ exports.bindPopover = function(element) {
     inputBox.on( 'input', update );
 
     inputBox.focus( update );
-    
+
     inputBox.blur( function () {
 	$(element).popover('hide');
     });
+
+    inputBox.focusout( function () {
+	$(element).popover('hide');
+    });    
 }
 
 // Binds latex popover occur next to element when watched variable changes.

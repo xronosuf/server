@@ -8,6 +8,10 @@
 	  display: none;
 }
 
+.activity-body pre {
+    white-space: normal;
+}
+
 /****************************************************************/
 /* Try to spread out lines a bit for readability? */
 
@@ -43,4 +47,12 @@ span.LATEX .TEX .E {
 // Some better spacing
 .sectionHead {
     @extend .mt-5;
+}
+
+.subsectionHead {
+    @extend .mt-3;
+}
+
+.likesubsectionHead {
+    @extend .mt-3;
 }

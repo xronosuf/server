@@ -4,6 +4,7 @@ block content
     - var LaTeX = '<span class="other-latex">L<sup>a</sup>T<sub>e</sub>X</span>';
     - var TeX = '<span class="tex">T<sub>e</sub>X</span>';
     #myCarousel.carousel.slide(data-ride='carousel')
+      img.carousel-logo(src=versionPath("/public/images/logo/logo.svg"))
       ol.carousel-indicators
         li.active(data-target='#myCarousel', data-slide-to='0')
         li(data-target='#myCarousel', data-slide-to='1')
@@ -11,7 +12,7 @@ block content
       .carousel-inner(role='listbox')
         .carousel-item.active
           // I have animations
-          //img.first-slide(src='data:image/gif;base64,R0lGODlhAQABAIAAAHd3dwAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==', alt='First slide')
+          //img.first-slide(src='data:image/gif;base64,R0lGODlhAQABAIAAAHd3dwAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==', alt='First slide') 
           .container
             .carousel-caption.d-none.d-md-block.text-left
               h1 Open Courses.  Free Math.
@@ -86,7 +87,7 @@ block content
             | Write once.  Share everywhere. 
             span.text-muted One source file for both PDF and HTML.
           p.lead
-            | Write in !{LaTeX} using the <a href="https://github.com/ximeraproject/ximeralatex">Ximera document class</a>.  You can print your document for your own students, or share your document with the world as an online interactive activity.  Authoring in !{LaTeX} combines the power of professional typesetting with modern web technoligy, all the while retaining the stability of a tried and true language.
+            | Write in !{LaTeX} using the <a href="https://github.com/ximeraproject/ximeralatex">Ximera document class</a>.  You can print your document for your own students, or share your document with the world as an online interactive activity.  Authoring in !{LaTeX} combines the power of professional typesetting with modern web technology, all the while retaining the stability of a tried and true language.
         .col-md-5
           img.featurette-image.img-fluid.mx-auto(src=versionPath('/public/images/photos/tablet-and-book.jpg'))
       hr.featurette-divider
@@ -110,5 +111,15 @@ block content
         .col-md-5
           img.featurette-image.img-fluid.mx-auto(src=versionPath('/public/images/photos/san-diego.jpg'))
           span.small.text-muted <a href="https://commons.wikimedia.org/w/index.php?curid=26089903">Photo</a> by <a href="//commons.wikimedia.org/wiki/User:Bgag" title="User:Bgag">Bernard Gagnon</a> released under <a href="http://creativecommons.org/licenses/by-sa/3.0" title="Creative Commons Attribution-Share Alike 3.0">CC BY-SA 3.0</a>
+      hr.featurette-divider
+      .row.featurette
+        .col-md-7.push-md-5
+          h2.featurette-heading
+            | Calculus content 
+            span.text-muted is available now.
+          p.lead
+            | Explore existing content for <a href="/mooculus/calculus1">Calculus 1</a>, <a href="/mooculus/calculus2">Calculus 2</a>, and <a href="/mooculus/calculus3">Calculus 3</a>.
+        .col-md-5.pull-md-7
+          img.featurette-image.img-fluid.mx-auto(src=versionPath('/public/images/photos/calculus-textbooks.jpg'))
 
 

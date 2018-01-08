@@ -94,7 +94,7 @@ exports.parseActivity = function(req,res,next) {
 	    next();
 	});
     } else {
-	res.status(500).send('missing entry');	
+        res.status(404).render('404', { status: 404, url: req.url, repositoryName: req.repositoryName });
     }
 };
 
@@ -130,6 +130,7 @@ exports.render = function(req, res, next) {
 				     url: req.url,
 				     logo: logo,
 				     learner: req.learner,
+				     user: req.user,				     
 				     repositoryName: req.repositoryName });
 	return;
     }
@@ -191,6 +192,7 @@ exports.render = function(req, res, next) {
 				 repositoryMetadata: req.repositoryMetadata,
 				 nextActivity: nextActivity,
 				 learner: req.learner,
+				 user: req.user,		 
 				 previousActivity: previousActivity,
 				 url: req.url });		    
 	});
@@ -201,7 +203,8 @@ exports.render = function(req, res, next) {
 			     description: striptags(activity.description ? activity.description : ""),			     
 			     repositoryMetadata: req.repositoryMetadata,
 			     repositoryName: req.repositoryName,
-			     learner: req.learner,			     
+			     learner: req.learner,
+			     user: req.user,			     
 			     url: req.url
 			   });
     }
@@ -335,10 +338,7 @@ exports.ltiConfig = function(req, res) {
     var hash = {
 	title: 'Ximera ' + file.path.replace(/\.html$/,''),
 	description: '',
-	launchUrl: config.root + '/lms',
-	xourse: { repositoryName: req.repositoryName,
-		  path: file.path.replace(/\.html$/,'')
-		},
+	launchUrl: config.root + '/' + req.params.repository + '/' + req.params.path + '/lti',
 	domain: url.parse(config.root).hostname
     };
         
@@ -377,4 +377,18 @@ exports.mostRecentMetadata = function(req, res, next) {
 	    else
 		next(err);
 	});
+};
+
+exports.labels = function(req, res) {
+    var label = req.params.label;
+
+    if (req.repositoryMetadata) {
+	if (label in req.repositoryMetadata.labels)
+	    res.json( req.repositoryMetadata.labels[label] );
+	else {
+	    res.status(404).send("");	    		    
+	}
+    } else {
+	res.status(500).send("");
+    }
 };

@@ -13,6 +13,8 @@ window.Tether = tether;
 var bootstrap = require('bootstrap');
 var kinetic = require('jquery.kinetic/jquery.kinetic.min.js');
 
+require('./chat');
+
 var syntaxHighlighter = require('syntaxhighlighter');
 window.sh = syntaxHighlighter;
 syntaxHighlighter.registerBrush(require('./brushes/shBrushLatex'));
@@ -62,8 +64,12 @@ MathJax.Hub.Config(
 	// BADBAD: this also breaks the layout triggers
 	//showMathMenu: false,
 	TeX: {
+	    equationNumbers: { autoNumber: "AMS" },
 	    extensions: ["AMSmath.js","AMSsymbols.js","noErrors.js","noUndefined.js", "color.js"],
-	    Macros: {}
+	    Macros: {
+		xspace: '',
+		ensuremath: ''
+	    }
 	}
     });
 
@@ -95,6 +101,7 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
     TEXDEF.macros.graph = "graph";
     TEXDEF.macros.newlabel = "newlabel";
     TEXDEF.macros.sage = "sage";
+    TEXDEF.macros.delimiter = "delimiter";
     
     TEXDEF.macros.js = "js";
 
@@ -136,6 +143,23 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
     var sageCounter = 0;
     
     TEX.Parse.Augment({
+	/* sagetex emits delimiter commands pretty frequently */
+	delimiter: function(name) {
+	    var d = this.GetArgument(name);
+
+	    if (d.match(/426830A/)) {
+		var mml = TEX.Parse("\\langle",this.stack.env).mml();
+		this.Push(mml);
+		return;
+	    }
+
+	    if (d.match(/526930B/)) {
+		var mml = TEX.Parse("\\rangle",this.stack.env).mml();
+		this.Push(mml);
+		return;
+	    }	    
+	},
+	
 	/* Implements sagetex */
 	newlabel: function(name) {
 	    var label = this.GetArgument(name);
@@ -273,7 +297,8 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
 				      style: {width: "175px", marginBottom: "10px", marginTop: "10px" }
 				     });
 
-
+	    console.log(input);
+	    
 	    // Parse key=value pairs from optional [bracket] into data- attributes
 	    if (keys !== undefined) {
 		keys.split(",").forEach( function(keyvalue) { 

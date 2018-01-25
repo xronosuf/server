@@ -154,7 +154,7 @@ var uploadQueue = _.throttle( function() {
 	data: JSON.stringify(queue),
 	contentType: 'application/json',
     });
-
+    
     // We don't bother with errors or success -- if we fail to hear reports from students, that's fine!
     queue = [];
 }, 500 );

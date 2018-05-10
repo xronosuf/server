@@ -4,7 +4,6 @@ var $ = require('jquery');
 var Guppy = require('guppy-dev/src/guppy.js');
 
 var Expression = require('math-expressions');
-
 var guppyDiv = undefined;
 var callback = undefined;
 
@@ -53,7 +52,10 @@ $(function() {
 	}	
 
 	symbolizer( 'pi', 'pi' );
-	symbolizer( 'theta', 'theta' );	
+	symbolizer( 'theta', 'theta' );
+	symbolizer( 'phi', 'phi' );
+	symbolizer( 'rho', 'rho' );
+	
 	symbolizer( 'sqrt', 'sqrt' );
 	symbolizer( 'root', 'root' );
 	stringizer( 'times', '*' );

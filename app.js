@@ -201,6 +201,16 @@ passport.deserializeUser(function(id, done) {
     ////////////////////////////////////////////////////////////////
     // Static content    
 
+    app.get('/version', function(req, res) {
+	res.header('Cache-Control', 'private, no-cache, no-store, must-revalidate');
+	res.header('Expires',  (new Date()).toUTCString() );
+	res.send(app.version);
+    });
+    
+    app.get('/sw.js', function(req, res) {
+	res.sendFile('public/javascripts/sw.min.js', { root: __dirname });
+    });    
+    
     versionator = versionator.createBasic('v' + app.version);
     app.locals.versionPath = function(url) {
 	if (url.match(/^\/public\//)) {

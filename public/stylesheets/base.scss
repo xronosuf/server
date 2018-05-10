@@ -1,6 +1,10 @@
 @import "/node_modules/guppy-dev/build/guppy-default.min.css";
 @import "guppy-fixes";
 
+@import "flash";
+
+@import "/node_modules/codemirror/lib/codemirror.css";
+
 $enable-rounded: false;
 
 // Need bigger modals for our lengthy buttons
@@ -13,20 +17,26 @@ $red:    #bb0000 !default;
 // Bootstrap v4 ftw
 @import "./node_modules/bootstrap/scss/bootstrap.scss";
 
-.xourse-card.card:hover {
-    transition: background-color 0.2s ease-in;
-    background-color: $gray-lightest;
+// Don't display hover on mobile devices
+@media (any-hover: hover) {
+    .xourse-card.card:hover {
+	transition: background-color 0.2s ease-in;
+	background-color: $gray-lightest;
+    }
+
+    .activity-card.card:not(.active):not(.part):hover  {
+	transition: background-color 0.1s ease-in;
+	background-color: $gray-lightest;
+    }
+
+    .btn-secondary:not(.active):hover {
+	background-color: $gray-lightest;
+    }
 }
 
-.activity-card.card:not(.active):not(.part):hover  {
-    transition: background-color 0.1s ease-in;
-    background-color: $gray-lightest;
+.card.activity-card, .card.activity-card a {
+    cursor: pointer;
 }
-
-.btn-secondary:not(.active):hover {
-    background-color: $gray-lightest;
-}
-
 
 // A lot of buttons pulsate
 @import "pulsate";
@@ -41,6 +51,11 @@ about it and choose the background color. */
 @import "theorems";
 
 @import "mathjax";
+
+.mathjaxed-input.narrow .form-control {
+    padding-left: 3px;
+    padding-right: 3px;
+}
 
 // Body text is in a math-compatible font...
 .container-fluid {
@@ -100,6 +115,8 @@ height: auto;
 .image-environment img {
     max-width: 60vw;
     max-height: 60vh;
+    object-fit: contain;
+    -o-object-fit: contain;
 }
 
 @import "hints";
@@ -107,6 +124,8 @@ height: auto;
 @import "byline";
 
 @import "chat";
+
+@import "tabular";
 
 @import "print";
 
@@ -125,3 +144,95 @@ dt.enumerate-enumitem {
     padding-right: 0.5em;
 }
 
+/* marginpar's are just floated right, but they really should be put
+   into an actual margin. */
+.marginpar {
+    float: right;
+    margin-left: 1em;
+}
+
+/* Bart asks for more space. */
+ul.itemize1 {
+    padding-left: 40px;
+}
+
+div.quote {
+    @extend .blockquote;
+    margin-top: 0.1em;
+    margin-bottom: 0.1em;    
+}
+
+div.quote p {
+    margin-bottom: 0em;
+}
+
+/****************************************************************/
+@import "./syntaxHighlighter.scss";
+
+.syntaxhighlighter .toolbar {
+    display: none;
+}
+
+/* Some fixes for bootstrap interaction with syntaxhighlighter */
+.syntaxhighlighter .container:before {
+    display: block;
+}
+.syntaxhighlighter .container:after {
+    display: block;
+}
+
+.syntaxhighlighter code {
+    background-color: white;
+    vertical-align: top !important;
+    padding: 0;
+}
+
+/****************************************************************/
+/* Dropdowns can be inline */
+
+.word-choice {
+    display:inline-block;
+}
+
+.word-choice .dropdown-toggle::after {
+    content: none;
+}
+
+.word-choice.btn-ximera-submit .dropdown-toggle::after {
+    display: inline-block;
+    width: 0;
+    height: 0;
+    margin-left: 0.3em;
+    vertical-align: baseline;
+    font: normal normal normal 14px/1 FontAwesome;
+    content: "";
+    border-top: none;
+    border-right: none;
+    border-left: none;
+}
+
+.word-choice.btn-ximera-incorrect .dropdown-toggle::after {
+    display: inline-block;
+    width: 0;
+    height: 0;
+    margin-left: 0.3em;
+    vertical-align: baseline;
+    font: normal normal normal 14px/1 FontAwesome;
+    content: "";
+    border-top: none;
+    border-right: none;
+    border-left: none;
+}
+
+.word-choice.btn-ximera-correct .dropdown-toggle::after {
+    display: inline-block;
+    width: 0;
+    height: 0;
+    margin-left: 0.3em;
+    vertical-align: baseline;
+    font: normal normal normal 14px/1 FontAwesome;
+    content: "";
+    border-top: none;
+    border-right: none;
+    border-left: none;
+}

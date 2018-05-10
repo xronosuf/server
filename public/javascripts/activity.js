@@ -12,8 +12,10 @@ var selectAll = require('./select-all');
 var wordChoice = require('./word-choice');
 var hint = require('./hint');
 var foldable = require('./foldable');
+var youtube = require('./youtube');
 
 var freeResponse = require('./free-response');
+var coding = require('./coding');
 var shuffle = require('./shuffle');
 var feedback = require('./feedback');
 var validator = require('./validator');
@@ -38,33 +40,23 @@ var createActivity = function() {
 	    }
 	});
 
-	var firstTime = true;
-	
-	MathJax.Hub.Register.MessageHook( "End Process", function(message) {
-	    if (firstTime) {
-		console.log("End Process (1st time)");
-		$(".mathjax-input", activity).mathAnswer();
-		firstTime = false;
-
-		// BADBAD: Arguably this should happen AFTER some of the other set up below?
-		ProgressBar.monitorActivity( activity );
-	    }
-	});
+	ProgressBar.monitorActivity( activity );
 
 	$(".problem-environment", activity).problemEnvironment();
-	$(".mathjax-input", activity).mathAnswer();	    
 	$(".multiple-choice", activity).multipleChoice();
 	$(".select-all", activity).selectAll();
 	$(".word-choice", activity).wordChoice();
 	$(".hint", activity).hint();
 	$(".foldable", activity).foldable();
 	$(".free-response", activity).freeResponse();
+	$(".javascript-code", activity).coding();	
 	
 	$(".shuffle", activity).shuffle();
 	$(".feedback", activity).feedback();
 	$(".validator", activity).validator();
 	$(".inline-javascript", activity).javascript();
-
+	$('.youtube-player', activity).youtube();
+	
 	connectInteractives();
 	
 	$('.activity-card').activityCard();

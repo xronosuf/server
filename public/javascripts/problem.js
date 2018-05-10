@@ -52,7 +52,7 @@ var createProblem = function() {
 		visible = true;
 
 	    var parent = problem.parents(".problem-environment").first();
-	    if ( ! (parent.persistentData( 'blocking' )))
+	    if (!$(parent).attr('data-blocking'))
 		visible = true;
 	    
 	    if (visible) {
@@ -94,7 +94,6 @@ var createProblem = function() {
 
 	// 'blocking' is used for progress calculations, which must
 	// survive the erase work button
-	problem.persistentData( 'blocking', true );	
 	problem.attr( 'data-blocking', true );
 	
 	return false;
@@ -133,22 +132,24 @@ var createProblem = function() {
 
 		nextHint = _.first( _.filter( hints, function(element) { return ! $(element).persistentData('available'); } ) );		
 		if (!nextHint) {
-		    $(hintButton).fadeOut();
+		    problem.persistentData('uncovered-all-hints', true );
 		}
 	    });
 
+	    problem.persistentData( function() {
+		if (problem.persistentData( 'uncovered-all-hints' ))
+		    $(hintButton).fadeOut();		    
+		else
+		    hintButton.show();	    
+	    });
+	    
 	    problem.prepend( hintButton );	    
 	} else {
 	    hintButton.find( ".total" ).html( hints.length );
 	}
 
 	var revealed = _.filter( hints, function(element) { return $(element).persistentData('available'); } );
-	if (hints.length == revealed.length) {
-	    hintButton.hide();
-	} else {
-	    hintButton.show();	    
-	}
-	
+		
 	return false;
     });
 

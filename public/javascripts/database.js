@@ -224,7 +224,7 @@ $(document).ready(function() {
     
     try {
 	// We don't have to support IE9
-	socket = io({transports: ['websocket']});
+	 socket = io({transports: ['polling']});
     } catch (err) {
 	saveWorkStatus( 'error', "Could not connect.  Your work is not being saved." );
 	socket = { on: function() {}, emit: function() {} };

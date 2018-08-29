@@ -16,6 +16,7 @@ var youtube = require('./youtube');
 
 var freeResponse = require('./free-response');
 var coding = require('./coding');
+// var problemPool = require('./problem-pool');
 var shuffle = require('./shuffle');
 var feedback = require('./feedback');
 var validator = require('./validator');
@@ -51,6 +52,7 @@ var createActivity = function() {
 	$(".free-response", activity).freeResponse();
 	$(".javascript-code", activity).coding();	
 	
+//	$(".problemPool", activity).problemPool();
 	$(".shuffle", activity).shuffle();
 	$(".feedback", activity).feedback();
 	$(".validator", activity).validator();

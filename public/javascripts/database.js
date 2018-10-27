@@ -5,7 +5,6 @@
 var $ = require('jquery');
 var _ = require('underscore');
 var async = require('async');
-var io = require('socket.io-client');
 var jsondiffpatch = require('jsondiffpatch');
 
 var chat = require('./chat');
@@ -17,9 +16,11 @@ function checksumObject(object) {
     return XXH.h32( CANON.stringify( object ), 0x1337 ).toString(16);
 }
 
+var DIFFSYNC_DEBOUNCE = 5003; // milliseconds to wait to save
 var socket = undefined;
 
 // Some heartbeat code to provide feedback when we aren't receiving pings
+/* BADBAD disabled pings for now
 var lastPing = undefined;
 window.setInterval( function() {
     var interval = new Date() - lastPing;
@@ -27,6 +28,7 @@ window.setInterval( function() {
 	saveWorkStatus( 'error', "The connection is slow. Your work is not being saved." );
     }
 }, 10000);
+*/
 
 var SAVE_WORK_BUTTON_ID = '#save-work-button';
 var RESET_WORK_BUTTON_ID = '#reset-work-button';    
@@ -81,24 +83,30 @@ $.fn.extend({ activityPath: function() {
     return findActivityPath( this );
 }});
 
+window.addEventListener('online', connectToServer );
+			
+window.addEventListener('offline', function () {
+    saveWorkStatus( 'error', "No internet available" );
+});
 
 function differentialSynchronization() {
-    if ((!socket) || (!(socket.connected))) {
+    if ((!socket) || (!(socket.readyState == WebSocket.OPEN))) {
 	saveWorkStatus( 'error', "Synchronization failed" );
-	window.setTimeout(differentialSynchronizationDebounced, 3001);
+	connectToServer();
+	window.setTimeout(differentialSynchronizationDebounced, DIFFSYNC_DEBOUNCE );
 	return;
     }
 
     var delta = jsondiffpatch.diff( SHADOW, DATABASE );
-    
+
     if (delta !== undefined) {
 	saveWorkStatus( 'saving' );
-	socket.emit( 'patch', delta, checksumObject(SHADOW) );
+	socket.sendJSON( 'patch', delta, checksumObject(SHADOW) );
 	SHADOW = jsondiffpatch.clone(DATABASE);
     }
 }
 
-var differentialSynchronizationDebounced = _.debounce( differentialSynchronization, 3001 );
+var differentialSynchronizationDebounced = _.debounce( differentialSynchronization, DIFFSYNC_DEBOUNCE );
 
 var findRepositoryName = _.memoize( function( element ) {
     if ($(element).hasClass('activity'))
@@ -216,65 +224,90 @@ function synchronizePageWithDatabase() {
 	    });
 }
 
-$(document).ready(function() {
-    var activityHash = findActivityHash();
-    
-    if (!activityHash)
-	return;
-    
-    try {
-	// We don't have to support IE9
-	 socket = io({transports: ['polling']});
-    } catch (err) {
-	saveWorkStatus( 'error', "Could not connect.  Your work is not being saved." );
-	socket = { on: function() {}, emit: function() {} };
+var backOff = 1000;
+
+function connectToServer() {
+    // If we're currently connected...
+    if (socket) {
+	if (socket.readyState == WebSocket.OPEN) {	    
+	    // just ignore the request to reconnect
+	    return;
+	}
+	if (socket.readyState == WebSocket.CONNECTING) {
+	    console.log("Still connecting...");
+	    return;
+	}
     }
 
-    var learnerId = $('main').attr( 'data-learner' );
-    
-    socket.emit( 'watch', learnerId, findActivityHash() );
+    // Build an appropriate URL based on the page URL
+    var websocketUrl = "ws:";
+    if (window.location.protocol === "https:") {
+	websocketUrl = "wss:";
+    }
+    websocketUrl += "//" + window.location.host + "/ws";
 
+    saveWorkStatus( 'error', "Connecting..." );
+    
+    try {
+	console.log( "Attempting websocket connection...");
+	socket = new WebSocket(	websocketUrl );
+
+	// It would be nicer to use ...parameters, and I can't just
+	// use arguments because it's not actually an array
+	socket.sendJSON = function() {
+	    var parameters = [];
+	    var i;
+	    for( i=0; i<arguments.length; i++ )
+		parameters[i] = arguments[i];
+	    socket.send( JSON.stringify( parameters ) );
+	};
+    } catch (err) {
+	saveWorkStatus( 'error', "Could not connect.  Your work is not being saved." );
+    }
+
+    socket.addEventListener('error', function (event) {
+	saveWorkStatus( 'error', "There was an error with the WebSocket" );
+    });
+
+    socket.addEventListener('close', function (event) {
+	backOff = backOff * 2.0;
+	if (backOff > 15000) backOff = 15000;
+
+	saveWorkStatus( 'error', "You have been disconnected.  Reconnecting in " + Math.round(backOff/1000).toString() + " seconds" );
+	console.log( "You have been disconnected.  Reconnecting in " + Math.round(backOff/1000).toString() + " seconds" );
+	window.setTimeout(connectToServer, backOff);
+    });
+
+    var learnerId = $('main').attr( 'data-learner' );
     var repositoryName = $('main').attr('data-repository-name');
     var filename = $('main').attr('data-path');
-    
-    socket.emit( 'want-commit', repositoryName, filename );
-    
-    socket.on('push', function() {
-	socket.emit( 'want-commit', repositoryName, filename );	
+
+    socket.addEventListener('open', function (event) {
+	console.log( "WebSocket open!");
+	saveWorkStatus( 'save' );	
+	socket.sendJSON( 'watch', learnerId, findActivityHash() );
+	socket.sendJSON( 'want-commit', repositoryName, filename );
     });
 
-    socket.on('reconnecting', function (attempt) {
-	saveWorkStatus( 'reconnecting' );	
-    });    
-
-    socket.on('reconnect_error', function (err) {
-	saveWorkStatus( 'error', err );
-	console.log(err);
-    });    
-
-    socket.on('connect_error', function (err) {
-	saveWorkStatus( 'error', err );
-	console.log(err);
-    });    
+    var handlers = {};
     
-    socket.on('reconnect', function () {
-	saveWorkStatus( 'save' );
-	socket.emit( 'watch', learnerId, findActivityHash() );
-    });
+    handlers.push = function() {
+	socket.sendJSON( 'want-commit', repositoryName, filename );	
+    };
 
-    socket.on('commit', function (remoteRepositoryName, remoteFilename, commitHash, remoteContentHash) {
+    handlers.commit = function (remoteRepositoryName, remoteFilename, commitHash, remoteContentHash) {
 	if (remoteContentHash != activityHash) {
 	    $('#update-version-button').attr('href', window.location.pathname + "?" + commitHash );
 	    $('#pageUpdate').show();
 	}
-    });
+    };
 
-    socket.on( 'sync', function(remoteDatabase) {
+    handlers.sync = function(remoteDatabase) {
 	SHADOW = jsondiffpatch.clone(remoteDatabase);
-
+	
 	if (DATABASE === undefined) {
 	    DATABASE = {};
-	
+	    
 	    _.each( remoteDatabase,
 		    function( database, identifier, list ) {
 			// It's possible that, for some reason, I've
@@ -288,61 +321,48 @@ $(document).ready(function() {
 		    });
 	    
 	    synchronizePageWithDatabase();
-
+	    
 	    _.each( fetcherCallbacks, function(callback) {
 		callback(DATABASE);
 	    });
 	}
-    });    
-    
-    socket.on( 'out-of-sync', function() {
-	socket.emit( 'sync', SHADOW );
-    });
+    };
 
-    var wantDifferential = _.debounce( function() {
-	socket.emit( 'want-differential' );
-    }, 100 );
-    
-    socket.on( 'have-differential', function() {
-	wantDifferential();
-    });
+    handlers.outOfSync = function() {
+	socket.sendJSON( 'sync', SHADOW );
+    };
 
-    socket.on( 'disconnect', function(err) {
-	saveWorkStatus( 'error', "Disconnected" );
-	console.log(err);
-    });
-    
-    socket.on( 'patched', function(err) {
-	if (err) {
-	    saveWorkStatus( 'error', err );
-	    console.log(err);	    
+    handlers.haveDifferential = _.debounce( function(checksum) {
+	if (checksumObject(SHADOW) != checksum) {	
+	    socket.sendJSON( 'want-differential' );
 	} else {
 	    saveWorkStatus( 'saved', 'Uploaded at ' + (new Date()).toLocaleTimeString() );
 	}
-    });
-    
-    socket.on('pong', function(latency)  {
-	lastPing = new Date();
-	console.log( "ping: " + latency.toString() + "ms" );
-	$(SAVE_WORK_BUTTON_ID).attr( 'title', latency.toString() + "ms ping" );
-    });
-    
-    socket.on( 'patch', function( delta, checksum ) {
+    }, 100 );
+
+    handlers.patched = function(err) {
+	if (err) {
+	    saveWorkStatus( 'error', err );
+	    console.log(err);	    
+	}
+    };
+
+    handlers.patch = function( delta, checksum ) {
 	// Apply patch to the client state...
 	jsondiffpatch.patch( DATABASE, delta);
-
+	
 	synchronizePageWithDatabase();	
 	
 	// Confirm that our shadow now matches their shadow
 	if (checksumObject(SHADOW) != checksum) {
 	    // We are out of sync, and should request synchronization
-	    socket.emit( 'out-of-sync' );
+	    socket.sendJSON( 'out-of-sync' );
 	} else {
 	    jsondiffpatch.patch(SHADOW, delta);
 	}
-    });
+    };
 
-    socket.on( 'completions', function(completions) {
+    handlers.completions = function(completions) {
 	_.each( completions, function(c) {
 	    var url = c.repositoryName + '/' + c.activityPath;
 	    var changed = false;
@@ -355,22 +375,50 @@ $(document).ready(function() {
 		COMPLETIONS[url] = c.complete;
 		changed = true;		
 	    }
-
+	    
 	    if ((changed) && (completionCallbacks[url])) {
 		_.each( completionCallbacks[url], function(callback) {
 		    callback(c.complete);
 		});
 	    }
 	});
-    });
+    };
 
-    //////////////////////////////////////////////////////////////////
-    // Chat room functionality
-    
-    socket.on('chat', function(name, message) {
+    /*
+    handlers.pong = function(latency)  {
+	lastPing = new Date();
+	console.log( "ping: " + latency.toString() + "ms" );
+	$(SAVE_WORK_BUTTON_ID).attr( 'title', latency.toString() + "ms ping" );
+    };
+    */
+
+    handlers.chat = function(name, message) {
 	chat.appendToTranscript( name, message, true );
-    });
+    };
+    
+    socket.addEventListener('message', function (event) {
+	var payload = JSON.parse( event.data );
 
+	if (! Array.isArray(payload)) {
+	    console.log("WebSocket message is not an array.");
+	    return;
+	}
+
+	if (payload.length == 0) {
+	    console.log("WebSocket message is empty.");
+	    return;
+	}
+	    
+	var message = payload[0];
+	var camelCased = message.replace(/-([a-z])/g, function (g) { return g[1].toUpperCase(); });
+
+	if (handlers[camelCased]) {
+	    handlers[camelCased].apply( socket, payload.slice(1) );
+	} else {
+	    console.log( "Do not know how to handle " + message );
+	}
+    });
+    
     chat.onSendMessage( function(message) {
 	var name = users.me().then( function(user) {
 	    var first = user.name.split(' ')[0];
@@ -379,16 +427,32 @@ $(document).ready(function() {
 	    if (first && last)
 		initials = first.substr(0,1) + last.substr(0,1);
 	    
-	    socket.emit( 'chat', initials, message );
+	    socket.sendJSON( 'chat', initials, message );
 	});
     });
+}
+
+$(document).ready(function() {
+    var activityHash = findActivityHash();
     
+    if (!activityHash)
+	return;
+
+    connectToServer();
 });
 
 module.exports.setCompletion = function(repositoryName, activityPath, complete) {
-    if ((!socket) || (!(socket.connected))) return;
+    if (!socket) {
+	saveWorkStatus( 'error', "No socket for progress bar" );	
+	return;
+    }
 
-    socket.emit( 'completion', {repositoryName: repositoryName, activityPath: activityPath, complete: complete} );
+    if (socket.readyState !== WebSocket.OPEN) {
+	saveWorkStatus( 'error', "Socket not open for progress bar" );	
+	return;
+    }
+
+    socket.sendJSON( 'completion', {repositoryName: repositoryName, activityPath: activityPath, complete: complete} );
 };
 
 module.exports.onCompletion = function(repositoryName, activityPath, callback) {

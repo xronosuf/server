@@ -23,6 +23,7 @@ npm-debug.log
 node_modules
 components
 bower_components
+nginx.conf
 
 environment.sh
 .env

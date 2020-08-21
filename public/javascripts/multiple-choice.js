@@ -3,14 +3,15 @@ var _ = require('underscore');
 var MathJax = require('mathjax');
 var database = require('./database');
 var TinCan = require('./tincan');
+var Javascript = require('./javascript');
 
 var buttonTemplate = _.template( '<label class="btn btn-default <%= correct %>" id="<%= id %>"></label>' );
 
-var answerHtml = '<div class="btn-group" style="vertical-align: bottom; ">' +
+var answerHtml = '<div class="btn-group" style="vertical-align: bottom; " aria-live="assertive">' +
 	'<button class="btn btn-success btn-ximera-correct" data-toggle="tooltip" data-placement="top" title="Correct answer!" style="display: none">' +
 	'<i class="fa fa-check"/>&nbsp;Correct' +
 	'</button></div>' +
-	'<div class="btn-group" style="vertical-align: bottom; ">' +
+	'<div class="btn-group" style="vertical-align: bottom; " aria-live="assertive">' +
 	'<button class="btn btn-danger btn-ximera-incorrect" data-toggle="tooltip" data-placement="top" title="Incorrect.  Try again!" style="display: none">' +
 	'<i class="fa fa-times"/>&nbsp;Try again' +
 	'</button></div>' +
@@ -20,10 +21,23 @@ var answerHtml = '<div class="btn-group" style="vertical-align: bottom; ">' +
 	'</button>' +
 	'</div>';
 
+
+function assignGlobalVariable( multipleChoice, choice ) {
+    if (multipleChoice.attr('data-id')) {
+	if ($(choice).attr('data-value')) {
+	    if (window[multipleChoice.attr('data-id')] != $(choice).attr('data-value')) {
+		window[multipleChoice.attr('data-id')] = $(choice).attr('data-value');
+		Javascript.reevaluate(multipleChoice);
+	    }
+	}
+    }
+}
+
+
 var createMultipleChoice = function() {
     var multipleChoice = $(this);
 
-    multipleChoice.wrapInner( '<div class="ximera-horizontal"><div class="btn-group-vertical" role="group" data-toggle="buttons" style="padding-right: 1em;"></div></div>' );
+    multipleChoice.wrapInner( '<div class="ximera-horizontal"><div class="btn-group-vertical" role="radiogroup" data-toggle="buttons" style="padding-right: 1em;"></div></div>' );
     
     $('.ximera-horizontal', multipleChoice).append( $(answerHtml) );
 
@@ -33,10 +47,17 @@ var createMultipleChoice = function() {
 	    correct = "correct";
 	
 	var identifier = $(this).attr('id');
+	$(this).removeAttr('id');
+
+	var value = $(this).attr('data-value');
 	var label = $(this);
 
 	label.wrap( buttonTemplate({ id: identifier, correct: correct }) );
 	label.prepend( '<input type="radio"></input>' );
+
+	if (value) {
+	    label.closest('label').attr('data-value', value );
+	}
     });
 
     multipleChoice.trigger( 'ximera:answer-needed' );
@@ -58,11 +79,16 @@ var createMultipleChoice = function() {
     
     multipleChoice.persistentData(function(event) {
 	multipleChoice.find( 'label').removeClass('active');
+	multipleChoice.find( '#' + multipleChoice.persistentData('chosen') ).find( 'input' ).attr( 'aria-checked', false );
 	
 	if (multipleChoice.persistentData('chosen')) {
 	    multipleChoice.find( '#' + multipleChoice.persistentData('chosen') ).addClass('active');
+	    multipleChoice.find( '#' + multipleChoice.persistentData('chosen') ).find( 'input' ).attr( 'aria-checked', true );
 	    multipleChoice.find( '.btn-group button' ).removeClass('disabled');
 	    multipleChoice.find( '.btn-group .btn-ximera-submit' ).addClass('pulsate');
+
+	    var choice = multipleChoice.find( '#' + multipleChoice.persistentData('chosen') );
+	    assignGlobalVariable( multipleChoice, choice );
 	} else {
 	    multipleChoice.find( '.btn-group button' ).addClass('disabled');
 	    multipleChoice.find( '.btn-group .btn-ximera-submit' ).removeClass('pulsate');		
@@ -128,13 +154,22 @@ var createMultipleChoice = function() {
     $(this).find( ".btn-ximera-incorrect" ).click( checkAnswer );
     
     $(this).find( "label" ).each( function() {
+	var id = $(this).attr('id');
 	$(this).click( function() {
-	    multipleChoice.persistentData('chosen', $(this).attr('id'));
+	    multipleChoice.persistentData('chosen', id);
+	    assignGlobalVariable( multipleChoice, $(this) );
+	});
+
+	$(this).find( "input" ).each( function() {
+	    $(this).change( function() {
+		if ($(this).prop('checked')) {
+		    multipleChoice.persistentData('chosen', id);
+		    assignGlobalVariable( multipleChoice, $(this) );
+		}
+	    });
 	});
     });
 
-
-    
 };
 
 $.fn.extend({

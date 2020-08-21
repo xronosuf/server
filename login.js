@@ -59,6 +59,7 @@ module.exports.twitterStrategy = function(rootUrl) {
 	callbackURL: rootUrl + "/auth/twitter/callback",
 	passReqToCallback: true
     }, function(req, token, tokenSecret, profile, done) {
+	if (profile._json) profile = profile._json;
         addUserAccount(req, 'twitterOAuthId', profile.id_str, profile.name, null, null, done);
     });
 }
@@ -67,6 +68,9 @@ module.exports.localStrategy = function(rootUrl) {
     return new  LocalStrategy({
 	passReqToCallback: true
     }, function(req, username, password, done) {
+	// This is horrible, but at least it lets me check the login...
+        // addUserAccount(req, 'password', password, username, null, null, done);
+	
     	mdb.User.findOne({ username: username }, function(err, user) {
 	    if (err) { return done(err); }
 	    if (!user) { return done(null,false); }
@@ -78,6 +82,7 @@ module.exports.localStrategy = function(rootUrl) {
     });
 }
 
+// DEPRECATED: should use the /lms endpoint instead
 module.exports.ltiStrategy = function (rootUrl) {
     return new LtiStrategy({
         returnURL: '/just-logged-in',
@@ -85,6 +90,9 @@ module.exports.ltiStrategy = function (rootUrl) {
         consumerSecret: process.env.LTI_SECRET,
     }, function (req, identifier, profile, done) {
 	var displayName = 'Remote User';
+
+	console.log( "LTI ****************" );
+	console.log( profile );
 
 	if ('lis_person_name_full' in profile)
 	    displayName = profile.lis_person_name_full;
@@ -95,7 +103,19 @@ module.exports.ltiStrategy = function (rootUrl) {
 
         addUserAccount(req, 'ltiId', identifier, displayName, email, profile.custom_ximera, done);
     });
+};
+
+
+module.exports.lmsStrategy = function (rootUrl) {
+    return new LtiStrategy({
+        returnURL: '/just-logged-in',
+        consumerKey: process.env.LTI_KEY,
+        consumerSecret: process.env.LTI_SECRET,
+    }, function (req, identifier, profile, done) {
+        addLmsAccount(req, identifier, profile, done);
+    });
 }
+
 
 // Add guest users account if not logged in.
 // TODO: Clean these out occasionally.
@@ -163,10 +183,13 @@ function addUserAccount(req, authField, authId, name, email, course, done) {
                     req.user[authField] = authId;
                     req.user.isGuest = false;
                     req.user.save(function (err) {
-                        done(err, req.user)
+                        done(err, req.user);
                     });
                 }
                 else {
+		    // BADBAD: it might be nice to copy over the guest
+		    // data to the existing user account, but I'm so
+		    // terrified of merging users.
                     done(null, user);
                 }
             }
@@ -181,29 +204,153 @@ function addUserAccount(req, authField, authId, name, email, course, done) {
 	    req.user.course = course;
             req.user[authField] = authId;
             req.user.save(function (err) {
+		console.log( authField, authId );
+		console.log( JSON.stringify( req.user ) );
                 done(err, req.user);
             });
         }
         else {
-            mdb.User.find(searchFields, function (err, users) {
-                async.eachSeries(users, function (user, callback) {
-                    user[authField] = undefined;
-                    user.save(callback);
-                }, function (err) {
-                    if (err) {
-                        done(err, null);
-                    }
-                    else {
-			req.user.name = name;
-			req.user.email = email;
-			req.user.course = course;
-                        req.user[authField] = authId;
-                        req.user.save(function (err) {
-                            done(err, req.user);
-                        });
-                    }
-                });
-            });
+	    // Merge any existing accounts
+
+	    // Find any OTHER accounts (but there can be at most one)
+            mdb.User.findOne(searchFields, function (err, user) {
+		if (err) {
+		    done( err, null );
+		} else {
+		    async.series( [
+			function(callback) {
+			    if (user) {
+				user.replacedBy = req.user._id;
+
+				// Copy over OTHER login details (without clobbering any existing details)
+				user[authField] = undefined;
+
+				var authFields = ['googleOpenId', 'courseraOAuthId', 'twitterOAuthId', 'ltiId', 'githubId'];
+				authFields.forEach( function(authField) {
+				    if (user[authField] && !(req.user[authField])) {
+					req.user[authField] = user[authField];
+					user[authField] = undefined;
+				    }
+				});
+
+				// Copy over xake credentials
+				if (user.isAuthor) {
+				    req.user.isAuthor = true;
+				}
+				if (!(req.user.apiKey)) {
+				    req.user.apiKey = user.apiKey;
+				    user.apiKey = undefined;
+				}
+				if (!(req.user.apiSecret)) {
+				    req.user.apiSecret = user.apiSecret;
+				    user.apiSecret = undefined;
+				}
+				
+				user.save(callback);
+			    } else {
+				callback(null);
+			    }
+			},
+
+			function(callback) {
+			    // Update user data
+			    req.user.name = name;
+			    req.user.email = email;
+			    req.user.course = course;
+			    req.user[authField] = authId;
+			    
+			    req.user.save(callback);
+			},
+
+			function(callback) {
+			    if (user && user._id) {
+				mdb.State.update( { user: user._id },
+						  { $set: { user: req.user._id } },
+						  { multi: true },						  
+						  callback );
+			    } else {
+				callback(null);
+			    }
+			},
+
+			function(callback) {
+			    if (user && user._id) {			
+				mdb.Completion.update( { user: user._id },
+						       { $set: { user: req.user._id } },
+						       { multi: true },
+						       callback );
+			    } else {
+				callback(null);
+			    }
+			}
+
+		    ], function(err, results) {
+                        done(err, req.user);			
+		    });
+		}
+	    });
         }
     }
+}
+
+// Test this with  http://lti.tools/test/tc.php
+function addLmsAccount(req, identifier, profile, done) {
+    console.log(profile);
+    
+    async.waterfall( [
+	// See if we have already logged in with this identifier	
+	function(callback) {
+	    console.log("Looking up bridge for ", identifier);
+	    mdb.LtiBridge.findOne( {ltiId: identifier}, callback );	    
+	},
+	// Create a bridge if we aren't already logged in
+	function(bridge, callback) {
+	    console.log("Found bridge = ", bridge);
+	    if (bridge) {
+		// use this bridge
+		callback(null,bridge);
+	    } else {
+		// make a new bridge
+		bridge = new mdb.LtiBridge({
+                    user: req.user._id,
+		    ltiId: identifier,
+		    data: profile
+		});
+		console.log("new bridge =", bridge);
+		bridge.save(function(err) {
+		    if (err)
+			callback(err);
+		    else
+			callback(null,bridge);
+		});
+	    }
+	},
+	// Update the current user object
+	function(bridge,callback) {
+	    var updates = { isGuest: false };
+
+	    if ('lis_person_name_full' in profile)
+		updates.name = profile.lis_person_name_full;
+
+	    if ('lis_person_contact_email_primary' in profile)	
+		updates.email = profile.lis_person_contact_email_primary;
+
+	    if (('custom_repository' in profile) && ('custom_xourse' in profile))
+		updates.course = '/' + profile.custom_repository + '/' + profile.custom_xourse;	    
+
+	    console.log(updates);
+	    
+    	    mdb.User.findOneAndUpdate({_id: bridge.user},
+				      updates,
+				      callback);
+	}
+    ], function(err, result) {
+	if (err)
+	    done(err,null);
+	else {
+	    console.log("lms with user._id =", result._id);
+	    
+	    done(null, result);
+	}
+    });
 }

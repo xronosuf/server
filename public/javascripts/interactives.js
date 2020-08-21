@@ -3,6 +3,7 @@ var _ = require('underscore');
 var async = require('async');
 var TinCan = require('./tincan');
 var Desmos = require('./desmos');
+var Javascript = require('./javascript');
 
 var libraries = {
     jquery: $,
@@ -31,6 +32,7 @@ function createProxiedPersistentDataObject( element ) {
 	},
 	set: function(target, prop, value, receiver) {
 	    element.persistentData( prop, value );
+	    Javascript.reevaluate(element);
 	    return true;
 	}
     };
@@ -57,6 +59,9 @@ function createResetButton( element ) {
 // TODO includeinteractive needs to be access the parameters that it is passed
 // basically as an "parameters" object
 function parseParameters(parameters) {
+    if (parameters === null)
+	return {};
+    
     var pairs = parameters.split(',').map( function(x) { return x.trim(); } );
     var hash = {};
     pairs.forEach( function(pair) {
@@ -75,6 +80,8 @@ exports.connectInteractives = function() {
 	    var dependencies = interactive.dependencies;
 	    var code = interactive.callback;
 	    var parameters = interactive.parameters;	    
+
+	    var variableName = parseParameters(parameters)['id'];
 	    
 	    var targetId = interactive.targetId;
 	    var target = $("#" + targetId);
@@ -97,13 +104,19 @@ exports.connectInteractives = function() {
 
 		    asynchronousLibrary( dependencies, "three", "https://cdnjs.cloudflare.com/ajax/libs/three.js/r81/three.min.js", "THREE" ),
 		    asynchronousLibrary( dependencies, "jsxgraph", "https://cdnjs.cloudflare.com/ajax/libs/jsxgraph/0.99.5/jsxgraphcore.js", "JXG" ),
-		    asynchronousLibrary( dependencies, "numeric", "http://numericjs.com/numeric/lib/numeric-1.2.6.min.js", "numeric" ),
+		    asynchronousLibrary( dependencies, "numeric", "https://cdnjs.cloudflare.com/ajax/libs/numeric/1.2.6/numeric.min.js", "numeric" ),
 		    
 		], function(err) {
 		    code.apply( target, dependencies.map( function(name) {
-			if (name == 'db')
-			    return createProxiedPersistentDataObject(target);
-			else if (name == 'reset')
+			if (name == 'db') {
+			    var proxy = createProxiedPersistentDataObject(target);
+			    
+			    if (variableName) {
+				window[variableName] = proxy;
+			    }
+			    
+			    return proxy;
+			} else if (name == 'reset')
 			    return createResetButton(target);
 			else if (name == 'parameters')
 			    return parseParameters(parameters);

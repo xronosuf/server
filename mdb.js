@@ -179,6 +179,7 @@ exports.initialize = function initialize(callback) {
                                       ltiId: {type: String, index: true, unique: true, sparse: true},
                                       githubId: {type: String, index: true, unique: true, sparse: true},
                                       githubAccessToken: {type: String},
+				      replacedBy: {type: ObjectId, ref:"User"},
 				      course: String,
 				      superuser: Boolean,
 				      username: String,
@@ -207,11 +208,23 @@ exports.initialize = function initialize(callback) {
     UserSchema.index( { lastSeen: -1 } );
     
     exports.User = mongoose.model("User", UserSchema);
-
+    
+    exports.LtiBridge = mongoose.model("LtiBridge",
+                                   new mongoose.Schema({
+                                       user: {type: ObjectId, index: true, ref:"User"},
+                                       ltiId: {type: String, index: true, unique: true, sparse: true},
+                                       gradeReturn: String,
+				       repository: {type: String, index: true},
+				       path: String,
+                                       data: Mixed				       
+                                   }, {
+                                       minimize: false
+                                   }));
+    
     exports.State = mongoose.model("State",
                                    new mongoose.Schema({
                                        activityHash: {type: String, index: true},
-                                       user: {type: ObjectId, index: true},
+                                       user: {type: ObjectId, index: true, ref:"User"},
                                        data: Mixed
                                    }, {
                                        minimize: false
@@ -234,8 +247,14 @@ exports.initialize = function initialize(callback) {
 
     exports.Completion = mongoose.model("Completion",
 					new mongoose.Schema({
+					    // The new method for storing completions
+					    activityPath: {type: String, index: true},
+					    repositoryName: {type: String, index: true},
+
+					    // The old method for storing completions
 					    activityHash: {type: String, index: true},
-					    user: {type: ObjectId, index: true},
+					    
+					    user: {type: ObjectId, index: true, ref:"User"},
 					    complete: Number,
                                             date: Date
 					}, {
@@ -257,13 +276,20 @@ exports.initialize = function initialize(callback) {
 					   users: Mixed,
 					   commits: Mixed,
 				       }));
+
+    exports.AccessToken = mongoose.model("AccessToken",
+				       new mongoose.Schema({
+					   keyid: {type: String, index: true},
+					   token: {type: String, index: true}
+				       }));
+    
 							    
     RegExp.escape= function(s) {
 	return s.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
     };
 
     //mongoose.set('debug', true);    
-
+    
     mongoose.connect(url, {}, function (err) {
 	callback(err);
     });

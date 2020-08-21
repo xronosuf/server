@@ -6,9 +6,9 @@ var express = require('express')
   , routes = require('./routes')
   , activity = require('./routes/activity')
   , course = require('./routes/course')
+  , certificate = require('./routes/certificate')
   , user = require('./routes/user')
   , api = require('./routes/api')
-  , about = require('./routes/about')
   , score = require('./routes/score')
   , github = require('./routes/github')
   , tincan = require('./routes/tincan')
@@ -24,6 +24,9 @@ var express = require('express')
   , winston = require('winston')
   , template = require('./routes/template')
   , mongoImage = require('./routes/mongo-image')
+  , gitBackend = require('./routes/git')
+  , keyserver = require('./routes/gpg')
+  , hashcash = require('./routes/hashcash')
   , async = require('async')
   , fs = require('fs')
   , favicon = require('serve-favicon' )
@@ -32,6 +35,7 @@ var express = require('express')
   , bodyParser = require('body-parser')
   , cookieParser = require('cookie-parser')
   , logger = require('morgan')
+  , rateLimit = require('express-rate-limit')
   , methodOverride = require('method-override')
   , errorHandler = require('errorhandler')
   ;
@@ -75,7 +79,7 @@ app.set('view engine', 'jade');
 // all environments
 app.set('port', process.env.PORT || 3000);
 
-    rootUrl = 'http://xronos.clas.ufl.edu';
+var rootUrl = 'http://xronos.clas.ufl.edu';
 
 
 app.use(logger('dev'));
@@ -152,8 +156,11 @@ mdb.initialize(function (err) {
 passport.use(login.localStrategy(rootUrl));
 passport.use(login.googleStrategy(rootUrl));
 passport.use(login.twitterStrategy(rootUrl));
-passport.use(login.ltiStrategy(rootUrl));
+passport.use('lms', login.lmsStrategy(rootUrl));    
 passport.use(login.githubStrategy(rootUrl));
+// DEPRECATED LTI
+passport.use(login.ltiStrategy(rootUrl));
+
 
 // Only store the user _id in the session
 passport.serializeUser(function(user, done) {
@@ -182,6 +189,30 @@ function addDatabaseMiddleware(req, res, next) {
 
     app.version = require('./package.json').version;
 
+
+    var limiter = new rateLimit({
+	windowMs: 15*60*1000, // 15 minutes 
+	max: 100, // limit each IP to 100 requests per windowMs 
+	delayMs: 0 // disable delaying - full speed until the max limit is reached 
+    });
+
+    app.use( '/gpg/', limiter );
+    app.use( '/pks/', limiter );
+    app.use( '/:repository.git', limiter );
+    
+    app.get( '/gpg/token/:keyid', keyserver.token );
+    app.get( '/gpg/tokens/:keyid', keyserver.token );
+    app.post( '/pks/add', keyserver.add );
+
+    app.get( '/hello', keyserver.authorization );
+    app.get( '/hello', function(req,res) { res.status(200).send('i love you'); });
+    
+    app.post( '/:repository.git', keyserver.authorization );
+    app.post( '/:repository.git', hashcash.hashcash );
+    app.post( '/:repository.git', gitBackend.create );
+    
+    app.use( '/:repository.git', gitBackend.git );
+    
     //app.use(versionator.middleware);
     app.use('/public', express.static(path.join(__dirname, 'public')));
     app.use('/node_modules', express.static(path.join(__dirname, 'node_modules')));
@@ -219,7 +250,6 @@ function addDatabaseMiddleware(req, res, next) {
     
     app.use(login.guestUserMiddleware);
     app.use(addDatabaseMiddleware);
-
     
     // Middleware for development only
     if ('development' == app.get('env')) {
@@ -230,13 +260,17 @@ function addDatabaseMiddleware(req, res, next) {
     app.get('/install.sh', function(req, res) {
 	res.sendFile('views/install.sh', { root: __dirname });
     });
-    
+
     // TODO: Move to separate file.
     app.get('/users/xarma', score.getXarma);
     app.get('/users/xudos', score.getXudos);
     app.post('/users/xarma', score.postXarma);
     app.post('/users/xudos', score.postXudos);
 
+    // TinCan (aka Experience) API
+    app.post('/xAPI/statements', function(req,res) { res.status(200).send('ignored statemtents without a repository.'); } );
+    app.post('/:repository/xAPI/statements', tincan.postStatements);    
+    
     // Requires the rawBody middleware above
     github.secret = process.env.GITHUB_WEBHOOK_SECRET;
     app.post('/github', github.github);
@@ -274,14 +308,18 @@ function addDatabaseMiddleware(req, res, next) {
     app.get( '/courses', function( req, res ) { res.redirect('/course/'); });
     app.get( '/courses/', function( req, res ) { res.redirect('/course/'); });
 
-    app.get( '/course/:commit([0-9a-fA-F]+)/', course.xourseFromCommit, course.tableOfContents );
-
-    app.get( '/course/:username/:repository/', course.xourseFromUserAndRepo, course.tableOfContents );
+    app.get( '/certificate/:certificate/:signature', certificate.view );
     
+    app.get( '/course/:commit([0-9a-fA-F]+)/certificate', course.xourseFromCommit, certificate.xourse );
+    app.get( '/course/:username/:repository/certificate', course.xourseFromUserAndRepo, certificate.xourse );
+    app.get( '/course/:username/:repository/:branch/certificate', course.xourseFromUserAndRepo, certificate.xourse );
+    
+    app.get( '/course/:commit([0-9a-fA-F]+)/', course.xourseFromCommit, course.tableOfContents );
+    app.get( '/course/:username/:repository/', course.xourseFromUserAndRepo, course.tableOfContents );
     app.get( '/course/:username/:repository/:branch/', course.xourseFromUserAndRepo, course.tableOfContents );
 
     app.get( '/labels/:commit([0-9a-fA-F]+)/:label', course.getLabel );
-    
+
     var appXimera = function( regexp, callback ) {
 	app.get( '/:noun(course|activity)/:commit([0-9a-fA-F]+)/:path(' + regexp + ')', course.objectFromCommit, callback );
 	app.get( '/:noun(course|activity)/:username/:repository/:path(' + regexp + ')', course.objectFromUserAndRepo, callback );
@@ -314,9 +352,6 @@ function addDatabaseMiddleware(req, res, next) {
     //app.head( '/activity/:commit/:path(*.pdf)', course.imageHead );
     //app.head( '/activity/:commit/:path(*.svg)', course.imageHead );    
     app.head( '/activity/:commit/:path(*)', course.activityByHashHead );
-    
-    // TinCan (aka Experience) API
-    app.post('/xAPI/statements', tincan.postStatements);
     
     // Instructor paths
     app.get(/^\/instructor\/course\/(.+)\/activity\/(.+)\/$/, instructor.instructorActivity );
@@ -354,6 +389,11 @@ function addDatabaseMiddleware(req, res, next) {
     // LTI login
     app.post('/lti', passport.authenticate('lti', { successRedirect: '/just-logged-in',
 						    failureRedirect: '/about/lti-failed'}));
+
+    app.post('/lms', passport.authenticate('lms', { successRedirect: '/just-logged-in',
+						    failureRedirect: '/',
+						    failureFlash: true}));
+    
     app.get('/logout', function (req, res) {
         req.logout();
         res.redirect('/');
@@ -377,20 +417,6 @@ function addDatabaseMiddleware(req, res, next) {
         res.send(200);
     });
 
-    app.get('/about', about.index);
-    app.get('/about/team', about.team);
-    app.get('/about/workshop', about.workshop);
-    app.get('/about/contact', about.contact);
-    app.get('/about/faq', about.faq);
-    app.get('/about/lti-failed', about.ltiFailed);    
-    app.get('/about/who', about.who);
-    app.get('/about/plans', about.plans);
-    app.get('/about/xarma', about.xarma);
-    app.get('/about/xudos', about.xudos);
-    app.get('/about/m2o2c2', about.m2o2c2);
-    app.get('/about/supporters', function( req, res ) { res.redirect('/about/support'); });
-    app.get('/about/support', about.support);
-
     //app.get('/template/:templateFile', template.renderTemplate);
     //app.get('/template/forum/:templateFile', template.renderForumTemplate);
 
@@ -398,12 +424,61 @@ function addDatabaseMiddleware(req, res, next) {
     app.get('/state/:activityHash', state.get);
     app.put('/state/:activityHash', state.put);
     app.delete('/state/:activityHash', state.remove);
-    app.put('/completion/:activityHash', state.completion);
 
+    app.put('/completion/:activityHash', state.completion);
     app.get('/users/:id/completions', state.getCompletions);
     
     app.get('/image/:hash', mongoImage.get);
 
+    // BADBAD: this is where we'll put the NEW routes
+
+    app.get( '/:repository/:path(*)/certificate',
+	     gitBackend.repository,
+	     gitBackend.recentCommitsOnMaster,
+	     gitBackend.findPossibleActivityFromCommits,
+	     gitBackend.chooseMostRecentBlob,
+	     gitBackend.render );
+
+    // BADBAD: i also need to serve pngs and pdfs and such from the repo here
+
+    app.get( '/:repository/:path/lti.xml',
+	     gitBackend.repository,
+	     gitBackend.recentCommitsOnMaster, gitBackend.findPossibleActivityFromCommits,
+	     gitBackend.ltiConfig );
+    
+    var serveContent = function( regexp, callback ) {
+	app.get( '/:repository/:path(' + regexp + ')',
+	     gitBackend.repository,
+		 gitBackend.recentCommitsOnMaster,
+		 gitBackend.findPossibleActivityFromCommits,
+		 callback );
+    };
+
+    serveContent( '*.svg', gitBackend.serve('image/svg+xml') );
+    serveContent( '*.png', gitBackend.serve('image/png') );
+    serveContent( '*.pdf', gitBackend.serve('image/pdf') );
+    serveContent( '*.jpg', gitBackend.serve('image/jpeg') );
+    serveContent( '*.js',  gitBackend.serve('text/javascript') );
+
+    app.get( '/:repository/:path(*.tex)',
+	     gitBackend.repository,
+	     gitBackend.recentCommitsOnMaster, gitBackend.findPossibleActivityFromCommits,
+	     gitBackend.source );    
+    
+    app.get( '/:repository/:path(*)',
+	     gitBackend.repository,
+	     gitBackend.recentCommitsOnMaster, gitBackend.findPossibleActivityFromCommits,
+	     gitBackend.chooseMostRecentBlob,
+	     gitBackend.fetchMetadata,	     
+	     gitBackend.render );    
+    
+    // BADBAD: serve source too
+    //appXimera( '*.tex', course.source );
+
+    // SVG files will only be rendered if they are sent with content type image/svg+xml
+
+    // app.get( '/:repository/:path(*)', gitBackend.repository, gitBackend.publishedCommitOnMaster, gitBackend.getEntry, gitBackend.render );
+    
     app.locals.Color = require('color');
     app.locals.moment = require('moment');
     app.locals._ = require('underscore');

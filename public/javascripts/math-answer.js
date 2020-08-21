@@ -6,29 +6,77 @@ var database = require('./database');
 var Expression = require('math-expressions');
 var ProgressBar = require('./progress-bar');
 var popover = require('./popover');
+var Javascript = require('./javascript');
+
+// I comment these out to make sure that the input box is rounded, but this breaks the display of the statistics
+var buttonlessTemplate = '<form class="form-inline mathjaxed-input" style="display: inline-block;">' +
+//	'<span class="input-group">' +
+   	'<input class="form-control" type="text"/>' +
+//	'<span class="input-group-btn">' +
+//	'</span>' +
+//	'</span>' +
+	'</form>';
 
 var template = '<form class="form-inline mathjaxed-input" style="display: inline-block;">' +
 	'<span class="input-group">' +
-   	'<input class="form-control" type="text"/>' +
+   	'<input class="form-control" aria-label="answer" type="text"/>' +
 	'<span class="input-group-btn">' +
-	'<button class="btn btn-success btn-ximera-correct" data-toggle="tooltip" data-placement="top" title="Correct answer!" style="display: none; z-index: 1;">' +
+	'<button class="btn btn-success btn-ximera-correct" data-toggle="tooltip" data-placement="top" title="Correct answer!" style="display: none; z-index: 1;" aria-label="correct answer" aria-live="assertive">' +
 	'<i class="fa fa-fw fa-check"/>' +
 	'</button>' +
-	'<button class="btn btn-danger btn-ximera-incorrect" data-toggle="tooltip" data-placement="top" title="Incorrect.  Try again!" style="display: none; z-index: 1;">' +
+	'<button class="btn btn-danger btn-ximera-incorrect" data-toggle="tooltip" data-placement="top" title="Incorrect.  Try again!" style="display: none; z-index: 1;" aria-label="incorrect!  try again" aria-live="assertive">' +
 	'<i class="fa fa-fw fa-times"/>' +
 	'</button>' +
-	'<button class="btn btn-primary btn-ximera-submit" data-toggle="tooltip" data-placement="top" title="Click to check your answer." style="z-index: 1;">' +
+	'<button class="btn btn-primary btn-ximera-submit" aria-label="check work" data-toggle="tooltip" data-placement="top" title="Click to check your answer." style="z-index: 1;">' +
 	'<i class="fa fa-fw fa-question"/>' +
 	'</button>' +
 	'</span>' +
 	'</span>' +
-	'</form>';
+        '</form>';
+
+function parseFormattedInput( format, input ) {
+    if (format == 'integer')
+	return parseInt(input);
+    else if (format == 'float')
+	return parseFloat(input);
+    else if (format == 'string')
+	return input;
+    else {
+	try {
+	    return Expression.fromText( input );
+	} catch (err) {
+	    try {
+		return Expression.fromLatex( input );
+	    } catch (err) {
+		return undefined;
+	    }
+	}
+    }
+
+    return undefined;
+}
+
+function assignGlobalVariable( answerBox, text ) {
+    var result = answerBox;
+    
+    if (result.attr('data-id')) {
+	window[result.attr('data-id')] =
+	    parseFormattedInput( result.attr('data-format'), text );
+
+	Javascript.reevaluate(result);
+    }
+}
 
 var createMathAnswer = function() {
     var input = $(this);
     var width = input.width();
 
     var result = $(template);
+    var buttonless = false;
+    if (input.parents('.validator').length > 0) {
+	var result = $(buttonlessTemplate);
+	buttonless = true;
+    }
 
     // Copy over the old attributes!
     _.each( input, function(element) {
@@ -40,7 +88,8 @@ var createMathAnswer = function() {
     });
     
     input.replaceWith( result );
-    result.find( "input.form-control" ).width( width - (138 - 70) );
+    if (!buttonless)
+	result.find( "input.form-control" ).width( width - (138 - 70) );
     
     // Number the answer boxes in order
     var count = result.parents( ".problem-environment" ).attr( "data-answer-count" );
@@ -54,11 +103,13 @@ var createMathAnswer = function() {
     // Store the answer index as an id
     result.attr('id', "answer" + count + problemIdentifier);
     
-    // When the box changes, update the database
+    // When the box changes, update the database AND any javascript variables
     var inputBox = result.find( "input.form-control" );
     inputBox.on( 'input', function() {
 	var text = $(this).val();
 	result.persistentData( 'response', text );
+
+	assignGlobalVariable( result, text );	
     });
 
     
@@ -146,13 +197,16 @@ var createMathAnswer = function() {
 
     
     // Tell whoever is above us that we need an answer to proceed
-    result.trigger( 'ximera:answer-needed' );
+    if (!buttonless)    
+	result.trigger( 'ximera:answer-needed' );
     
     // When the database changes, update the box
     result.persistentData( function(event) {
 	if (result.persistentData('response')) {
-	    if ($(inputBox).val() != result.persistentData('response'))
+	    if ($(inputBox).val() != result.persistentData('response')) {
 		$(inputBox).val( result.persistentData('response'));
+		assignGlobalVariable( result, result.persistentData('response') );
+	    }
 	} else {
 	    $(inputBox).val( '' );
 	}
@@ -172,10 +226,11 @@ var createMathAnswer = function() {
 	    result.find('.btn-ximera-submit').hide();
 	    
 	    if ((result.persistentData('response') == result.persistentData('attempt')) &&
-		(result.persistentData('response')))
+		(result.persistentData('response'))) {
 		result.find('.btn-ximera-incorrect').show();
-	    else
+	    } else {
 		result.find('.btn-ximera-submit').show();
+	    }
 	}
 	
     });
@@ -192,30 +247,32 @@ var createMathAnswer = function() {
     result.find( ".btn-ximera-submit" ).click( function() {
 	var correctAnswerText = result.attr('data-answer');
 	var correctAnswer;
+	var format = result.attr('data-format');
+	if (format === undefined) format = 'expression';
+	
+	if (format == 'integer')
+	    correctAnswer = parseInt(correctAnswerText);
+	else if (format == 'float')
+	    correctAnswer = parseFloat(correctAnswerText);
+	else if (format == 'string')
+	    correctAnswer = correctAnswerText;
+	else {
+	    try {	    
+		correctAnswer = Expression.fromLatex(correctAnswerText);
+	    } catch (err) {
+		try {
+		    correctAnswer = Expression.fromMml(correctAnswerText);
+		} catch (err) {
+		    console.log( "Instructor error in \\answer: " + err );
+		    correctAnswer = Expression.fromText( "sqrt(-1)" );
+		}
+	    }
+	}
 
-	try {	    
-	    correctAnswer = Expression.fromLatex(correctAnswerText);
-	} catch (err) {
-	    try {	    		
-		correctAnswer = Expression.fromMml(correctAnswerText);
-	    } catch (err) {
-		console.log( "Instructor error in \\answer: " + err );
-		correctAnswer = Expression.fromText( "sqrt(-1)" );
-	    }
-	}
-	
-	var studentAnswer;
 	var studentAnswerText = inputBox.val();
-	
-	try {
-	    studentAnswer = Expression.fromText( studentAnswerText );
-	} catch (err) {
-	    try {
-		studentAnswer = Expression.fromLatex( studentAnswerText );
-	    } catch (err) {
-		studentAnswer = Expression.fromText( "sqrt(-1)" );
-	    }
-	}
+	var studentAnswer = parseFormattedInput(format, studentAnswerText);
+	if (studentAnswer === undefined)
+	    studentAnswer = Expression.fromText( "sqrt(-1)" );
 	
 	var tolerance = result.attr('data-tolerance');
 	
@@ -232,7 +289,29 @@ var createMathAnswer = function() {
 	    if (result.persistentData( 'correct' ))
 		result.trigger( 'ximera:correct' );
 	} else {
-	    if (studentAnswer.equals( correctAnswer )) {
+	    var correct = false;
+
+	    if (result.attr('data-validator')) {
+		var code = result.attr('data-validator');
+		try {
+		    var f = Function('return ' + code + ';');
+		
+		    correct = f.call(studentAnswer);
+		    if (typeof correct === 'function')
+			correct = correct(studentAnswer, correctAnswer);
+		} catch (err) {
+		    console.log(err);
+		    correct = false;
+		}
+	    } else {
+		if (format !== 'expression') {
+		    console.log( "compare ", correctAnswer, " and ", studentAnswer );
+		    correct = (correctAnswer == studentAnswer);
+		} else
+		    correct = studentAnswer.equals( correctAnswer );
+	    }
+	    
+	    if (correct) {
 		result.persistentData( 'correct', true );
 		result.trigger( 'ximera:correct' );
 	    } else {
@@ -249,10 +328,28 @@ var createMathAnswer = function() {
 	return false;
     });
 
-    inputBox.keyup(function(event) {
-	if (event.keyCode == 13) {
-	    result.find( ".btn-ximera-submit" ).click();
+    
+    inputBox.keydown(function(event){
+	if(event.keyCode == 13) {
+	    event.preventDefault();
+	    return false;
 	}
+    });
+    
+    inputBox.keyup(function(event) {
+	if (buttonless)
+	    result.closest('.validator').trigger( 'ximera:answers-changed' );
+	
+	if (event.keyCode == 13) {
+	    if (!buttonless)
+		result.find( ".btn-ximera-submit" ).click();
+	    else {
+		// Submit the validator if it is wrapped in a validator
+		result.closest( '.validator' ).find( ".btn-ximera-submit" ).click();
+	    }
+	}
+
+	return false;
     });
     
     popover.bindPopover( result );

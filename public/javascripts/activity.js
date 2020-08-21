@@ -16,14 +16,20 @@ var foldable = require('./foldable');
 var freeResponse = require('./free-response');
 var shuffle = require('./shuffle');
 var feedback = require('./feedback');
+var validator = require('./validator');
+var javascript = require('./javascript');
 
 var connectInteractives = require('./interactives').connectInteractives;
+
+var annotator = require('./annotator');
 
 var createActivity = function() {
     var activity = $(this);
 
     console.log("ACTIVITY");
 
+    //$('.activity-body', this).annotator();
+    
     activity.fetchData( function(db) {
 	activity.persistentData( function() {
 	    if (!(activity.persistentData( 'experienced' ))) {
@@ -52,7 +58,9 @@ var createActivity = function() {
 	$(".free-response", activity).freeResponse();
 	
 	$(".shuffle", activity).shuffle();
-	$(".feedback", activity).feedback();	    
+	$(".feedback", activity).feedback();
+	$(".validator", activity).validator();
+	$(".inline-javascript", activity).javascript();
 
 	connectInteractives();
 	
@@ -70,14 +78,26 @@ $.fn.extend({
     recordCompletion: function(proportionComplete) {
 	var hash = $(this).activityHash();
 
+	var payload = {complete: proportionComplete};
+	
 	if (hash != undefined) {
+	    var repositoryName = $(this).repositoryName();
+	    if (repositoryName) {
+		payload.repositoryName = repositoryName;
+	    }
+
+	    var activityPath = $(this).activityPath();
+	    if (activityPath) {
+		payload.activityPath = activityPath;
+	    }	    
+	    
 	    $.ajax({
 		url: '/completion/' + hash,
 		type: 'PUT',
-		data: JSON.stringify({complete: proportionComplete}),
+		data: JSON.stringify(payload),
 		contentType: 'application/json',
 		success: function( result ) {
-		    console.log( "recording completion for " + hash );
+		    console.log( "recording completion " + JSON.stringify(payload) + " for " + hash );
 		},
 	    });
 	}

@@ -38,14 +38,41 @@ function videoVerb( target, container, verb, word )
     });
 }
 
-function videoStarted( target, container ) {
-    videoVerb( target, container, "http://activitystrea.ms/schema/1.0/play", "played" );
+function videoStarted( target, container, start ) {
+    TinCan.recordStatement({
+        verb: {
+            id: "http://activitystrea.ms/schema/1.0/play",
+            display: {'en-US': "played"}
+        },
+        object: videoObject( target ),
+	context: {
+            extensions: {
+		"http://id.tincanapi.com/extension/starting-point": start
+            },
+	    contextActivities: {
+		parent: TinCan.activityHashToActivityObject( $(container).activityHash() )
+	    }
+        }
+    });
 }
 
-function videoPaused( target, container ) {
-    videoVerb( target, container, "http://id.tincanapi.com/verb/paused", "paused" );
+function videoPaused( target, container, finish ) {
+    TinCan.recordStatement({
+        verb: {
+            id: "http://id.tincanapi.com/verb/paused",
+            display: {'en-US': "paused"}
+        },
+        object: videoObject( target ),
+	context: {
+            extensions: {
+		"http://id.tincanapi.com/extension/ending-point": finish
+            },
+	    contextActivities: {
+		parent: TinCan.activityHashToActivityObject( $(container).activityHash() )
+	    }
+        }
+    });
 }
-
 
 function videoEnded( target, container ) {
     videoVerb( target, container, "http://activitystrea.ms/schema/1.0/complete", "completed" );
@@ -101,15 +128,12 @@ function videoWatched(target, container, start, finish) {
 function onPlayerStateChange(event, container, videoId) {
     var container = $('#' + container);
     
-    console.log(event);
-    
     var lastPlayerState = container.data('lastPlayerState');
     var lastPlayerTime = container.data('lastPlayerTime');
     
-    console.log( "state = " + event.data );
     switch (event.data) {
     case (YT.PlayerState.PLAYING):
-        videoStarted(event.target, container);
+        videoStarted(event.target, container, event.target.getCurrentTime());
         break;
 	
     case (YT.PlayerState.PAUSED):
@@ -119,7 +143,7 @@ function onPlayerStateChange(event, container, videoId) {
 	    // BADBAD: I am not getting this to fire, ever. Oh well.
             videoSkipped(event.target, container, lastPlayerTime, event.target.getCurrentTime());
         }
-        videoPaused(event.target, container);
+        videoPaused(event.target, container, event.target.getCurrentTime());
         break;
 	
     case (YT.PlayerState.ENDED):

@@ -38,8 +38,6 @@ window.Tether = tether;
 var bootstrap = require('bootstrap');
 var kinetic = require('jquery.kinetic/jquery.kinetic.min.js');
 
-require('./chat');
-
 var syntaxHighlighter = require('syntaxhighlighter');
 window.sh = syntaxHighlighter;
 syntaxHighlighter.registerBrush(require('./brushes/shBrushLatex'));
@@ -82,7 +80,11 @@ MathJax.Hub.Register.MessageHook("Math Processing Error",function (message) {
     //  do something with the error.  message[2] is the Error object that records the problem.
     console.log(message);
 });
-     
+
+// Cervone says this will speed things up
+MathJax.Hub.processSectionDelay = 0;
+MathJax.Hub.processUpdateTime = 0;
+
 MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
     
     // Remove CDATA's from the script tags
@@ -358,7 +360,6 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
 		answer.parent = {inferRow: false};
 		var correctAnswerMml = answer.toMathML("");	
 		var correctAnswer = Expression.fromMml(correctAnswerMml).toString().toString();
-		console.log( correctAnswer.length );		
 		if (correctAnswer.length <= 3) {
 		    input.classList.add('narrow'); // to eliminate some padding
 		    input.style.width = "70px";
@@ -367,7 +368,7 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
 	    }
 	    
 	    this.Push(MML.mpadded(MML.mphantom(answer)).With({height: 0, width: 0}));
-	    
+
 	    mathAnswer.createMathAnswer( input );
 
 	    var xml = MML.xml(input);

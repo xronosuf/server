@@ -15,12 +15,26 @@ window.MathJax = {
     showProcessingMessages: false,
     messageStyle: 'none',
     
+    MathMenu: {
+	showRenderer: false,
+	showMathPlayer: false
+    },
+    
     // BADBAD: this also breaks the layout triggers
     // showMathMenu: false,
-    
+
+    CommonHTML: {
+	EqnChunk: 10000,
+	EqnChunkFactor: 1,
+	EqnChunkDelay: 0
+    },
+
+    "fast-preview": {disabled: true},
+
     TeX: {
 	equationNumbers: { autoNumber: "AMS" },
 	extensions: ["AMSmath.js","AMSsymbols.js","noErrors.js","noUndefined.js","color.js","cancel.js"],
+	noErrors: {disabled: true},
 	Macros: {
 	    xspace: '',
 	    ensuremath: ''

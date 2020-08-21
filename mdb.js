@@ -34,7 +34,7 @@ exports.initialize = function initialize(callback) {
 				      replacedBy: {type: ObjectId, ref:"User"},
 				      course: String,
 				      superuser: Boolean,
-				      username: String,
+				      username: {type: String, index: true, unique: true, sparse: true},
 				      password: String,				      
                                       name: String,
                                       email: String,
@@ -78,6 +78,10 @@ exports.initialize = function initialize(callback) {
                                            dueDate: Date,
                                            untilDate: Date,
 					   pointsPossible: Number,
+
+					   resultScore: Number,
+					   resultTotalScore: Number,
+					   submittedScore: Boolean,
 					   
 					   oauthConsumerKey: String,
 					   oauthSignatureMethod: String,

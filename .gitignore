@@ -1,4 +1,5 @@
 lib-cov
+ecosystem.config.js
 private_key.pem
 *.seed
 *.log
@@ -24,3 +25,4 @@ components
 bower_components
 
 environment.sh
+.env

@@ -1,0 +1,54 @@
+extends layouts/main
+
+block title
+  if xourse && xourse.title
+    | #{xourse.title} &mdash; Instructors
+  else
+    | Instructors
+  
+mixin instructorPanel(instructor)
+  div.media
+    img.d-flex.mr-3(src=instructor.imageUrl)
+    div.media-body
+      h5 #{instructor.name} 
+        if instructor.bridge.roles.filter( f => f.match( /Instructor/ ) ).length > 0
+          <span class="badge badge-default">Instructor</span>&nbsp;            
+        else
+          if instructor.bridge.roles.filter( f => f.match( /TeachingAssistant/ ) ).length > 0
+            <span class="badge badge-default">Instructor</span>&nbsp;             
+          else    
+            for role in instructor.bridge.roles 
+              <span class="badge badge-default">#{role}</span>&nbsp;
+        if instructor.bridge.contextLabel || instructor.bridge.toolConsumerInstanceName
+          small.text-muted &nbsp;
+            if instructor.bridge.contextLabel
+              | #{instructor.bridge.contextLabel}
+            if instructor.bridge.toolConsumerInstanceName
+              | &nbsp;at #{instructor.bridge.toolConsumerInstanceName}
+      a.btn.btn-secondary(href='mailto:' + instructor.email + '?subject=' + subject + '&body=' + body)
+        | <i class="fa fa-envelope"></i>
+        span &nbsp;Send E-Mail
+      
+block content
+  nav(aria-label="breadcrumb",role="navigation")
+    ol.breadcrumb
+      li.breadcrumb-item
+        - var level = 1;
+        a(href="/" + repositoryName, aria-level=level)
+            | !{repositoryName}
+      li.breadcrumb-item
+        - level = level + 1;
+        a(href="/" + repositoryName + "/" + xourse.path,aria-level=level)
+          if (xourse.title) && (xourse.title != '')
+            | !{xourse.title}
+          else
+            | Home
+      li.breadcrumb-item.active
+          | Instructional Staff
+  .container
+    div.row
+      if instructors.length == 0
+        p I am afraid that I do not know the names of your instructors.  Please email <a href="mailto:ximera-help@osu.edu">ximera-help@osu.edu</a> and we will try to help you find them.
+      else
+        for instructor in instructors
+          +instructorPanel(instructor)

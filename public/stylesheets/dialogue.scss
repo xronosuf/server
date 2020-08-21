@@ -1,0 +1,15 @@
+dl.dialogue {
+    margin-top: 18pt;
+    margin-bottom: 18pt;    
+    @extend .row;
+}
+
+dl.dialogue dt {
+    @extend .col-md-2;
+    @extend .text-right;
+    
+}
+
+dl.dialogue dd {
+    @extend .col-md-10;
+}

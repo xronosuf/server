@@ -1,4 +1,5 @@
 var $ = require('jquery');
+var jqueryUI = require('jquery-ui/ui/unique-id');
 var _ = require('underscore');
 var MathJax = require('./mathjax');
 var TinCan = require('./tincan');
@@ -7,32 +8,29 @@ var Expression = require('math-expressions');
 var ProgressBar = require('./progress-bar');
 var popover = require('./popover');
 var Javascript = require('./javascript');
+var palette = require('./math-palette');
 
 // I comment these out to make sure that the input box is rounded, but this breaks the display of the statistics
-var buttonlessTemplate = '<form class="form-inline mathjaxed-input" style="display: inline-block;">' +
-//	'<span class="input-group">' +
-   	'<input class="form-control" type="text"/>' +
-//	'<span class="input-group-btn">' +
-//	'</span>' +
-//	'</span>' +
-	'</form>';
+var buttonlessTemplate = '<input class="form-control" type="text"/>';
 
-var template = '<form class="form-inline mathjaxed-input" style="display: inline-block;">' +
-	'<span class="input-group">' +
+// add labels for screenreader
+var template = '<div class="input-group">' +
    	'<input class="form-control" aria-label="answer" type="text"/>' +
-	'<span class="input-group-btn">' +
-	'<button class="btn btn-success btn-ximera-correct" data-toggle="tooltip" data-placement="top" title="Correct answer!" style="display: none; z-index: 1;" aria-label="correct answer" aria-live="assertive">' +
+        '<span class="input-group-btn">' +
+	'<button class="px-0 btn btn-success btn-ximera-correct" data-toggle="tooltip" data-placement="top" title="Correct answer!" style="display: none; z-index: 1;" aria-label="correct answer" aria-live="assertive">' +
 	'<i class="fa fa-fw fa-check"/>' +
 	'</button>' +
-	'<button class="btn btn-danger btn-ximera-incorrect" data-toggle="tooltip" data-placement="top" title="Incorrect.  Try again!" style="display: none; z-index: 1;" aria-label="incorrect!  try again" aria-live="assertive">' +
+	'<button class="px-0 btn btn-danger btn-ximera-incorrect" data-toggle="tooltip" data-placement="top" title="Incorrect.  Try again!" style="display: none; z-index: 1;" aria-label="incorrect!  try again" aria-live="assertive">' +
 	'<i class="fa fa-fw fa-times"/>' +
+        '</button>' +
+	'<button class="px-0 btn btn-primary disabled btn-ximera-checking" aria-label="evaluating your work" data-toggle="tooltip" data-placement="top" title="Evaluating your work..." style="z-index: 1; display: none;">' +
+	'<i class="fa fa-fw fa-spinner fa-spin"/>' +
 	'</button>' +
-	'<button class="btn btn-primary btn-ximera-submit" aria-label="check work" data-toggle="tooltip" data-placement="top" title="Click to check your answer." style="z-index: 1;">' +
+	'<button class="px-0 btn btn-primary btn-ximera-submit" aria-label="check work" data-toggle="tooltip" data-placement="top" title="Click to check your answer." style="z-index: 1;">' +
 	'<i class="fa fa-fw fa-question"/>' +
 	'</button>' +
 	'</span>' +
-	'</span>' +
-        '</form>';
+    '</div>';
 
 function parseFormattedInput( format, input ) {
     if (format == 'integer')
@@ -67,52 +65,84 @@ function assignGlobalVariable( answerBox, text ) {
     }
 }
 
-var createMathAnswer = function() {
-    var input = $(this);
+exports.createMathAnswer = function(input, answer) {
+    input = $(input);
     var width = input.width();
 
     var result = $(template);
     var buttonless = false;
+
+    // BADBAD: since the thing isn't in the DOM, I can't tell if it should be buttonless.
+    
     if (input.parents('.validator').length > 0) {
 	var result = $(buttonlessTemplate);
 	buttonless = true;
     }
+    
+    input.append( result );
 
-    // Copy over the old attributes!
-    _.each( input, function(element) {
-	_.each( element.attributes, function(a) {
-	    if (a.name.match( /^data-/ )) {
-		result.attr( a.name, a.value );
-	    }
-	});
-    });
-    
-    input.replaceWith( result );
-    if (!buttonless)
-	result.find( "input.form-control" ).width( width - (138 - 70) );
-    
-    // Number the answer boxes in order
-    var count = result.parents( ".problem-environment" ).attr( "data-answer-count" );
-    if (typeof count === typeof undefined || count === false)
-	count = 0;
-    
-    result.parents( ".problem-environment" ).attr( "data-answer-count", parseInt(count) + 1 );
-    var problem = result.parents( ".problem-environment" ).first();
-    var problemIdentifier = result.parents( ".problem-environment" ).attr( "id" );
+    return;
+}
 
-    // Store the answer index as an id
-    result.attr('id', "answer" + count + problemIdentifier);
+exports.connectMathAnswer = function(result, answer) {
+    var buttonless = false;
+    if (result.parents('.validator').length > 0) {
+	buttonless = true;
+    }
     
     // When the box changes, update the database AND any javascript variables
     var inputBox = result.find( "input.form-control" );
+    
     inputBox.on( 'input', function() {
 	var text = $(this).val();
 	result.persistentData( 'response', text );
-
 	assignGlobalVariable( result, text );	
     });
 
+    // ACCESSIBILITY: unfortunately, we prevent spacebar from opening
+    // a mathjax menu.  By enabling menus in mathjax, right-clicking
+    // still opens the menu.
+    //inputBox.on( 'keydown', function(event) {
+    inputBox.on( 'keydown', function(event) {	
+	if (event.keyCode == 32) {
+	    event.stopPropagation();
+	}
+    });
+
+    ////////////////////////////////////////////////////////////////
+    // Link the "math editor" button in the toolbar to the CURRENTLY
+    // FOCUSED textfield
+    function updateMathEditButton() {
+	if ($(document.activeElement).attr('data-input-box'))
+	    $("#math-edit-button").show();
+	else
+	    $("#math-edit-button").hide();
+    }
+
+    /*
+      If you happen to click outside a math input box, then the math
+    editor will still be linked to your previous choice.
+    inputBox.focusout( function() { window.setTimeout( function() {
+    updateMathEditButton(); }, 100 ); });
+    */
     
+    inputBox.focus( function() {
+	$(this).attr( 'data-input-box', true );
+	updateMathEditButton();
+	
+	$("#math-edit-button").unbind("click");
+	$("#math-edit-button").click( function() {
+	    palette.launch( inputBox.val(),
+			    function( err, text ) {
+				inputBox.val(text),
+				result.persistentData( 'response', text );
+				assignGlobalVariable( result, text );
+				inputBox.focus();
+				inputBox.trigger('input');
+			    });
+	});
+    });
+
     result.on( 'ximera:statistics:answers', function(event, answers) {
 	var total = Object.keys( answers ).map( function(x) { return answers[x]; } ).reduce(function(a, b) { return a + b; });
 
@@ -214,15 +244,19 @@ var createMathAnswer = function() {
 	if (result.persistentData('correct')) {
 	    result.find('.btn-ximera-correct').show();
 	    result.find('.btn-ximera-incorrect').hide();
+	    result.find('.btn-ximera-checking').hide();			    
 	    result.find('.btn-ximera-submit').hide();
 	    
 	    inputBox.prop( 'disabled', true );
+	    // Disabled elements won't fire the blur event that would otherwise hide this
+	    $(result).popover('hide');	    
 	} else {
 	    inputBox.prop( 'disabled', false );
 
 	    // I'm doing "result.find('.btn').hide();" but avoiding the info button
 	    result.find('.btn-ximera-correct').hide();
 	    result.find('.btn-ximera-incorrect').hide();
+	    result.find('.btn-ximera-checking').hide();			    	    
 	    result.find('.btn-ximera-submit').hide();
 	    
 	    if ((result.persistentData('response') == result.persistentData('attempt')) &&
@@ -245,24 +279,41 @@ var createMathAnswer = function() {
     });
     
     result.find( ".btn-ximera-submit" ).click( function() {
-	var correctAnswerText = result.attr('data-answer');
+	// We're passing an "answer" from MathJax, as "jax"
+	answer.parent = {inferRow: false};
+	var correctAnswerText = answer.toMathML("");	
+	correctAnswerText = correctAnswerText.replace('<none>', '').replace('</none>','');
+	correctAnswerText = correctAnswerText.replace('<mphantom>', '<math>').replace('</mphantom>','</math>');
+	
 	var correctAnswer;
 	var format = result.attr('data-format');
 	if (format === undefined) format = 'expression';
-	
-	if (format == 'integer')
+
+	if ((format == 'integer') || (format == 'float')) {
+	    correctAnswerText = correctAnswerText.replace('<math>', '').replace('</math>','');
+	    correctAnswerText = correctAnswerText.replace('<mn>', '').replace('</mn>','');
+	}
+
+	if (format == 'string') {
+	    correctAnswerText = correctAnswerText.replace('<math>', '').replace('</math>','');
+	    correctAnswerText = correctAnswerText.replace('<mtext>', '').replace('</mtext>','');
+	    correctAnswerText = correctAnswerText.trim();
+	}
+
+	if (format == 'integer') {
 	    correctAnswer = parseInt(correctAnswerText);
-	else if (format == 'float')
+	} else if (format == 'float') {
 	    correctAnswer = parseFloat(correctAnswerText);
-	else if (format == 'string')
+	} else if (format == 'string') {
 	    correctAnswer = correctAnswerText;
-	else {
+	} else {
 	    try {	    
 		correctAnswer = Expression.fromLatex(correctAnswerText);
 	    } catch (err) {
 		try {
 		    correctAnswer = Expression.fromMml(correctAnswerText);
 		} catch (err) {
+		    console.log(correctAnswerText);
 		    console.log( "Instructor error in \\answer: " + err );
 		    correctAnswer = Expression.fromText( "sqrt(-1)" );
 		}
@@ -304,19 +355,54 @@ var createMathAnswer = function() {
 		    correct = false;
 		}
 	    } else {
-		if (format !== 'expression') {
-		    console.log( "compare ", correctAnswer, " and ", studentAnswer );
-		    correct = (correctAnswer == studentAnswer);
-		} else
-		    correct = studentAnswer.equals( correctAnswer );
+		if (format === 'string') {
+		    // Strings should be normalized to uppercase when
+		    // doing case insensitive comparison, per
+		    // https://msdn.microsoft.com/en-us/library/bb386042.aspx
+		    correct = (correctAnswer.toUpperCase() == studentAnswer.toUpperCase());
+		} else {
+		    if (format !== 'expression') {
+			console.log( "compare ", correctAnswer, " and ", studentAnswer );
+			correct = (correctAnswer == studentAnswer);
+		    } else
+			correct = studentAnswer.equals( correctAnswer );
+		}
 	    }
-	    
-	    if (correct) {
-		result.persistentData( 'correct', true );
-		result.trigger( 'ximera:correct' );
+
+	    // Check if the correct answer is actually a promise to check for correctness
+	    if (correct.then) {
+		result.find('.btn-ximera-correct').hide();
+		result.find('.btn-ximera-incorrect').hide();
+		result.find('.btn-ximera-checking').show();
+		result.find('.btn-ximera-submit').hide();
+		// Disabled elements won't fire the blur event that would otherwise hide this		
+		inputBox.prop( 'disabled', true );
+		
+		correct.then( function(value) {
+		    if (value) {
+			result.persistentData( 'correct', true );
+			result.trigger( 'ximera:correct' );
+		    } else {
+			result.persistentData( 'correct', false );
+			result.persistentData( 'attempt', inputBox.val() );
+		    }
+		}, function(reason) {
+		    result.find('.btn-ximera-correct').hide();
+		    result.find('.btn-ximera-incorrect').hide();
+		    result.find('.btn-ximera-checking').hide();
+		    result.find('.btn-ximera-submit').show();
+		    inputBox.prop( 'disabled', false );
+
+		    alert(reason);
+		});
 	    } else {
-		result.persistentData( 'correct', false );
-		result.persistentData( 'attempt', inputBox.val() );
+		if (correct) {
+		    result.persistentData( 'correct', true );
+		    result.trigger( 'ximera:correct' );
+		} else {
+		    result.persistentData( 'correct', false );
+		    result.persistentData( 'attempt', inputBox.val() );
+		}
 	    }
 	}
 
@@ -355,10 +441,5 @@ var createMathAnswer = function() {
     popover.bindPopover( result );
 };
 
-$.fn.extend({
-    mathAnswer: function() {
-	return this.each( createMathAnswer );
-    }
-});    
 
 

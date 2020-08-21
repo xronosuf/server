@@ -1,11 +1,47 @@
+[![Build Status](https://travis-ci.org/XimeraProject/server.svg?branch=master)](https://travis-ci.org/XimeraProject/server)
+
 The XIMERA Project
 ==================
 LaTeX to online interactive materials. 
+
+To set up a server on arch, one can as root
+```
+pacman -S nodejs npm git mongodb nginx redis
+systemctl enable mongodb
+systemctl start mongodb
+systemctl enable nginx
+systemctl start nginx
+systemctl enable redis
+systemctl start redis
+```
+and then as a regular user
+```
+git clone https://github.com/XimeraProject/server.git
+cd server
+npm install
+```
+
+
+To quickly set up a server using Ubuntu Linux 16.04 LTS (which is availble on AWS and a t2.small is sufficient), you can:
+
+```
+sudo apt-get install nginx mongodb libcurl4-gnutls-dev libgit2-dev
+curl -sL https://deb.nodesource.com/setup_7.x -o nodesource_setup.sh
+sudo bash nodesource_setup.sh
+sudo apt-get install nodejs
+sudo ln /usr/bin/nodejs /usr/bin/node
+git clone https://github.com/XimeraProject/server.git
+cd server
+npm install
+BUILD_ONLY=true npm install nodegit
+```
 
 
 Setting up a server
 ===================
 If you want to install it on Windows, set 'Setting up a server on Windows' below.
+
+
 
 1. Install `g++`, `nodejs` and `mongodb` on your computer (under Debian, may also need `nodejs-legacy` package)
 2. Run an instance of mongo server:
@@ -29,18 +65,18 @@ This creates a directory containing BSON and JSON files
 
         git clone https://github.com/kisonecat/ximera
 
-6. Create file `env.sh` with content:
+6. Create file `.env` with content:
 
-        export XIMERA_MONGO_URL=127.0.0.1
-        export XIMERA_MONGO_DATABASE=test
-        export XIMERA_COOKIE_SECRET=thisismysecretcookieyoushouldchangethis
-        export COURSERA_CONSUMER_KEY=thisisacourserakey
-        export COURSERA_CONSUMER_SECRET=courserasecretkey
-        export LTI_KEY=myltikey
-        export LTI_SECRET=myltisecret
-        export GITHUB_WEBHOOK_SECRET=githubwebhooksecret
+        XIMERA_MONGO_URL=127.0.0.1
+        XIMERA_MONGO_DATABASE=test
+        XIMERA_COOKIE_SECRET=thisismysecretcookieyoushouldchangethis
+        COURSERA_CONSUMER_KEY=thisisacourserakey
+        COURSERA_CONSUMER_SECRET=courserasecretkey
+        LTI_KEY=myltikey
+        LTI_SECRET=myltisecret
+        GITHUB_WEBHOOK_SECRET=githubwebhooksecret
 
-Type `source env.sh` to execute those commands
+This file will be loaded by the `dotenv` package.
 
 Note that if you used a different database name, you should set XIMERA_MONGO_DATABASE to the name of your database.
 
@@ -52,10 +88,9 @@ Note that if you used a different database name, you should set XIMERA_MONGO_DAT
 
 If you are having trouble installing the canvas package and are on a Debian-based distribution, you can try `sudo apt-get install libcairo2-dev libjpeg-dev libgif-dev`
 
-You should install bower by running the following commands
+You should run gulp with the following commands
 
         node ./node_modules/bower/bin/bower install
-        cd ./components/mathquill
         npm install
         cd ../..
         mkdir -p components/syntaxhighlighter/amd

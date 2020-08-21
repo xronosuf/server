@@ -7,13 +7,13 @@ var database = require('./database');
 var TinCan = require('./tincan');
 
 
-var buttonTemplate = _.template( '<label class="btn btn-default <%= correct %>" id="<%= id %>"></label>' );
+var buttonTemplate = _.template( '<button class="btn text-left btn-secondary <%= correct %>" id="<%= id %>"></button>' );
 
-var answerHtml = '<div class="btn-group" style="vertical-align: bottom;" aria-live="assertive">' +
+var answerHtml = '<div class="btn-group" style="vertical-align: bottom; " aria-live="assertive">' +
 	'<button class="btn btn-success btn-ximera-correct" data-toggle="tooltip" data-placement="top" title="Correct answer!" style="display: none">' +
 	'<i class="fa fa-check"/>&nbsp;Correct' +
 	'</button></div>' +
-	'<div class="btn-group" style="vertical-align: bottom;" aria-live="assertive">' +
+	'<div class="btn-group" style="vertical-align: bottom; " aria-live="assertive">' +
 	'<button class="btn btn-danger btn-ximera-incorrect" data-toggle="tooltip" data-placement="top" title="Incorrect.  Try again!" style="display: none">' +
 	'<i class="fa fa-times"/>&nbsp;Try again' +
 	'</button></div>' +
@@ -45,13 +45,12 @@ var createSelectAll = function() {
     });
 
     selectAll.trigger( 'ximera:answer-needed' );
-    
+
     selectAll.persistentData(function(event) {
-	selectAll.find( 'label').removeClass('active');
+	selectAll.find( 'button').removeClass('active');
 	
 	if (selectAll.persistentData('chosen')) {
 	    selectAll.persistentData('chosen').forEach( function(id) {
-		console.log( id );
 		selectAll.find( '#' + id ).addClass('active');
 	    });
 	    
@@ -66,25 +65,29 @@ var createSelectAll = function() {
 	    selectAll.find( '.btn-group button' ).hide();
 	    selectAll.find( '.btn-group .btn-ximera-correct' ).show();
 	    
-	    selectAll.find( 'label' ).not( '.correct' ).addClass( 'disabled' );
-	    selectAll.find( 'label .correct' ).removeClass('disabled');
+	    selectAll.find( 'button' ).not( '.correct' ).addClass( 'disabled' );
+	    selectAll.find( 'button .correct' ).removeClass('disabled');
 	} else {
-	    selectAll.find( 'label' ).removeClass( 'disabled' );
+	    selectAll.find( 'button' ).removeClass( 'disabled' );
 	    
 	    selectAll.find( '.btn-group button' ).hide();
 
+	    var checked = selectAll.persistentData('checked');
+	    if (checked) checked = checked.filter( function(x) { return x != null; } );
+	    
+	    var chosen = selectAll.persistentData('chosen');
+	    if (chosen) chosen = chosen.filter( function(x) { return x != null; } );
+
 	    if (selectAll.persistentData('checked') &&
-		(_.isEqual( _.sortBy( selectAll.persistentData('checked') ),
-			    _.sortBy( selectAll.persistentData('chosen')))))
+		(_.isEqual( _.sortBy( checked ), _.sortBy( chosen ) )))
 		selectAll.find( '.btn-group .btn-ximera-incorrect' ).show();
 	    else {
-		selectAll.find( '.btn-group .btn-ximera-submit' ).show();
 		selectAll.find( '.btn-group .btn-ximera-submit' ).show();		    
 	    }
 	}
 
-	selectAll.find( '.btn-ximera-submit' ).prop( 'disabled', ! selectAll.find( 'label' ).hasClass( 'active' ) );
-	selectAll.find( '.btn-ximera-incorrect' ).prop( 'disabled', ! selectAll.find( 'label' ).hasClass( 'active' ) );
+	selectAll.find( '.btn-ximera-submit' ).prop( 'disabled', ! selectAll.find( 'button' ).hasClass( 'active' ) );
+	selectAll.find( '.btn-ximera-incorrect' ).prop( 'disabled', ! selectAll.find( 'button' ).hasClass( 'active' ) );
     });
 
     var checkAnswer = function() {
@@ -94,9 +97,9 @@ var createSelectAll = function() {
 	    var chosen = selectAll.persistentData('chosen');
 
 	    var correct = true;
-	    selectAll.find('label').each( function() {
+	    selectAll.find('button.btn-secondary').each( function() {
 		var id = $(this).attr('id');
-		
+		console.log(id);
 		if ($(this).hasClass('correct') !== _.contains( chosen, id ))
 		    correct = false;
 	    });
@@ -108,7 +111,7 @@ var createSelectAll = function() {
 	    if (selectAll.persistentData('correct')) {
 		selectAll.trigger( 'ximera:correct' );
 	    }
-
+	    
 	    TinCan.answer( selectAll, { response: selectAll.persistentData('chosen'),
 					success: selectAll.persistentData('correct') } );
 	}
@@ -116,9 +119,13 @@ var createSelectAll = function() {
     
     $(this).find( ".btn-ximera-submit" ).click( checkAnswer );
     $(this).find( ".btn-ximera-incorrect" ).click( checkAnswer );
-    
-    $(this).find( "label" ).each( function() {
+
+    $(this).find( "button.btn-secondary" ).each( function() {
 	$(this).click( function() {
+	    if (($(this).hasClass('disabled'))) {
+		return false;
+	    }
+	    
 	    if (selectAll.persistentData('correct'))
 		return false;
 	    
@@ -127,13 +134,11 @@ var createSelectAll = function() {
 
 	    if (!chosen)
 		chosen = [];
-	    
+
 	    if (_.contains(chosen, id))
 		selectAll.persistentData('chosen', _.difference( chosen, [id] ) );
 	    else
 		selectAll.persistentData('chosen', _.union( chosen, [id] ) );
-
-	    console.log( selectAll.persistentData('chosen' ) );
 
 	    return false;	    
 	});

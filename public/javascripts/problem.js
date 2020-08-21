@@ -1,14 +1,24 @@
 var $ = require('jquery');
 var _ = require('underscore');
-var MathJax = require('./mathjax');
 var TinCan = require('./tincan');
 var database = require('./database');
 
-var hintButtonHtml = '<button class="btn btn-info btn-reveal-hint" type="button" data-toggle="tooltip" data-placement="top" title="Reveal the next hint."><i class="fa fa-life-ring"/>&nbsp; Reveal Hint<span class="counter" style="display: none;"> (<span class="count">1</span>)</span></button>';
+var hintCountdown = 30;
 
-var rejax = function() {
-    MathJax.Hub.Queue(["Rerender", MathJax.Hub]);
-};
+$(function() {
+    var timer = window.setInterval( function() {
+	if (hintCountdown > 0) {
+	    hintCountdown = hintCountdown - 1;
+	    $('.seconds-remaining').text(hintCountdown.toString());
+	} else {
+	    window.clearInterval(timer);
+	    $('.countdown').hide();
+	    $('.hint-unlocked').show();	    
+	}
+    }, 1000);
+});
+
+var hintButtonHtml = '<button class="btn btn-info btn-reveal-hint" type="button" data-toggle="tooltip" data-placement="top" title="Reveal the next hint."><i class="fa fa-life-ring"/>&nbsp; Reveal Hint<span class="counter" style="display: none;"> (<span class="count">1</span> of <span class="total">1</span>)</span><span class="hint-locked" style="display: none;"><span class="countdown"> (<i class="fa fa-lock"/> <span class="seconds-remaining">1</span>)</span><span class="hint-unlocked" style="display: none;"> <i class="fa fa-unlock"/></span></span></button>';
 
 var createProblem = function() {
     var problem = $(this);
@@ -42,7 +52,7 @@ var createProblem = function() {
 		visible = true;
 
 	    var parent = problem.parents(".problem-environment").first();
-	    if ( ! (parent.persistentData( 'blocking' )))
+	    if (!$(parent).attr('data-blocking'))
 		visible = true;
 	    
 	    if (visible) {
@@ -84,7 +94,6 @@ var createProblem = function() {
 
 	// 'blocking' is used for progress calculations, which must
 	// survive the erase work button
-	problem.persistentData( 'blocking', true );	
 	problem.attr( 'data-blocking', true );
 	
 	return false;
@@ -98,7 +107,7 @@ var createProblem = function() {
 	    return true;
 	
 	var hints = [];
-	
+
 	if (problem.data( 'hints' ))
 	    hints = problem.data( 'hints' );
 	
@@ -107,16 +116,40 @@ var createProblem = function() {
 	
 	if (hints.length == 1) {
 	    hintButton.click( function(event) {
+		if (hintCountdown > 0) {
+		    hintButton.find( ".hint-locked" ).show();		    
+		    return;
+		}
+		
+		hintButton.find( ".counter" ).show();	    
+		
+		var revealed = _.filter( hints, function(element) { return $(element).persistentData('available'); } );
+		hintButton.find( ".count" ).html( revealed.length + 1 );
+		
 		var nextHint = _.first( _.filter( hints, function(element) { return ! $(element).persistentData('available'); } ) );
 		$(nextHint).persistentData('available', true );
 		$(nextHint).persistentData('collapsed', false );
+
+		nextHint = _.first( _.filter( hints, function(element) { return ! $(element).persistentData('available'); } ) );		
+		if (!nextHint) {
+		    problem.persistentData('uncovered-all-hints', true );
+		}
+	    });
+
+	    problem.persistentData( function() {
+		if (problem.persistentData( 'uncovered-all-hints' ))
+		    $(hintButton).fadeOut();		    
+		else
+		    hintButton.show();	    
 	    });
 	    
-	    problem.prepend( hintButton );
+	    problem.prepend( hintButton );	    
 	} else {
-	    hintButton.find( ".count" ).html( hints.length );
+	    hintButton.find( ".total" ).html( hints.length );
 	}
-	
+
+	var revealed = _.filter( hints, function(element) { return $(element).persistentData('available'); } );
+		
 	return false;
     });
 
@@ -133,10 +166,10 @@ var createProblem = function() {
 	    
 	    // When a problem is complete, we announce it to the world
 	    problem.trigger( 'ximera:complete' );
-
+	    
 	    // Uncover the next level of problem-environments
 	    problem.find('.problem-environment').not('.hint').each( function() {
-		if ($(this).parent('.problem-environment').first().is(problem)) {
+		if ($(this).parent().closest('.problem-environment').is(problem)) {
 		    $(this).persistentData( 'available', true );
 		}
 	    });

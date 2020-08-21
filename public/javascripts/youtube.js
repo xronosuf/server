@@ -1,4 +1,5 @@
 var $ = require('jquery');
+var jqueryUI = require('jquery-ui/ui/unique-id');
 var _ = require('underscore');
 var TinCan = require('./tincan');
 
@@ -39,6 +40,7 @@ function videoVerb( target, container, verb, word )
 }
 
 function videoStarted( target, container, start ) {
+
     TinCan.recordStatement({
         verb: {
             id: "http://activitystrea.ms/schema/1.0/play",
@@ -125,46 +127,86 @@ function videoWatched(target, container, start, finish) {
     });
 }
 
+function updateViewedFraction(event, container) {
+    var currentTime = event.target.getCurrentTime();
+
+    if (event.target.getDuration() > 0) {
+	var duration = event.target.getDuration();
+	
+	if (container.persistentData('fractionViewed')) {
+	    if ((currentTime/duration) > container.persistentData('fractionViewed')) {
+		container.persistentData('fractionViewed', currentTime / duration);
+	    }
+	} else {
+	    container.persistentData('fractionViewed', currentTime / duration);
+	}
+    }
+}
+
 function onPlayerStateChange(event, container, videoId) {
     var container = $('#' + container);
     
     var lastPlayerState = container.data('lastPlayerState');
-    var lastPlayerTime = container.data('lastPlayerTime');
+    updateViewedFraction( event, container );
     
     switch (event.data) {
     case (YT.PlayerState.PLAYING):
+	container.data( 'lastPlayedTime', event.target.getCurrentTime() );
         videoStarted(event.target, container, event.target.getCurrentTime());
         break;
 	
     case (YT.PlayerState.PAUSED):
-        if (lastPlayerState == YT.PlayerState.PLAYING) {
-            videoWatched(event.target, container, lastPlayerTime, event.target.getCurrentTime())
-        } else if (lastPlayerState == YT.PlayerState.PAUSED) {
-	    // BADBAD: I am not getting this to fire, ever. Oh well.
-            videoSkipped(event.target, container, lastPlayerTime, event.target.getCurrentTime());
-        }
-        videoPaused(event.target, container, event.target.getCurrentTime());
+	var timer = setTimeout(
+	    function() {
+		if (lastPlayerState == YT.PlayerState.PLAYING) {
+		    videoWatched(event.target, container, container.data('lastPlayedTime'), event.target.getCurrentTime())
+		}
+		videoPaused(event.target, container, event.target.getCurrentTime());		
+	    }, 250);
+
+	container.data( 'lastPausedTime', event.target.getCurrentTime() );	
+	container.data( 'timer', timer );
         break;
+
+    case (YT.PlayerState.BUFFERING):
+	clearTimeout( container.data( 'timer' ) );
+
+	if (lastPlayerState != YT.PlayerState.UNSTARTED) {
+	    videoWatched(event.target, container, container.data('lastPlayedTime'), container.data('currentTime') );
+	    videoSkipped(event.target, container, container.data('currentTime'), event.target.getCurrentTime());
+	}
+	break;
 	
     case (YT.PlayerState.ENDED):
 	// BADBAD: I'm faking this as if it meant "completed" but it
 	// doesn't necessarily mean the learner watched ALL the video
+        videoWatched(event.target, container, container.data('lastPlayedTime'), event.target.getCurrentTime());
         videoEnded(event.target, container);
         break;
 	
     case (YT.PlayerState.UNSTARTED):
         break;
     }
-    container.data( 'lastPlayerTime', event.target.getCurrentTime() );
+    
     container.data( 'lastPlayerState', event.data );
 }
 
-function onPlayerReady(event) {
+function onPlayerReady(event, container, videoId) {
     var target = event.target;
     // Matt Thomas requests that videos defualt to something with a higher resolution
     target.setPlaybackQuality("hd720");
-}
 
+    // This is the only way I could capture the "watched" events
+    container = $('#' + container);
+    
+    window.setInterval( function(){
+	container.data( 'currentTime', target.getCurrentTime() );
+    }, 200); // 200ms granularity seems good enough to me
+
+    window.setInterval( function(){
+	updateViewedFraction( event, container );
+    }, 17011);
+}
 
 var videosToConstruct = [];    
 
@@ -194,7 +236,7 @@ var player = {
 		showinfo: 0
 	    },
 	    events: {
-		'onReady': onPlayerReady,
+		'onReady': function( event ) { return onPlayerReady(event, container, videoId); },
 		'onStateChange': function( event ) { return onPlayerStateChange(event, container, videoId); }
 	    }
 	});
@@ -207,20 +249,29 @@ window.onYouTubeIframeAPIReady = _.once( function() {
     });
 });    
 
-$(function() {
-    $('.youtube-player').each( function() {
-	var div = $(this);
-	div.uniqueId();
-	var id = div.attr('id');
-	
-	var url = div.attr('data-youtube');
+function createVideo() {
+    var div = $(this);
 
-	if (url.match( /watch\?v=/ )) {
-	    url = url.replace( /.*watch\?v=/, '' );
-	}
+    div.wrap( '<div class="embed-responsive embed-responsive-16by9"></div>' );
+    
+    // <iframe class="embed-responsive-item" src="https://www.youtube.com/embed/zpOULjyy-n8?rel=0" allowfullscreen></iframe>
+    
+    div.uniqueId();
+    var id = div.attr('id');
+    
+    var url = div.attr('data-youtube');
+    
+    if (url.match( /watch\?v=/ )) {
+	url = url.replace( /.*watch\?v=/, '' );
+    }
+    
+    player.playVideo( id, url );
+}
 
-	player.playVideo( id, url );
-    });
+$.fn.extend({
+    youtube: function() {
+	return this.each( createVideo );
+    }
 });
 
 module.exports = player;

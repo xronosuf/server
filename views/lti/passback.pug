@@ -1,0 +1,25 @@
+doctype xml
+imsx_POXEnvelopeRequest(xmlns="http://www.imsglobal.org/services/ltiv1p1/xsd/imsoms_v1p0")
+  imsx_POXHeader
+    imsx_POXRequestHeaderInfo
+      imsx_version V1.0
+      if messageIdentifier
+        imsx_messageIdentifier #{messageIdentifier}
+  imsx_POXBody
+    replaceResultRequest
+      resultRecord
+        if sourcedId
+          sourcedGUID
+            sourcedId #{sourcedId}
+        result
+          if resultDataUrl
+            resultData
+              url #{resultDataUrl}
+          if resultTotalScore
+            resultTotalScore
+              language en
+              textString #{resultTotalScore}
+          if resultScore
+            resultScore
+              language en
+              textString #{resultScore}

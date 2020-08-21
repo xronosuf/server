@@ -1,72 +1,47 @@
 var $ = require('jquery');
 var _ = require('underscore');
+var gradebook = require('./gradebook');
+var database = require('./database');
 
-var completions = $.Deferred();
-
-$(function() {
-    // Load the completion data
-    var userId = $('[data-user]').attr('data-user');
-    
-    if (userId) {
-	$.ajax({
-	    url: '/users/' + userId + '/completions' + '?' + (new Date().getTime().toString()),
-	    type: 'GET',
-	    success: function( result ) {
-		completions.resolve( result );
-	    }	    
-	});
-    }
-    
-});
+var users = require('./users');
 
 var displayProgress = function( card, progress ) {
-    $('.progress-bar', card).css('width', Math.round(progress * 100).toString() + '%' );
+    var progressBar = $('.progress-bar', card);
+    progressBar.css('width', Math.round(progress * 100).toString() + '%' );
+    progressBar.toggleClass('progress-bar-striped', progress > 0.9999);
 };
 
 var createActivityCard = function() {
     var activityCard = $(this);
     var href = activityCard.attr('data-path');
 
-    // This is the historical method for storing completion data
-    var repositoryName = activityCard.attr('data-repository-name');
-    var activityPath = activityCard.attr('data-path');
-    if (repositoryName) {
-
-	$.when(completions).done(function(completions) {
-	    var maxCompletion = 0;
-	    
-	    _.each( completions, function(c) {
-		if ((c.activityPath == activityPath) && (c.repositoryName == repositoryName)) 
-		    if (c.complete > maxCompletion)
-			maxCompletion = c.complete;
-	    });
-	    
-	    displayProgress( activityCard, maxCompletion );
-	});
-
-	return;
-    } // else
-
-    // DEPRECATED: This is the historical method for storing completion data
-    var hashes = activityCard.attr('data-hashes');
+    ////////////////////////////////////////////////////////////////
+    // add counters
+    var itself = 0;
+    if (activityCard.hasClass('chapter')) itself = 1;
+    activityCard.attr( 'data-chapter-counter', activityCard.prevAll('.activity-card.chapter').length + itself );
+    var label = activityCard.attr( 'data-chapter-counter' );
     
-    if (hashes) {
-	hashes = JSON.parse(hashes);
-	
-	$.when(completions).done(function(completions) {
-	    var maxCompletion = 0;
-	    
-	    _.each( completions, function(c) {
-		if (_.contains(hashes, c.activityHash))
-		    if (c.complete > maxCompletion)
-			maxCompletion = c.complete;
-	    });
-	    
-	    displayProgress( activityCard, maxCompletion );
-	});
+    if (!(activityCard.hasClass('chapter'))) {
+	activityCard.attr( 'data-section-counter', activityCard.prevUntil('.activity-card.chapter', '.activity-card' ).not('.part').length + 1 );
+	label = label + "." +  activityCard.attr( 'data-section-counter' );
     }
 
-    // BADBAD: now we also try to load the data some other way
+    if ((activityCard.attr( 'data-chapter-counter' ) != "0") && (!(activityCard.hasClass('part')))) {
+	$('h4', activityCard).prepend( '<span class="card-number">' + label + '</span>' );
+    }
+	
+    // This is the new method for storing completion data
+    var repositoryName = activityCard.attr('data-repository-name');
+    var activityPath = activityCard.attr('data-path');
+
+    if (repositoryName) {
+	database.onCompletion( repositoryName, activityPath, function(c) {
+	    displayProgress( activityCard, c );
+	    activityCard.attr('data-max-completion', c );
+	    gradebook.update();	    
+	});
+    }
 };
 
 $.fn.extend({

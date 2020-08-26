@@ -34,10 +34,10 @@ config.description    = pkg.description;
 config.company        = pkg.company;
 config.author         = pkg.author;
 config.keywords       = pkg.keywords;
-config.environment    = process.env.NODE_ENV || 'production';
+config.environment    = process.env.NODE_ENV || 'test';
 
 config.port = process.env.PORT || 3000;
-config.root = process.env.ROOT_URL || ('https://xronos.clas.ufl.edu');// + config.port);
+config.root = process.env.ROOT_URL || ('https://test.xronos.clas.ufl.edu');// + config.port);
 
 config.logging = false;
 
@@ -89,7 +89,7 @@ config.smtp.address            = process.env.SMTP_FROM_ADDRESS || 'XronosUF@GMai
  */
 
 config.localAuth = false;
-if (config.environment == 'development') {
+if (config.environment == 'test') {
     config.localAuth = true;
 }
 

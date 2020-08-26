@@ -13,5 +13,5 @@ export GITHUB_CLIENT_ID=0a6c17bc5fcf0ecb3a50
 export GITHUB_CLIENT_SECRET=8351323fff8d2295e543fc7e1adbd1b29c1ed864
 export GOOGLE_CLIENT_ID=963783591793-vrq45adu2davr3a4pcg29g73053t6qde.apps.googleusercontent.com
 export GOOGLE_CLIENT_SECRET=BW4q3smjIUyJPyY6d8ShmccP
-export LD_LIBRARY_PATH=/usr/lib/gcc/x86_64-unknown-linux-gnu/4.9.0/:/usr/lib/gcc/x86_64-redhat-linux/4.8.5/:/opt/rh/devtoolset-3/root/usr/lib/gcc/x86_64-redhat-linux/4.9.2/:/lib64:/lib
-export CXXFLAGS=-fPIC
+export GNUPGHOME='/home/ximera/.gnupg'
+export ROOT_URL='https://test.xronos.clas.ufl.edu'

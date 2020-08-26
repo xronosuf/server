@@ -1,0 +1,17 @@
+export XIMERA_MONGO_URL=127.0.0.1
+export XIMERA_MONGO_DATABASE=ximera
+export DEPLOYMENT=test
+export XIMERA_COOKIE_SECRET=thisismysecretcookieyoushouldchangethis
+export COURSERA_CONSUMER_KEY=thisisacourserakey
+export COURSERA_CONSUMER_SECRET=courserasecretkey
+export LTI_KEY=YGuaEYuEKx6btPU6z5f4mk5s5H
+export LTI_SECRET=9UPzoQFj8VSoCzYrWU0E8SypU2UkeoC2CJTzfFbqjC6sqv8JbQrXfk1HibtWSkJ
+export GITHUB_WEBHOOK_SECRET=8351323fff8d2295e543fc7e1adbd1b29c1ed864
+export TWITTER_CONSUMER_KEY=1245
+export TWITTER_CONSUMER_SECRET=1245
+export GITHUB_CLIENT_ID=0a6c17bc5fcf0ecb3a50
+export GITHUB_CLIENT_SECRET=8351323fff8d2295e543fc7e1adbd1b29c1ed864
+export GOOGLE_CLIENT_ID=963783591793-vrq45adu2davr3a4pcg29g73053t6qde.apps.googleusercontent.com
+export GOOGLE_CLIENT_SECRET=BW4q3smjIUyJPyY6d8ShmccP
+export LD_LIBRARY_PATH=/usr/lib/gcc/x86_64-unknown-linux-gnu/4.9.0/:/usr/lib/gcc/x86_64-redhat-linux/4.8.5/:/opt/rh/devtoolset-3/root/usr/lib/gcc/x86_64-redhat-linux/4.9.2/:/lib64:/lib
+export CXXFLAGS=-fPIC

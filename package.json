@@ -54,7 +54,7 @@
     "guppy-dev": "github:daniel3735928559/guppy#b5055b963fdbea5c6c1e92dbf58fdaf3ea0cd8ba",
     "htmllint-cli": "0.0.6",
     "ims-lti": "3.0.1",
-    "ip": "1.1.3",
+    "ip": "1.1.9",
     "isotope-layout": "2.2.2",
     "jison": "^0.4.18",
     "jquery": "3.1.0",

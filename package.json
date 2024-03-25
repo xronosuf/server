@@ -37,7 +37,7 @@
     "dotenv": "^4.0.0",
     "eonasdan-bootstrap-datetimepicker": "4.15.35",
     "errorhandler": "1.4.2",
-    "express": "4.13.3",
+    "express": "4.19.2",
     "express-rate-limit": "^2.7.0",
     "express-session": "1.11.3",
     "express-winston": "^2.5.1",

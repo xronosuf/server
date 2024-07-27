@@ -83,7 +83,7 @@
     "pug": "^2.0.3",
     "pug-lint": "^2.5.0",
     "redis": "^2.8.0",
-    "requirejs": "2.1.20",
+    "requirejs": "2.3.7",
     "send-seekable": "^1.0.4",
     "serve-favicon": "2.3.0",
     "shipit": "^1.0.2",

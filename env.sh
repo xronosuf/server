@@ -14,4 +14,4 @@ export GITHUB_CLIENT_SECRET=8351323fff8d2295e543fc7e1adbd1b29c1ed864
 export GOOGLE_CLIENT_ID=963783591793-vrq45adu2davr3a4pcg29g73053t6qde.apps.googleusercontent.com
 export GOOGLE_CLIENT_SECRET=BW4q3smjIUyJPyY6d8ShmccP
 export GNUPGHOME='/home/ximera/.gnupg'
-export ROOT_URL='https://test.xronos.clas.ufl.edu'
+export ROOT_URL='https://xronos.clas.ufl.edu'

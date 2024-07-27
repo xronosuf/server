@@ -27,3 +27,4 @@ nginx.conf
 
 environment.sh
 .env
+env.sh

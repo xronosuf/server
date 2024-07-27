@@ -114,10 +114,10 @@ var update = _.debounce( function() {
     $('.youtube-player').each( function() {
 	videoCount = videoCount + 1;
 	var fraction = $(this).persistentData( 'fractionViewed' );
-	if (fraction) {
-	    totalViewed = totalViewed + fraction;
-	}
-    });
+	if (fraction > 0.95) { totalViewed = totalViewed + 1; } else if (fraction) {
+		totalViewed = totalViewed + fraction;
+		}     
+	});
 
     // Activities that have NO problems will have total progress
     // NaN because of the 0 denominator; let's give credit to

@@ -1,0 +1,41 @@
+extends ../layouts/main
+
+block title
+  | Valid Certificate
+
+block modals
+                
+block content
+  div.container
+    .page-header
+      h1 Valid Certificate
+        
+    .row
+      .col-md-7
+        p
+          | As of&nbsp;
+          time(class="relative-date", datetime=certificate.date)
+            | #{certificate.date}
+          | &nbsp;on&nbsp;
+          time(class="absolute-date", datetime=certificate.date)
+            | #{certificate.date}
+          | , 
+          a(href=('https://' + certificate.user))
+            | #{certificate.name}
+          if certificate.email
+            | &nbsp;<#{certificate.email}>
+          | &nbsp;has earned #{certificate.score}/100 in 
+          if certificate.title === undefined
+            a(href=certificate.course)
+              | #{certificate.course}
+          else
+            a(href=certificate.course)
+              | #{certificate.title}
+          | .
+        p Certificates can be verified with this public key.
+        pre #{publicKey.trim()}          
+      .col-md-5
+        canvas.qrcode.float-right(style="max-width: 100%;", data-href=`https://ximera.osu.edu/certificate/${escapedCode}/${escapedSignature}`)
+        p
+          a(href=`/certificate/${escapedCode}/${escapedSignature}`)
+            span.certificate https://ximera.osu.edu/certificate/#{escapedCode}/#{escapedSignature}

@@ -1,0 +1,127 @@
+extends layouts/main
+
+block content
+    - var LaTeX = '<span class="other-latex">L<sup>a</sup>T<sub>e</sub>X</span>';
+    - var TeX = '<span class="tex">T<sub>e</sub>X</span>';
+    h2.featurette-heading     You've Wandered Off The Path!
+    p.lead     If you see this, then you aren't properly connected to Xronos. Most likely you are on the UF wifi network: ufguest or UF GetOnline. Neither of these support Xronos. Make sure to log onto the wifi network: eduroam. If you aren't on campus (or you are already on eduroam) you should contact your instructor to get help accessing Xronos.
+    #myCarousel.carousel.slide(data-ride='carousel')
+      img.carousel-logo(src=versionPath("/public/images/logo/logo.svg"))
+      ol.carousel-indicators
+        li.active(data-target='#myCarousel', data-slide-to='0')
+        li(data-target='#myCarousel', data-slide-to='1')
+        li(data-target='#myCarousel', data-slide-to='2')
+      .carousel-inner(role='listbox')
+        .carousel-item.active
+          // I have animations
+          //img.first-slide(src='data:image/gif;base64,R0lGODlhAQABAIAAAHd3dwAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==', alt='First slide') 
+          .container
+            .carousel-caption.d-none.d-md-block.text-left
+              h1 Open Courses.  Free Math.
+              p You can master mathematics with free interactive mathematics textbooks.
+              p
+                a.btn.btn-lg.btn-primary(href="/course/mooculus/calculus1", role='button') 
+                  i.fa.fa-book
+                  | &nbsp;Experience Calculus One
+        .carousel-item
+          // ...which are always playing        
+          //img.second-slide(src='data:image/gif;base64,R0lGODlhAQABAIAAAHd3dwAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==', alt='Second slide')
+          .container
+            .carousel-caption.d-none.d-md-block
+              h1 Convert !{LaTeX} to HTML
+              p Use <code>xake</code> to convert your own !{TeX} documents into interactive computer-graded worksheets.  &ldquo;Ximera begins where !{TeX} ends.&rdquo;
+              p
+                a.btn.btn-lg.btn-primary(href='https://github.com/ximeraproject/xake', role='button') 
+                  i.fa.fa-download
+                  | &nbsp;Install Xake
+        .carousel-item
+          // ...so much ximera!
+          //img.third-slide(src='data:image/gif;base64,R0lGODlhAQABAIAAAHd3dwAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==', alt='Third slide')
+          .container
+            .carousel-caption.d-none.d-md-block.text-right
+              h1 Understand your Students
+              p With <code>xake data</code> you can download a log of every activity your learners perform&mdash;and then mine those logs for insights into your students' learning.
+              p
+                a.btn.btn-lg.btn-primary(href='https://tincanapi.com/overview/', role='button') 
+                  i.fa.fa-bar-chart
+                  | &nbsp;Learn about xAPI
+      a.carousel-control-prev(href='#myCarousel', role='button', data-slide='prev')
+        span.carousel-control-prev-icon(aria-hidden='true')
+        span.sr-only Previous
+      a.carousel-control-next(href='#myCarousel', role='button', data-slide='next')
+        span.carousel-control-next-icon(aria-hidden='true')
+        span.sr-only Next
+    .container.marketing
+      // Three columns of text below the carousel
+      .row
+        .col-lg-4
+          //img.rounded-circle(src='data:image/gif;base64,R0lGODlhAQABAIAAAHd3dwAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==', alt='Generic placeholder image', width='140', height='140')
+          i.fa.fa-book.fa-5x.text-muted
+          h2 Educators
+          p Ximera lets you write documents in !{LaTeX} and post them as interactive activities online for your students.
+          p By relying on GitHub to store content, you can easily share activities with your colleagues.          
+          p
+            a.btn.btn-secondary(href="https://github.com/mooculus/calculus", role='button') View GitHub »
+        // /.col-lg-4
+        .col-lg-4
+          //img.rounded-circle(src='data:image/gif;base64,R0lGODlhAQABAIAAAHd3dwAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==', alt='Generic placeholder image', width='140', height='140')
+          i.fa.fa-pencil.fa-5x.text-muted          
+          h2 Students
+          p Ximera brings the classroom to you, wherever you are.
+          p You can use your favorite device to study math anywhere, anytime.
+          p
+            a.btn.btn-secondary(href='/mooculus', role='button') View Textbooks »
+        // /.col-lg-4
+        .col-lg-4
+          //img.rounded-circle(src='data:image/gif;base64,R0lGODlhAQABAIAAAHd3dwAAACH5BAAAAAAALAAAAAABAAEAAAICRAEAOw==', alt='Generic placeholder image', width='140', height='140')
+          i.fa.fa-flask.fa-5x.text-muted                    
+          h2 Researchers
+          p Ximera computes statistics on student success, such as point biserials.
+          p By creating branches in GitHub, you can quickly run A/B tests on student performance.
+          p
+            a.btn.btn-secondary(href='/about/faq', role='button') Learn More »
+            
+      // START THE FEATURETTES
+      hr.featurette-divider
+      .row.featurette
+        .col-md-7
+          h2.featurette-heading
+            | Write once.  Share everywhere. 
+            span.text-muted One source file for both PDF and HTML.
+          p.lead
+            | Write in !{LaTeX} using the <a href="https://github.com/ximeraproject/ximeralatex">Ximera document class</a>.  You can print your document for your own students, or share your document with the world as an online interactive activity.  Authoring in !{LaTeX} combines the power of professional typesetting with modern web technology, all the while retaining the stability of a tried and true language.
+        .col-md-5
+          img.featurette-image.img-fluid.mx-auto(src=versionPath('/public/images/photos/tablet-and-book.jpg'))
+      hr.featurette-divider
+      .row.featurette
+        .col-md-7.push-md-5
+          h2.featurette-heading
+            | Join the community. 
+            span.text-muted Ximera makes it easy to collaborate.
+          p.lead
+            | Each year, Ohio State holds a <a href="/about/workshop">Ximera Workshop</a>.  This workshop is for both novices and experts.  Novices learn how to use Ximera to make their own content, and experts extend the capabilities of the platform.  
+        .col-md-5.pull-md-7
+          img.featurette-image.img-fluid.mx-auto(src=versionPath('/public/images/photos/workshop.jpg'))
+      hr.featurette-divider
+      .row.featurette
+        .col-md-7
+          h2.featurette-heading
+            | Release v1.0 
+            span.text-muted at the 2018 Joint Mathematics Meetings.
+          p.lead
+            | The Ximera Team announced the v1.0 release of Ximera at a <a href="http://jointmathematicsmeetings.org/meetings/national/jmm2018/2197_program_friday.html#2197:WEBSIGIA">WEB SIGMAA lecture at the 2018 Joint Mathematics Meetings.</a>  The lecture was Friday, January 12, 2018 from 6pm - 6:50pm in San Diego, California.
+        .col-md-5
+          img.featurette-image.img-fluid.mx-auto(src=versionPath('/public/images/photos/san-diego.jpg'))
+          span.small.text-muted <a href="https://commons.wikimedia.org/w/index.php?curid=26089903">Photo</a> by <a href="//commons.wikimedia.org/wiki/User:Bgag" title="User:Bgag">Bernard Gagnon</a> released under <a href="http://creativecommons.org/licenses/by-sa/3.0" title="Creative Commons Attribution-Share Alike 3.0">CC BY-SA 3.0</a>
+      hr.featurette-divider
+      .row.featurette
+        .col-md-7.push-md-5
+          h2.featurette-heading
+            | Calculus content 
+            span.text-muted is available now.
+          p.lead
+            | Explore existing content for <a href="/mooculus/calculus1">Calculus 1</a>, <a href="/mooculus/calculus2">Calculus 2</a>, and <a href="/mooculus/calculus3">Calculus 3</a>.
+        .col-md-5.pull-md-7
+          img.featurette-image.img-fluid.mx-auto(src=versionPath('/public/images/photos/calculus-textbooks.jpg'))
+
+

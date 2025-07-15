@@ -74,7 +74,7 @@
     "node-gyp-build": "^4.8.1",
     "node-sass": "^4.9.2",
     "node-uuid": "1.4.7",
-    "nodegit": "0.25.0",
+    "nodegit": "^0.25.0",
     "passport": "0.2.2",
     "passport-google-openidconnect": "0.0.4",
     "passport-local": "1.0.0",

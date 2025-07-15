@@ -71,6 +71,7 @@
     "mongodb": "2.2.19",
     "mongoose": "4.1.1",
     "morgan": "1.6.1",
+    "node-gyp-build": "^4.8.1",
     "node-sass": "^4.9.2",
     "node-uuid": "1.4.7",
     "nodegit": "0.25.0",

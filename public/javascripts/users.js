@@ -2,9 +2,11 @@ var $ = require('jquery');
 var _ = require('underscore');
 var moment = require('moment');
 
+
+
 exports.get = _.memoize( function(userId) {
     return $.ajax({
-	url: "/users/" + userId,
+	url: window.toValidPath("/users/" + userId),
 	headers: {Accept: "application/json;charset=utf-8"},
     });
 });
@@ -21,9 +23,9 @@ $(document).ready(function() {
 	    $('#loginUser').show();
 
 	    if (user.name.split(' ')[0])
-		$('#userFirstName').text(user.name.split(' ')[0]);
+			$('#userFirstName').text(user.name.split(' ')[0]);
 	} else {
-	    $('#loginGuest').show();		
+			$('#loginGuest').show();  // If enabled in the server !
 	}
 
 	// Instructors should see a "statistics" button
@@ -31,9 +33,9 @@ $(document).ready(function() {
 	    $('#menu-supervise').show();
 	    
 	    user.instructorRepositoryPaths.forEach( function(p) {
-		if (window.location.pathname.startsWith( p ))
+		if (window.location.pathname.startsWith(window.toValidPath(p)))
 		    $('#instructor-view-statistics').show();
-		if (window.location.pathname.startsWith( '/' + p ))
+		if (window.location.pathname.startsWith(window.toValidPath('/' + p)))
 		    $('#instructor-view-statistics').show();		    
 	    });
 	}

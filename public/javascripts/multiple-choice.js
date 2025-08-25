@@ -9,29 +9,29 @@ var buttonTemplate = _.template( '<button class="text-left btn btn-secondary <%=
 
 var answerHtml = '<div class="btn-group" style="vertical-align: bottom; " aria-live="assertive">' +
 	'<button class="btn btn-success btn-ximera-correct" data-toggle="tooltip" data-placement="top" title="Correct answer!" style="display: none">' +
-	'<i class="fa fa-check"/>&nbsp;Correct' +
+	'<i class="fa fa-check"></i>&nbsp;Correct' +
 	'</button></div>' +
 	'<div class="btn-group" style="vertical-align: bottom; " aria-live="assertive">' +
 	'<button class="btn btn-danger btn-ximera-incorrect" data-toggle="tooltip" data-placement="top" title="Incorrect.  Try again!" style="display: none">' +
-	'<i class="fa fa-times"/>&nbsp;Try again' +
+	'<i class="fa fa-times"></i>&nbsp;Try again' +
 	'</button></div>' +
 	'<div class="btn-group" style="vertical-align: bottom; ">' +
 	'<button class="btn btn-primary btn-ximera-submit" data-toggle="tooltip" data-placement="top" title="Click to check your answer.">' +
-	'<i class="fa fa-question"/>&nbsp;Check work' +
+	'<i class="fa fa-question"></i>&nbsp;Check work' +
 	'</button>' +
         '</div>';
 
 var ungradedAnswerHtml = '<div class="btn-group" style="vertical-align: bottom; " aria-live="assertive">' +
     '<button class="btn btn-success btn-ximera-correct" data-toggle="tooltip" data-placement="top" title="Thank you for your submission" style="display: none">' +
-	'<i class="fa fa-envelope"/>&nbsp;Submitted' +    
+	'<i class="fa fa-envelope"></i>&nbsp;Submitted' +    
 	'</button></div>' +
 	'<div class="btn-group" style="vertical-align: bottom; " aria-live="assertive">' +
 	'<button class="btn btn-danger btn-ximera-incorrect" data-toggle="tooltip" data-placement="top" title="Submit again!" style="display: none">' +
-	'<i class="fa fa-times"/>&nbsp;Try again' +
+	'<i class="fa fa-times"></i>&nbsp;Try again' +
 	'</button></div>' +
 	'<div class="btn-group" style="vertical-align: bottom; ">' +
 	'<button class="btn btn-primary btn-ximera-submit" data-toggle="tooltip" data-placement="top" title="Click to submit your answer.">' +
-	'<i class="fa fa-envelope-open"/>&nbsp;Submit your work' +
+	'<i class="fa fa-envelope-open"></i>&nbsp;Submit your work' +
 	'</button>' +
         '</div>';
 

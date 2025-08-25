@@ -58,8 +58,9 @@ var calculateProgress = function(problem, depth) {
 
     // Find immediate problem-environment children which aren't hints or feedback
     var children = $(problem).find('.problem-environment').not('.hint').not('.feedback').filter( function() {
-	var parents = $(this).parent('.problem-environment');
-	return (parents.length == 0) || (parents.first().is(problem)); } );
+        var parents = $(this).parent('.problem-environment');
+        return (parents.length == 0) || (parents.first().is(problem)); 
+    });
 
     // Non-root nodes also contribute to their value via their 'completion' flag
     var nodeValue = 0;
@@ -77,7 +78,6 @@ var calculateProgress = function(problem, depth) {
 		    if ($(answer).persistentData('correct'))
 			answersCorrect++;
 		    answersNeeded++;
-
 		});
 
 		if (answersNeeded == 0) {
@@ -88,19 +88,26 @@ var calculateProgress = function(problem, depth) {
 		    nodeMaxValue = 1;
 		}
 	    }
-	} else {
-	    nodeValue = 1;
-	    nodeMaxValue = 1;
 	}
     }
 
     // Each node's value is the average of its children's values and its own completion flag
     var total = 0;
+    var countedChildren = 0;
     children.each( function() {
-	total = total + calculateProgress( this, depth + 1 );
+        var calculatedProgress = calculateProgress(this, depth + 1);
+        if(calculatedProgress !== undefined){
+            total = total + calculatedProgress
+            countedChildren++
+        }
     });
+
+    if (total === 0 && countedChildren === 0 && !$(problem).attr('data-blocking')) /* Don't count empty things without data-blocking (e.g a plain definition block) */
+        return undefined
+
     
-    return (total + nodeValue) / (children.length + nodeMaxValue);
+    
+    return (total + nodeValue) / (countedChildren + nodeMaxValue);
 };
 
 var activityToMonitor = undefined;
@@ -114,10 +121,10 @@ var update = _.debounce( function() {
     $('.youtube-player').each( function() {
 	videoCount = videoCount + 1;
 	var fraction = $(this).persistentData( 'fractionViewed' );
-	if (fraction > 0.95) { totalViewed = totalViewed + 1; } else if (fraction) {
-		totalViewed = totalViewed + fraction;
-		}     
-	});
+	if (fraction) {
+	    totalViewed = totalViewed + fraction;
+	}
+    });
 
     // Activities that have NO problems will have total progress
     // NaN because of the 0 denominator; let's give credit to

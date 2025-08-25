@@ -6,6 +6,8 @@ var ProgressBar = require('./progress-bar');
 
 var activityCard = require('./activity-card');
 var problem = require('./problem');
+var theorem = require('./theorem');
+var question = require('./question');
 var mathAnswer = require('./math-answer');
 var multipleChoice = require('./multiple-choice');
 var selectAll = require('./select-all');
@@ -16,7 +18,6 @@ var youtube = require('./youtube');
 
 var freeResponse = require('./free-response');
 var coding = require('./coding');
-// var problemPool = require('./problem-pool');
 var shuffle = require('./shuffle');
 var feedback = require('./feedback');
 var validator = require('./validator');
@@ -29,7 +30,10 @@ var database = require('./database');
 var annotator = require('./annotator');
 
 var createActivity = function() {
-    var activity = $(this);
+	var activity = $(this);
+	
+	$(".foldable", activity).foldable();
+	$(".accordion", activity).addClass('hidden-out-of-view')
 
     //$('.activity-body', this).annotator();
     
@@ -43,16 +47,23 @@ var createActivity = function() {
 
 	ProgressBar.monitorActivity( activity );
 
+	// Number theorems
+	["theorem", "axiom", "conjecture", "corollary", "proposition", "lemma", "claim", "condition", "idea", "definition", "conclusion", "summary", "warning", "paradox", "example", "observation", "fact", "remark", "algorithm", "notation", "criterion", "exercise", "problem", "explanation", "exploration", "model","formula","procedure","template"].forEach(function(t){
+		$("."+t, activity).numberTheorem();
+	})
+
+
+	$(".question", activity).numberQuestion();
+
 	$(".problem-environment", activity).problemEnvironment();
 	$(".multiple-choice", activity).multipleChoice();
 	$(".select-all", activity).selectAll();
 	$(".word-choice", activity).wordChoice();
 	$(".hint", activity).hint();
-	$(".foldable", activity).foldable();
+	
 	$(".free-response", activity).freeResponse();
 	$(".javascript-code", activity).coding();	
 	
-//	$(".problemPool", activity).problemPool();
 	$(".shuffle", activity).shuffle();
 	$(".feedback", activity).feedback();
 	$(".validator", activity).validator();

@@ -1,0 +1,58 @@
+extends layouts/main
+
+block title
+  if xourse && xourse.title
+    | #{xourse.title} &mdash; Instructors
+  else
+    | Instructors
+  
+mixin instructorPanel(instructor)
+  div.media
+    img.d-flex.mr-3(src=instructor.imageUrl)
+    div.media-body
+      h5 #{instructor.name} 
+        if instructor.bridge.roles.filter( f => f.match( /Instructor/ ) ).length > 0
+          <span class="badge badge-default">Instructor</span>&nbsp;            
+        else
+          if instructor.bridge.roles.filter( f => f.match( /TeachingAssistant/ ) ).length > 0
+            <span class="badge badge-default">Instructor</span>&nbsp;             
+          else    
+            for role in instructor.bridge.roles 
+              <span class="badge badge-default">#{role}</span>&nbsp;
+        if instructor.bridge.contextLabel || instructor.bridge.toolConsumerInstanceName
+          small.text-muted &nbsp;
+            if instructor.bridge.contextLabel
+              | #{instructor.bridge.contextLabel}
+            if instructor.bridge.toolConsumerInstanceName
+              | &nbsp;at #{instructor.bridge.toolConsumerInstanceName}
+      a.btn.btn-secondary(href='mailto:' + instructor.email + '?subject=' + subject + '&body=' + body)
+        | <i class="fa fa-envelope"></i>
+        span &nbsp;Send E-Mail
+      
+block content
+  // Include css files from the repository
+  link(rel="stylesheet",type="text/css",href=toValidPath("/" + repositoryName + "/global.css"))
+  link(rel="stylesheet",type="text/css",href=toValidPath("/" + repositoryName + "/" + xourse.path + ".css"))
+  nav(aria-label="breadcrumb",role="navigation")
+    ol.breadcrumb
+      li.breadcrumb-item
+        - var level = 1;
+        a(href=toValidPath("/" + repositoryName), aria-level=level)
+            | !{repositoryName}
+      li.breadcrumb-item
+        - level = level + 1;
+        a(href=toValidPath("/" + repositoryName + "/" + xourse.path),aria-level=level)
+          if (xourse.title) && (xourse.title != '')
+            | !{xourse.title}
+          else
+            | Home
+      li.nl-text.breadcrumb-item.active Lesgevers
+      li.en-text.breadcrumb-item.active Instructional Staff
+  .container
+    div.row
+      if instructors.length == 0
+        p.nl-text Stuur een zo duidelijk mogelijke omschrijving van uw vraag, probleem of opmerking naar het <a href=mailto://#{config.emailXourse}>#{config.emailNameXourse}</a> en dan zullen we proberen u te helpen.
+        p.en-text Send an email with a clear explanation of your question, problem or comment to the <a href=mailto://#{config.emailXourse}>#{config.emailNameXourse}</a> and we will try to help you.
+      else
+        for instructor in instructors
+          +instructorPanel(instructor)

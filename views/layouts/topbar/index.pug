@@ -1,0 +1,124 @@
+if ( activity.downloads_xourse && activity.downloads_xourse.length > 0 ) || (activity.downloads && activity.downloads.length > 0 )
+    div.xmdownload
+      i.fa.fa-file-pdf-o
+      span.xmhidden-small.hidden-md-down &nbsp;Download&thinsp; 
+      i.fa.fa-caret-down.fa-2xs
+      ul.xmdownload-inhoud
+        if activity.downloads_xourse && activity.downloads_xourse.length > 0
+          for download in activity.downloads_xourse
+            li.xmlnk:  a(href=download.url, target="_blank")
+              i.fa.fa-file-pdf-o &nbsp;
+              span.nl-text.complete-course-text-download-label Volledige cursus 
+              span.en-text.complete-course-text-download-label Full course 
+              if download.label == "standaard_pdf"
+                span.nl-text.complete-course-text-download-text (met antwoorden)
+                span.en-text.complete-course-text-download-text (with answers)
+              else if download.label == "handout_pdf"
+                span.nl-text.complete-course-text-download-text (zonder antwoorden)
+                span.en-text.complete-course-text-download-text (without answers)
+              else
+                span.complete-course-text-download-text (#{download.label})
+        if activity.downloads && activity.downloads.length > 0
+          for download in activity.downloads
+            li.xmlnk:  a(href=download.url, target="_blank")
+              i.fa.fa-file-pdf-o &nbsp;
+              span.nl-text.chapter-course-text-download-label Deze pagina "#{activity.title}"&nbsp;
+              span.en-text.chapter-course-text-download-label This page "#{activity.title}"&nbsp;
+              if download.label == "standaard_pdf"
+                span.nl-text.complete-course-text-download-text (met antwoorden)
+                span.en-text.complete-course-text-download-text (with answers)
+              else if download.label == "handout_pdf"
+                span.nl-text.complete-course-text-download-text (zonder antwoorden)
+                span.en-text.complete-course-text-download-text (without answers)
+              else
+                span.complete-course-text-download-text (#{download.label})
+include due-date        
+include statistics
+button.btn.btn-info#math-edit-button(role="button",style="display: none;")
+    i.fa.fa-magic
+    span.nl-text.hidden-md-down &nbsp;Wiskunde Editor
+    span.en-text.hidden-md-down &nbsp;Math Editor
+span.xmupdate: a.btn-warning.pulsate#pageUpdate(type="button",data-toggle="modal", data-target="#updateWarningModal", style="display: none;")
+           | <i class="fa fa-level-up"></i>
+           span.xmhidden-small &nbsp;
+           span.update-label Update
+           span.update-text    
+//- span.xmerase: a(role="button", data-toggle="modal", data-target="#resetWarningModal")
+           i.fa.fa-eraser
+div.xmsettings
+  i.fa.fa-bars
+  span.xmhidden-small.hidden-md-down &nbsp;Settings&thinsp; 
+  i.fa.fa-caret-down.fa-2xs
+  ul.xmsettings-inhoud
+    if activity
+      li.xmhideprogress(role="button")
+        span.xmprogresshidden#xmprogess-close
+          i.fa.fa-eye-slash
+          span.nl-text.xmhidden-small &nbsp;Verberg vooruitgang
+          span.en-text.xmhidden-small &nbsp;Hide progress
+        span#xmprogess-open
+          i.fa.fa-eye
+          span.nl-text.xmhidden-small &nbsp;Toon vooruitgang
+          span.en-text.xmhidden-small &nbsp;Show progress
+      li.xmerase(role="button", data-toggle="modal", data-target="#resetWarningModal")
+           i.fa.fa-eraser
+           span.nl-text.xmhidden-small &nbsp; Verwijder je antwoorden (op deze pagina)
+           span.en-text.xmhidden-small &nbsp; Remove your answers (on this page)
+           span.xmhidden
+           //-  span.erase-explanation-label Verwijder al je pogingen op deze pagina
+           //-  span.erase-explanation-text                                                                                                   
+if config.showEdit && activity && activity.path && repositoryMetadata
+  li.xmwijzig: a(role="button",onclick=`location.href = \"https://${repositoryMetadata.github.Server}/${repositoryMetadata.github.Owner}/${repositoryMetadata.github.Repository}/edit/${repositoryMetadata.github.Branch}/${activity.path}.tex\";`)
+    i.fa.fa-pencil 
+    span.nl-text.xmhidden-small.hidden-md-down &nbsp;Wijzig                                                                                                       
+    span.en-text.xmhidden-small.hidden-md-down &nbsp;Edit                                                                                                       
+div.xmuser#loginUser(style="display: none;")
+    a.dropdown-toggle(id="navbarLogin",data-toggle="dropdown",aria-haspopup="true",aria-expanded="false")
+      // If we're masquerading as someone
+      if learner
+        i.fa.fa-user-secret 
+        span.hidden-md-down#userMasqueradingName &ldquo;#{learner.name.split(" ")[0]}&rdquo;
+      else
+        i.fa.fa-user 
+        span.hidden-md-down#userFirstName Me
+    ul.xmuser-inhoud
+      if learner
+        li a(href=url.replace('users/' + learner._id + '/', '')) <i class='fa fa-user'></i> Stop Pretending
+      li: a(href=toValidPath(`/users/me`)) <i class='fa fa-cogs'></i> Profile
+      li: a#menu-supervise(href=toValidPath('/supervise'),style="display: none;") <i class='fa fa-eye'></i> Supervise
+      //- li: a(href=toValidPath("/logout")) <i class='fa fa-sign-out'></i> Logout
+//- div#loginGuest(style="display: none;")
+if config.showLogin
+  div.xmlogin#loginGuest
+    i.fa.fa-sign-in
+    span.nl-text.xmhidden-small.hidden-md-down &nbsp;Login&thinsp; 
+    span.en-text.xmhidden-small.hidden-md-down &nbsp;Sign In&thinsp; 
+    i.fa.fa-caret-down.fa-2xs
+    ul.xmlogin-inhoud
+      if config.googleAuth
+        li: a.dropdown-item(href=toValidPath("/auth/google")) <i class='fa fa-google'></i> Sign In with Google
+      if config.twitterAuth
+        li: a.dropdown-item(href=toValidPath("/auth/twitter")) <i class='fa fa-twitter'></i> Sign In with Twitter
+      if config.githubAuth
+        li: a.nl-text.dropdown-item(href=toValidPath("/auth/github")) <i class='fa fa-github'></i> Login met GitHub
+        li: a.en-text.dropdown-item(href=toValidPath("/auth/github")) <i class='fa fa-github'></i> Sign In with GitHub
+      if config.localAuth
+        div.dropdown-divider
+        form#form-login(action=toValidPath("/auth/local"),method="post")
+          div.input-group
+            input.form-control#username(name="username",type="text",placeholder="Username")               
+          div.input-group                     
+            input.form-control#password(name="password",type="password")
+          button.btn.btn-primary.btn-default#button-login(type="submit") Sign In
+
+//- General contact if no xourse
+if !landingPage && !(repositoryName && ((activity && activity.xourse && activity.xourse.path) || (xourse && xourse.path)))
+        div.xmhelp: a(href=(config.emailMain))
+          i.fa.fa-envelope-o
+          span.xmhidden-small &nbsp; Contact
+
+//- Contact instructors if xourse (and activity)
+if !landingPage && (repositoryName && ((activity && activity.xourse && activity.xourse.path) || (xourse && xourse.path)))
+        div.xmhelp: a(id="contact-instructor", href=toValidPath(`/${repositoryName}/${(activity ? (activity.xourse) : xourse).path}/instructors`))
+          i.fa.fa-envelope-o
+          span.xmhidden-small &nbsp; Contact

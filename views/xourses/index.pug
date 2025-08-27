@@ -1,0 +1,19 @@
+extends ../layouts/main
+
+block title
+  | #{repositoryName}
+  
+block content
+  nav(aria-label="breadcrumb",role="navigation")
+    ol.breadcrumb
+      li.breadcrumb-item.active
+        | !{repositoryName}
+  nav
+    ol
+      for xourse in xourses.sort((a, b) => a.title.localeCompare(b.title))
+        if xourse.title
+          li
+            a(href=toValidPath(`/${repositoryName}/${xourse.path}`)): h4  #{xourse.title} 
+            | [!{xourse.path}.tex]
+            p !{xourse.abstract}
+

@@ -44,6 +44,8 @@ var express = require('express')
   , versionator = require('versionator')
   , WebSocketServer = require("ws").Server
   , basicAuth = require('express-basic-auth')
+  , request = require('request')
+  , crypto = require('crypto')
   ;
 
 require('./summarize/summarize') // Load summarize interval
@@ -249,6 +251,97 @@ passport.deserializeUser(function(id, done) {
 	res.header('Expires',  (new Date()).toUTCString() );
 	res.send(app.version);
     });
+
+
+    var sagecellProxyLogEnabled = /^(1|true|yes|on|debug)$/i.test(process.env.SAGECELL_PROXY_LOG || "");
+
+function sagecellProxyLog() {
+    if (sagecellProxyLogEnabled) {
+	console.log.apply(console, arguments);
+    }
+}
+
+var sagecellProxyCache = {};
+    var sagecellProxyInFlight = {};
+    var sagecellProxyCacheMaxEntries = 5000;
+
+    function sagecellProxyCacheSet(key, value) {
+var keys;
+if (!sagecellProxyCache[key]) {
+    keys = Object.keys(sagecellProxyCache);
+    if (keys.length >= sagecellProxyCacheMaxEntries) {
+delete sagecellProxyCache[keys[0]];
+    }
+}
+sagecellProxyCache[key] = value;
+    }
+
+    app.post('/sagecell/service', function(req, res) {
+var code = (req.body && req.body.code) ? req.body.code : "";
+var cacheKey = crypto.createHash('sha256').update(code).digest('hex');
+
+if (sagecellProxyCache[cacheKey]) {
+    sagecellProxyLog("SageCell proxy cache HIT", cacheKey, "len", code.length);
+    res.set('X-SageCell-Proxy-Cache', 'HIT');
+    res.set('Content-Type', sagecellProxyCache[cacheKey].contentType);
+    res.status(sagecellProxyCache[cacheKey].statusCode);
+    res.send(sagecellProxyCache[cacheKey].body);
+    return;
+}
+
+if (sagecellProxyInFlight[cacheKey]) {
+    sagecellProxyLog("SageCell proxy cache WAIT", cacheKey, "len", code.length);
+    sagecellProxyInFlight[cacheKey].push(res);
+    return;
+}
+
+sagecellProxyLog("SageCell proxy cache MISS", cacheKey, "len", code.length);
+sagecellProxyInFlight[cacheKey] = [res];
+
+request.post({
+    url: config.sagecellService,
+    form: req.body,
+    timeout: 60000
+}, function(err, response, body) {
+    var waiting = sagecellProxyInFlight[cacheKey] || [];
+    delete sagecellProxyInFlight[cacheKey];
+
+    var statusCode = 200;
+    var contentType = 'application/json; charset=UTF-8';
+
+    if (err) {
+console.error("SageCell proxy error:", err);
+body = JSON.stringify({
+    success: false,
+    stderr: "SageCell proxy error: " + err.message
+});
+statusCode = 502;
+    } else {
+statusCode = response.statusCode || 200;
+if (response.headers && response.headers['content-type']) {
+    contentType = response.headers['content-type'];
+}
+
+// Cache successful SageCell responses only.
+if (statusCode >= 200 && statusCode < 300) {
+    sagecellProxyCacheSet(cacheKey, {
+statusCode: statusCode,
+contentType: contentType,
+body: body
+    });
+}
+    }
+
+    waiting.forEach(function(waitingRes) {
+waitingRes.set('X-SageCell-Proxy-Cache',
+       waitingRes === waiting[0] ? 'MISS' : 'WAIT');
+waitingRes.status(statusCode);
+waitingRes.set('Content-Type', contentType);
+waitingRes.send(body);
+    });
+});
+    });
+
     
     app.get('/sw.js', function(req, res) {
 	res.sendFile('public/javascripts/sw.min.js', { root: __dirname });

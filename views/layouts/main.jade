@@ -23,10 +23,8 @@ html(lang="en")
     if stylesheet
       link(rel="stylesheet/less",type="text/css",href=stylesheet + "?v=#{version}")
 
-    link(rel="stylesheet",type="text/css",href="https://sagecell.sagemath.org/static/sagecell_embed.css")
       
     script(type="text/javascript",src="/node_modules/mathjax/MathJax.js?config=TeX-AMS_HTML&amp;delayStartupUntil=configured")
-    script(type="text/javascript",src="https://sagecell.sagemath.org/static/embedded_sagecell.js")
     script(type="text/javascript",src="/public/javascripts/main.min.js?v=#{version}")
 
     link(rel="apple-touch-icon",sizes="114x114",href="/public/images/icons/favicon-114x114.png")

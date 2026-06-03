@@ -39,6 +39,7 @@ config.keywords       = pkg.keywords;
 config.environment    = process.env.NODE_ENV || 'test';
 
 config.port = process.env.PORT || 3000;
+config.sagecellService = process.env.SAGECELL_SERVICE || 'http://127.0.0.1:8888/service';
 config.subPath = process.env.SUB_PATH || ''
 config.root = (process.env.ROOT_URL || ('http://localhost:' + config.port)) + config.subPath;
 config.toValidPath = function (url) {

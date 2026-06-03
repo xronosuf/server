@@ -15084,6 +15084,73 @@ img.xourselogo {
   max-width: 20vw;
 }
 
+/*
+ * Xronos UF sidebar viewport scroll fix
+ *
+ * Activity pages in the new grid/topbar UI use a two-pane layout:
+ * left TOC/sidebar and right activity content.  The old CSS allowed the
+ * wrapper/main grid to grow to the full activity height, which produced
+ * awkward nested scrollbars and made the page body scroll instead of the
+ * intended panes.
+ *
+ * This is intentionally scoped to pages whose wrapper contains a TOC sidebar.
+ * The !important flags are deliberate: course-level/global CSS is loaded after
+ * base.css, so these layout constraints need to win against later legacy or
+ * author-side rules.
+ */
+html:has(.wrapper .main-inhoud > .toc),
+body:has(.wrapper .main-inhoud > .toc) {
+  height: 100% !important;
+  overflow: hidden !important;
+}
+
+.wrapper:has(.main-inhoud > .toc) {
+  height: 100vh !important;
+  min-height: 0 !important;
+  grid-template-rows: auto minmax(0, 1fr) !important;
+  overflow: hidden !important;
+}
+
+.wrapper:has(.main-inhoud > .toc) .main-inhoud {
+  height: auto !important;
+  min-height: 0 !important;
+  overflow: hidden !important;
+  grid-template-rows: auto minmax(0, 1fr) !important;
+  grid-template-columns: 480px minmax(0, 1fr) !important;
+}
+
+.wrapper:has(.main-inhoud > .toc) .toc {
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  resize: none !important;
+}
+
+.wrapper:has(.main-inhoud > .toc) .activity {
+  align-self: stretch !important;
+  justify-self: stretch !important;
+  width: 100% !important;
+  max-width: none !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  box-sizing: border-box !important;
+}
+
+.wrapper:has(.main-inhoud > .toc) .activity .main-activity {
+  width: 100% !important;
+  max-width: none !important;
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow: visible !important;
+  box-sizing: border-box !important;
+}
+
 .xourse-cards {
   margin: 0;
   padding: 0;

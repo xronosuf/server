@@ -6,6 +6,8 @@ var activityCard = require('./activity-card');
 var xourseIsotope = undefined;
 var layoutMode = 'fitRows';
 var search = undefined;
+var xourseRelayoutMaskTimer = undefined;
+var xourseRelayoutMaskActive = false;
 
 var filtering = function() {
 	if ((typeof search === 'undefined') || (search.length == 0))
@@ -28,7 +30,8 @@ var filtering = function() {
 
 var updateSearch = function() {
     if (!xourseIsotope) return;
-    xourseIsotope.arrange({ filter: filtering });   
+    xourseIsotope.arrange({ filter: filtering });
+	    scheduleXourseRelayout();   
 };
 
 var installXronosSidebarCompletionLabels = function() {
@@ -93,7 +96,7 @@ var installXronosSidebarCompletionLabels = function() {
     };
 
     var updateLabels = function() {
-        document.querySelectorAll('.toc .activity-card').forEach(function(card) {
+        document.querySelectorAll('.toc .activity-card, .xourse > .activity-card').forEach(function(card) {
             var percent;
             var rounded;
             var text;
@@ -152,7 +155,7 @@ var installXronosSidebarCompletionLabels = function() {
         window.xronosSidebarCompletionLabelsInstalled = true;
     }
 
-    document.querySelectorAll('.toc').forEach(function(toc) {
+    document.querySelectorAll('.toc, .xourse').forEach(function(toc) {
         if (toc.xronosCompletionObserver) {
             toc.xronosCompletionObserver.disconnect();
         }
@@ -180,18 +183,123 @@ var installXronosSidebarCompletionLabels = function() {
 };
 
 
+var clearXourseSelection = function() {
+    if (typeof window !== 'undefined' && window.getSelection) {
+        try {
+            window.getSelection().removeAllRanges();
+        } catch (e) {
+            // Ignore selection cleanup failures.
+        }
+    }
+};
+
+var preventXourseSelectionWhileMasked = function(event) {
+    if (!xourseRelayoutMaskActive) {
+        return;
+    }
+
+    if (event && typeof event.preventDefault === 'function') {
+        event.preventDefault();
+    }
+
+    clearXourseSelection();
+};
+
+var installXourseSelectionMaskHandlers = function(xourse) {
+    $('.activity-card.part', xourse)
+        .off('mousedown.xronosSelectionMask')
+        .on('mousedown.xronosSelectionMask', function(event) {
+            /*
+             * Selection can start on mousedown before the normal click/fold
+             * workflow applies the relayout mask.  Prevent only this initial
+             * part-heading drag/selection gesture; normal tile text remains
+             * selectable after the short relayout window.
+             */
+            event.preventDefault();
+            maskXourseForRelayout();
+        });
+};
+
+var maskXourseForRelayout = function() {
+    var xourse;
+
+    if (typeof window === 'undefined' || typeof document === 'undefined') {
+        return;
+    }
+
+    xourse = document.querySelector('.xourse');
+
+    if (!xourse || !xourse.classList) {
+        return;
+    }
+
+    xourse.classList.add('xronos-grid-relayout-mask');
+    xourseRelayoutMaskActive = true;
+    clearXourseSelection();
+
+    if (xourseRelayoutMaskTimer) {
+        window.clearTimeout(xourseRelayoutMaskTimer);
+    }
+
+    xourseRelayoutMaskTimer = window.setTimeout(function() {
+        clearXourseSelection();
+        xourse.classList.remove('xronos-grid-relayout-mask');
+        xourseRelayoutMaskActive = false;
+        xourseRelayoutMaskTimer = undefined;
+        clearXourseSelection();
+    }, 150);
+};
+
+var relayoutXourse = function() {
+    if (!xourseIsotope) return;
+
+    if (typeof window !== 'undefined' && typeof window.dispatchEvent === 'function') {
+        window.dispatchEvent(new Event('resize'));
+    }
+
+    if (typeof xourseIsotope.reloadItems === 'function') {
+        xourseIsotope.reloadItems();
+    }
+
+    xourseIsotope.arrange({ filter: filtering });
+
+    if (typeof xourseIsotope.layout === 'function') {
+        xourseIsotope.layout();
+    }
+};
+
+var scheduleXourseRelayout = function() {
+    if (typeof window === 'undefined' || typeof window.setTimeout !== 'function') {
+        relayoutXourse();
+        return;
+    }
+
+    maskXourseForRelayout();
+
+    /*
+     * Let the original arrange() call handle the immediate fold/unfold.
+     * Then do short delayed re-measures after the DOM/class changes have
+     * settled. Isotope transitions are disabled for this grid, so these can
+     * run quickly enough to avoid visible temporary gaps.
+     */
+    window.setTimeout(relayoutXourse, 25);
+    window.setTimeout(relayoutXourse, 125);
+};
+
 var layoutXourse = function( ) {
     var xourse = $(this);
     // console.log('layoutXourse for ');
     // console.log(xourse);
 
     $('.activity-card', xourse).activityCard();
+    installXourseSelectionMaskHandlers(xourse);
     installXronosSidebarCompletionLabels();
 
 	xourse.find('.part').each(function (index, value) {
 		$(this).click(function () {
 			$(value).toggleClass('part-open')
 			xourseIsotope.arrange({ filter: filtering });
+	    scheduleXourseRelayout();
 		})
 	})
 
@@ -207,10 +315,11 @@ var layoutXourse = function( ) {
 	// layoutMode: 'fitRows',
 	// layoutMode: 'vertical',
 	layoutMode: layoutMode,
+		transitionDuration: 0,
 	itemSelector: '.activity-card',
 	filter: filtering,
 	animationOptions: {
-	    duration: 750,
+	    duration: 0,
 	    easing: 'linear',
 	    queue: false
 	}
@@ -222,11 +331,23 @@ var layoutXourse = function( ) {
 
 // On document ready...
 $(function() {
+    $(document)
+        .off('selectstart.xronosSelectionMask mousemove.xronosSelectionMask')
+        .on('selectstart.xronosSelectionMask mousemove.xronosSelectionMask', preventXourseSelectionWhileMasked);
+
+    $('#xourse-expand, #xourse-implode')
+        .off('mousedown.xronosSelectionMask')
+        .on('mousedown.xronosSelectionMask', function() {
+            maskXourseForRelayout();
+        });
+
+
 	$('#xourse-expand').click(function(){
 		$('.part').addClass('part-open')
 		$('#xourse-implode').show()
 		$('#xourse-expand').hide()
 		xourseIsotope.arrange({ filter: filtering });
+	    scheduleXourseRelayout();
 	})
 	
 	$('#xourse-implode').click(function () {
@@ -234,6 +355,7 @@ $(function() {
 		$('#xourse-implode').hide()
 		$('#xourse-expand').show()
 		xourseIsotope.arrange({ filter: filtering });
+	    scheduleXourseRelayout();
 	})
 
 	var mainnav=$('.main-nav')[0];

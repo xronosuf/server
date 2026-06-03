@@ -777,3 +777,196 @@ body:has(.wrapper .main-inhoud > .toc) {
   transform: translateY(-50%) !important;
 }
 
+/*
+ * Xronos UF master-grid completion labels and practice bars
+ *
+ * Master xourse/grid pages use large activity tiles plus skinny practice
+ * bars.  Hide the old progress-bar strips, show compact text completion
+ * status, mirror the sidebar color categories, and keep practice cards
+ * visually compact.
+ *
+ * Longer-term, this layout should probably become a true CSS grid with
+ * practice cards occupying a small column span.  For now, this preserves the
+ * existing Isotope layout while improving readability and scanability.
+ */
+.xourse > .activity-card .progress {
+  display: none !important;
+}
+
+.xourse > .activity-card.xronos-has-completion-label {
+  position: absolute !important;
+}
+
+/* Sidebar-inspired master-grid colors. */
+.xourse > .activity-card.part,
+.xourse > .activity-card.card-sectionheading {
+  background-color: #8fd19e !important;
+  color: #111 !important;
+}
+
+.xourse > .activity-card.chapter {
+  background-color: #91c4ee !important;
+  color: #111 !important;
+}
+
+.xourse > .activity-card.section {
+  background-color: #bff2cc !important;
+  color: #111 !important;
+}
+
+.xourse > .activity-card.practice {
+  background-color: #c8d6f3 !important;
+  color: #111 !important;
+}
+
+/*
+ * Normal chapter/section tiles.
+ * Collapse the old header/progress strip while preserving the section number.
+ */
+.xourse > .activity-card:not(.practice):not(.part) > .card-header {
+  position: absolute !important;
+  top: 0 !important;
+  left: 0 !important;
+  right: 0 !important;
+  height: 0 !important;
+  min-height: 0 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  overflow: visible !important;
+  z-index: 900 !important;
+}
+
+.xourse > .activity-card:not(.practice):not(.part) > .card-header .card-number {
+  position: absolute !important;
+  top: 0.55rem !important;
+  right: 0.65rem !important;
+  line-height: 1 !important;
+  z-index: 950 !important;
+  white-space: nowrap !important;
+}
+
+.xourse > .activity-card:not(.practice):not(.part) > .card-block {
+  padding-top: 0.65rem !important;
+}
+
+.xourse > .activity-card:not(.practice):not(.part) .card-title {
+  padding-right: 4.75rem !important;
+  box-sizing: border-box !important;
+  margin-top: 0 !important;
+}
+
+.xourse > .activity-card:not(.practice):not(.part) .xronos-completion-label {
+  position: absolute !important;
+  right: 1.35rem !important;
+  top: 2.25rem !important;
+  min-width: 3.4rem !important;
+  text-align: right !important;
+  font-size: 0.82rem !important;
+  line-height: 1 !important;
+  opacity: 0.78 !important;
+  white-space: nowrap !important;
+  pointer-events: none !important;
+  color: inherit !important;
+  z-index: 950 !important;
+}
+
+.xourse > .activity-card:not(.practice):not(.part) .xronos-completion-label.xronos-completion-complete {
+  right: 0.85rem !important;
+}
+
+.xourse > .activity-card .xronos-completion-label.xronos-completion-complete {
+  font-weight: 700 !important;
+  opacity: 0.95 !important;
+  letter-spacing: 0.02em !important;
+}
+
+/* Master-grid practice bars. */
+.xourse > .activity-card.practice {
+  width: 2.35rem !important;
+  min-width: 2.35rem !important;
+  max-width: 2.35rem !important;
+  overflow: hidden !important;
+  text-align: center !important;
+}
+
+.xourse > .activity-card.practice::before {
+  content: "P" counter(practice) !important;
+  position: absolute !important;
+  left: 0 !important;
+  right: 0 !important;
+  top: 0.55rem !important;
+  width: 100% !important;
+  transform: none !important;
+  text-align: center !important;
+  font-size: 0.82rem !important;
+  line-height: 1 !important;
+  font-weight: 700 !important;
+  white-space: nowrap !important;
+  z-index: 950 !important;
+  pointer-events: none !important;
+  color: inherit !important;
+}
+
+.xourse > .activity-card.practice .xronos-completion-label {
+  position: absolute !important;
+  left: 0 !important;
+  right: 0 !important;
+  top: 1.75rem !important;
+  width: 100% !important;
+  transform: none !important;
+  font-size: 0.68rem !important;
+  line-height: 1 !important;
+  opacity: 0.78 !important;
+  max-width: none !important;
+  overflow: hidden !important;
+  text-align: center !important;
+  white-space: nowrap !important;
+  pointer-events: none !important;
+  color: inherit !important;
+  z-index: 950 !important;
+}
+
+.xourse > .activity-card.practice .xronos-completion-label.xronos-completion-complete {
+  font-size: 0.62rem !important;
+  font-weight: 700 !important;
+  opacity: 0.95 !important;
+  letter-spacing: 0 !important;
+}
+
+/*
+ * Xronos UF master-grid fold/unfold relayout mask
+ *
+ * Folding/unfolding a part can briefly show stale Isotope positioning after
+ * the master grid practice cards have been narrowed.  xourse.js applies this
+ * class during the short re-layout window so students do not see the temporary
+ * spacing glitch.
+ */
+.xourse.xronos-grid-relayout-mask > .activity-card:not(.part) {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transition: none !important;
+}
+
+.xourse > .activity-card:not(.part) {
+  transition: opacity 40ms linear !important;
+}
+
+/*
+ * Xronos UF master-grid transient no-select
+ *
+ * During fold/unfold, Isotope briefly repositions the master-grid cards.
+ * Temporarily prevent accidental text selection while the grid is masked and
+ * relaid out, but keep tile text selectable once the layout has settled.
+ */
+.xourse.xronos-grid-relayout-mask,
+.xourse.xronos-grid-relayout-mask * {
+  user-select: none !important;
+  -webkit-user-select: none !important;
+}
+
+.xourse > .activity-card.part {
+  cursor: pointer !important;
+}
+

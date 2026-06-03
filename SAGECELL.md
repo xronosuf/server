@@ -684,3 +684,15 @@ Emergency bypass, only if fallback endpoint is confirmed working:
 SAGECELL_SERVICE_MODE=remote-only
 ```
 
+### Public SageCell `/service` endpoint
+
+The public SageCell servers should **not** be used as the fallback `/service` endpoint.
+
+Andrey Novoseltsev confirmed by email that although `/service` exists in the SageCell codebase, the public SageCell servers do not support it. The public service is intended for interactive use with relatively small computational load, and `/service` access was disabled because automated traffic generated too much load.
+
+Therefore:
+
+- `https://sagecell.sagemath.org/service` is not a supported fallback target.
+- `SAGECELL_FALLBACK_SERVICE` should remain configurable, but should point only to a dedicated SageCell server.
+- Until the Ximera Project has its own dedicated SageCell server, the local Xronos SageCell container is the only supported `/service` endpoint.
+

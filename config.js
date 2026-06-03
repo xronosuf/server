@@ -40,6 +40,13 @@ config.environment    = process.env.NODE_ENV || 'test';
 
 config.port = process.env.PORT || 3000;
 config.sagecellService = process.env.SAGECELL_SERVICE || 'http://127.0.0.1:8888/service';
+config.sagecellFallbackService = process.env.SAGECELL_FALLBACK_SERVICE || 'https://sagecell.sagemath.org/service';
+config.sagecellServiceMode = process.env.SAGECELL_SERVICE_MODE || 'local-with-fallback';
+config.sagecellFallbackCooldownMs = parseInt(process.env.SAGECELL_FALLBACK_COOLDOWN_MS || '30000', 10);
+if (isNaN(config.sagecellFallbackCooldownMs) || config.sagecellFallbackCooldownMs < 0) {
+    config.sagecellFallbackCooldownMs = 30000;
+}
+
 config.subPath = process.env.SUB_PATH || ''
 config.root = (process.env.ROOT_URL || ('http://localhost:' + config.port)) + config.subPath;
 config.toValidPath = function (url) {

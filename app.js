@@ -257,93 +257,331 @@ passport.deserializeUser(function(id, done) {
 
 function sagecellProxyLog() {
     if (sagecellProxyLogEnabled) {
-	console.log.apply(console, arguments);
+console.log.apply(console, arguments);
     }
 }
 
-var sagecellProxyCache = {};
-    var sagecellProxyInFlight = {};
-    var sagecellProxyCacheMaxEntries = 5000;
+function normalizeSagecellServiceMode(mode) {
+    mode = (mode || "local-with-fallback").toLowerCase();
 
-    function sagecellProxyCacheSet(key, value) {
-var keys;
-if (!sagecellProxyCache[key]) {
-    keys = Object.keys(sagecellProxyCache);
-    if (keys.length >= sagecellProxyCacheMaxEntries) {
-delete sagecellProxyCache[keys[0]];
-    }
-}
-sagecellProxyCache[key] = value;
+    if (mode === "local" || mode === "local-only") {
+return "local-only";
     }
 
-    app.post('/sagecell/service', function(req, res) {
-var code = (req.body && req.body.code) ? req.body.code : "";
-var cacheKey = crypto.createHash('sha256').update(code).digest('hex');
+    if (mode === "remote" || mode === "fallback" || mode === "remote-only") {
+return "remote-only";
+    }
 
-if (sagecellProxyCache[cacheKey]) {
-    sagecellProxyLog("SageCell proxy cache HIT", cacheKey, "len", code.length);
-    res.set('X-SageCell-Proxy-Cache', 'HIT');
-    res.set('Content-Type', sagecellProxyCache[cacheKey].contentType);
-    res.status(sagecellProxyCache[cacheKey].statusCode);
-    res.send(sagecellProxyCache[cacheKey].body);
-    return;
+    if (mode === "local-with-fallback" || mode === "fallback-enabled" || mode === "auto") {
+return "local-with-fallback";
+    }
+
+    console.error("Unknown SAGECELL_SERVICE_MODE:", mode, "using local-with-fallback.");
+    return "local-with-fallback";
 }
 
-if (sagecellProxyInFlight[cacheKey]) {
-    sagecellProxyLog("SageCell proxy cache WAIT", cacheKey, "len", code.length);
-    sagecellProxyInFlight[cacheKey].push(res);
-    return;
+var sagecellServiceMode = normalizeSagecellServiceMode(config.sagecellServiceMode);
+var sagecellLocalUnhealthyUntil = 0;
+
+var sagecellProxyCacheLocal = {};
+var sagecellProxyCacheFallback = {};
+var sagecellProxyInFlight = {};
+var sagecellProxyCacheMaxEntries = 5000;
+
+function sagecellProxyCacheSet(cache, key, value) {
+    var keys;
+
+    if (!cache[key]) {
+keys = Object.keys(cache);
+
+if (keys.length >= sagecellProxyCacheMaxEntries) {
+    delete cache[keys[0]];
+}
+    }
+
+    cache[key] = value;
 }
 
-sagecellProxyLog("SageCell proxy cache MISS", cacheKey, "len", code.length);
-sagecellProxyInFlight[cacheKey] = [res];
+function sagecellProxyCacheName(source) {
+    return source === "fallback" ? "FALLBACK" : "LOCAL";
+}
 
-request.post({
-    url: config.sagecellService,
-    form: req.body,
-    timeout: 60000
-}, function(err, response, body) {
-    var waiting = sagecellProxyInFlight[cacheKey] || [];
-    delete sagecellProxyInFlight[cacheKey];
+function sagecellProxySendCached(res, entry, source) {
+    sagecellProxyLog("SageCell proxy cache HIT-" + sagecellProxyCacheName(source), entry.cacheKey, "len", entry.codeLength);
 
-    var statusCode = 200;
-    var contentType = 'application/json; charset=UTF-8';
+    res.set('X-SageCell-Proxy-Cache', 'HIT-' + sagecellProxyCacheName(source));
+    res.set('X-SageCell-Proxy-Source', source);
+    res.set('Content-Type', entry.contentType);
+    res.status(entry.statusCode);
+    res.send(entry.body);
+}
+
+function sagecellProxyContentType(response) {
+    if (response && response.headers && response.headers['content-type']) {
+return response.headers['content-type'];
+    }
+
+    return 'application/json; charset=UTF-8';
+}
+
+function sagecellProxyResponseIsCacheable(statusCode, body) {
+    var parsed;
+
+    if (!(statusCode >= 200 && statusCode < 300)) {
+return false;
+    }
+
+    try {
+parsed = JSON.parse(body);
+    } catch (e) {
+return false;
+    }
+
+    return parsed && parsed.success === true;
+}
+
+function sagecellProxyShouldFallback(err, response) {
+    var statusCode;
 
     if (err) {
-console.error("SageCell proxy error:", err);
-body = JSON.stringify({
-    success: false,
-    stderr: "SageCell proxy error: " + err.message
-});
-statusCode = 502;
-    } else {
-statusCode = response.statusCode || 200;
-if (response.headers && response.headers['content-type']) {
-    contentType = response.headers['content-type'];
+return true;
+    }
+
+    if (!response) {
+return true;
+    }
+
+    statusCode = response.statusCode || 0;
+
+    // Treat gateway/service-unavailable style failures as infrastructure
+    // failures.  Do not fallback on normal Sage execution errors, which
+    // should be returned as HTTP 200 with success:false.
+    return statusCode === 502 || statusCode === 503 || statusCode === 504;
 }
 
-// Cache successful SageCell responses only.
-if (statusCode >= 200 && statusCode < 300) {
-    sagecellProxyCacheSet(cacheKey, {
+function sagecellProxyErrorBody(source, err) {
+    var message = err && err.message ? err.message : String(err || "unknown error");
+
+    return JSON.stringify({
+success: false,
+stderr: "SageCell proxy error from " + source + ": " + message
+    });
+}
+
+function sagecellProxyHttpErrorBody(source, statusCode, body) {
+    var bodyText = body === undefined || body === null ? "" : String(body);
+
+    if (bodyText.length > 500) {
+        bodyText = bodyText.slice(0, 500) + "...";
+    }
+
+    return JSON.stringify({
+        success: false,
+        stderr: "SageCell " + source + " service returned HTTP " + statusCode + ". Body: " + bodyText
+    });
+}
+
+function sagecellProxyPost(source, serviceUrl, form, callback) {
+    sagecellProxyLog("SageCell proxy request", source, serviceUrl);
+
+    request.post({
+url: serviceUrl,
+form: form,
+timeout: 60000
+    }, function(err, response, body) {
+callback(err, response, body);
+    });
+}
+
+function sagecellProxyFinish(waitingKey, cacheKey, codeLength, source, statusCode, contentType, body, cacheable) {
+    var waiting = sagecellProxyInFlight[waitingKey] || [];
+
+    delete sagecellProxyInFlight[waitingKey];
+
+    if (cacheable) {
+if (source === "fallback") {
+    sagecellProxyCacheSet(sagecellProxyCacheFallback, cacheKey, {
+cacheKey: cacheKey,
+codeLength: codeLength,
 statusCode: statusCode,
 contentType: contentType,
-body: body
+body: body,
+source: source,
+createdAt: Date.now()
+    });
+} else {
+    sagecellProxyCacheSet(sagecellProxyCacheLocal, cacheKey, {
+cacheKey: cacheKey,
+codeLength: codeLength,
+statusCode: statusCode,
+contentType: contentType,
+body: body,
+source: source,
+createdAt: Date.now()
     });
 }
     }
 
-    waiting.forEach(function(waitingRes) {
-waitingRes.set('X-SageCell-Proxy-Cache',
-       waitingRes === waiting[0] ? 'MISS' : 'WAIT');
+    waiting.forEach(function(waitingRes, index) {
+waitingRes.set('X-SageCell-Proxy-Cache', index === 0 ? 'MISS' : 'WAIT');
+waitingRes.set('X-SageCell-Proxy-Source', source);
 waitingRes.status(statusCode);
 waitingRes.set('Content-Type', contentType);
 waitingRes.send(body);
     });
-});
-    });
+}
 
-    
-    app.get('/sw.js', function(req, res) {
+function sagecellProxyFinishError(waitingKey, source, err) {
+    var body = sagecellProxyErrorBody(source, err);
+
+    console.error("SageCell proxy error from", source + ":", err);
+
+    sagecellProxyFinish(
+waitingKey,
+"",
+0,
+source,
+502,
+'application/json; charset=UTF-8',
+body,
+false
+    );
+}
+
+function sagecellProxyTryFallback(waitingKey, cacheKey, codeLength, form, reason) {
+    sagecellProxyLog("SageCell proxy trying fallback", cacheKey, "reason", reason || "unknown");
+
+    sagecellProxyPost("fallback", config.sagecellFallbackService, form, function(err, response, body) {
+        var statusCode;
+        var contentType;
+        var cacheable;
+
+        if (err) {
+            sagecellProxyFinishError(waitingKey, "fallback", err);
+            return;
+        }
+
+        statusCode = response.statusCode || 200;
+
+        if (!(statusCode >= 200 && statusCode < 300)) {
+            console.error("SageCell fallback service returned HTTP", statusCode, body);
+
+            sagecellProxyFinish(
+                waitingKey,
+                cacheKey,
+                codeLength,
+                "fallback",
+                502,
+                "application/json; charset=UTF-8",
+                sagecellProxyHttpErrorBody("fallback", statusCode, body),
+                false
+            );
+
+            return;
+        }
+
+        contentType = sagecellProxyContentType(response);
+        cacheable = sagecellProxyResponseIsCacheable(statusCode, body);
+
+        if (!cacheable) {
+            sagecellProxyLog("SageCell proxy fallback response not cached", cacheKey, "status", statusCode);
+        }
+
+        sagecellProxyFinish(waitingKey, cacheKey, codeLength, "fallback", statusCode, contentType, body, cacheable);
+    });
+}
+
+app.post('/sagecell/service', function(req, res) {
+    var code = (req.body && req.body.code) ? req.body.code : "";
+    var cacheKey = crypto.createHash('sha256').update(code).digest('hex');
+    var mode = sagecellServiceMode;
+    var now = Date.now();
+    var localCacheEntry = sagecellProxyCacheLocal[cacheKey];
+    var fallbackCacheEntry = sagecellProxyCacheFallback[cacheKey];
+    var localInCooldown = now < sagecellLocalUnhealthyUntil;
+    var waitingKey;
+
+    // In normal/fallback-enabled mode, local cache is canonical.  Even during
+    // a local outage, a known-good local cached response is safe to return.
+    if (mode !== "remote-only" && localCacheEntry) {
+sagecellProxySendCached(res, localCacheEntry, "local");
+return;
+    }
+
+    if (mode === "remote-only" && fallbackCacheEntry) {
+sagecellProxySendCached(res, fallbackCacheEntry, "fallback");
+return;
+    }
+
+    if (mode === "local-with-fallback" && localInCooldown && fallbackCacheEntry) {
+sagecellProxySendCached(res, fallbackCacheEntry, "fallback");
+return;
+    }
+
+    if (mode === "remote-only") {
+waitingKey = "fallback:" + cacheKey;
+    } else if (mode === "local-only") {
+waitingKey = "local:" + cacheKey;
+    } else if (localInCooldown) {
+waitingKey = "fallback:" + cacheKey;
+    } else {
+waitingKey = "auto:" + cacheKey;
+    }
+
+    if (sagecellProxyInFlight[waitingKey]) {
+sagecellProxyLog("SageCell proxy cache WAIT", waitingKey, "len", code.length);
+sagecellProxyInFlight[waitingKey].push(res);
+return;
+    }
+
+    sagecellProxyLog("SageCell proxy cache MISS", waitingKey, "len", code.length, "mode", mode);
+    sagecellProxyInFlight[waitingKey] = [res];
+
+    if (mode === "remote-only") {
+sagecellProxyTryFallback(waitingKey, cacheKey, code.length, req.body, "remote-only mode");
+return;
+    }
+
+    if (mode === "local-with-fallback" && localInCooldown) {
+sagecellProxyTryFallback(waitingKey, cacheKey, code.length, req.body, "local cooldown");
+return;
+    }
+
+    sagecellProxyPost("local", config.sagecellService, req.body, function(err, response, body) {
+var statusCode;
+var contentType;
+var cacheable;
+
+if (mode === "local-with-fallback" && sagecellProxyShouldFallback(err, response)) {
+    sagecellLocalUnhealthyUntil = Date.now() + config.sagecellFallbackCooldownMs;
+    console.error(
+"SageCell local service unavailable; using fallback for",
+config.sagecellFallbackCooldownMs,
+"ms.",
+err || (response && response.statusCode)
+    );
+    sagecellProxyTryFallback(waitingKey, cacheKey, code.length, req.body, err ? err.message : "HTTP " + (response && response.statusCode));
+    return;
+}
+
+if (err) {
+    sagecellProxyFinishError(waitingKey, "local", err);
+    return;
+}
+
+statusCode = response.statusCode || 200;
+contentType = sagecellProxyContentType(response);
+cacheable = sagecellProxyResponseIsCacheable(statusCode, body);
+
+if (!cacheable) {
+    sagecellProxyLog("SageCell proxy local response not cached", cacheKey, "status", statusCode);
+}
+
+sagecellProxyFinish(waitingKey, cacheKey, code.length, "local", statusCode, contentType, body, cacheable);
+    });
+});
+
+app.get('/sw.js', function(req, res) {
 	res.sendFile('public/javascripts/sw.min.js', { root: __dirname });
     });    
     

@@ -18,7 +18,7 @@ $(function() {
     }, 1000);
 });
 
-var hintButtonHtml = '<button class="btn btn-info btn-reveal-hint" type="button" data-toggle="tooltip" data-placement="top" title="Toon de volgende hint."><i class="fa fa-life-ring"></i>&nbsp; <span class="hint-text">Toon Hint</span><span class="counter" style="display: none;"> (<span class="count">1</span> of <span class="total">1</span>)</span><span class="hint-locked" style="display: none;"><span class="countdown"> (<i class="fa fa-lock"></i> <span class="seconds-remaining">1</span>)</span><span class="hint-unlocked" style="display: none;"> <i class="fa fa-unlock"></i></span></span></button>';
+var hintButtonHtml = '<button class="btn btn-info btn-reveal-hint" type="button" data-toggle="tooltip" data-placement="top" title="Show the next hint."><i class="fa fa-life-ring"></i>&nbsp; <span class="hint-text">Show hint</span><span class="counter" style="display: none;"> (<span class="count">1</span> of <span class="total">1</span>)</span><span class="hint-locked" style="display: none;"><span class="countdown"> (<i class="fa fa-lock"></i> <span class="seconds-remaining">1</span>)</span><span class="hint-unlocked" style="display: none;"> <i class="fa fa-unlock"></i></span></span></button>';
 
 var createProblem = function() {
     var problem = $(this);
@@ -134,13 +134,13 @@ var createProblem = function() {
 		if (!nextHint) {
 		    problem.persistentData('uncovered-all-hints', true );
 		} else if ($(nextHint).hasClass('feedback')){
-			hintButton.find('.hint-text').text('Toon Uitwerking');
+			hintButton.find('.hint-text').text('Show solution');
 			hintButton.addClass('oplossing');    /* to overwrite text in css (English) ... */
 		}
 		});
 		
 		if ($(firstHint).hasClass('feedback')) {
-			hintButton.find('.hint-text').text('Toon Uitwerking');
+			hintButton.find('.hint-text').text('Show solution');
 			hintButton.addClass('oplossing');    /* to overwrite text in css (English) ... */
 		}
 

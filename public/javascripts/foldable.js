@@ -21,10 +21,10 @@ var createFoldable = function() {
     var foldable = $(this);
 	foldable.removeAttributes()
 	foldable.wrap('<div class="accordion"></div>')
-	foldable.before("<h3>Klap uit</h3>")
+	foldable.before("<h3>Expand</h3>")
 
 	/*foldable.wrap(function () {
-		return '<div class="accordion"><h3>Klap uit</h3><div>'+ $(this).html() + '</div></div>'
+		return '<div class="accordion"><h3>Expand</h3><div>'+ $(this).html() + '</div></div>'
 	});*/
 
     /*var button = $(buttonHtml);

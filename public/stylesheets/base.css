@@ -15437,6 +15437,35 @@ div.scroll::-webkit-scrollbar-thumb {
   pointer-events: none;
 }
 
+/*
+ * Xronos UF topbar Another button styling
+ *
+ * The "Another" button is injected by sagemath.js on randomized Sage pages.
+ * Style it like a native topbar control rather than a Bootstrap success button.
+ */
+.xmanother {
+  display: inline-block;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0 0.45rem;
+  margin: 0;
+  font: inherit;
+  line-height: inherit;
+}
+
+.xmanother:hover,
+.xmanother:focus {
+  background: rgba(255, 255, 255, 0.15);
+  text-decoration: none;
+  outline: none;
+}
+
+.xmanother i {
+  margin-right: 0.15rem;
+}
+
 /* I do not understand why this is in bootstrap, but without it there
    is space between my breadcrumb'd navbar and the content */
 nav .breadcrumb {

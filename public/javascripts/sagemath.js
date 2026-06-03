@@ -123,12 +123,55 @@ seedCallbacks = [];
     });
 });
 
-$(function() {
-    $("#show-me-another-button").click(function() {
-	$("i", this).addClass("fa-spin");
-	$("#show-me-another-button i").css('animation-play-state', 'running');
-	xronosShowMeAnotherSage();
+function ensureShowMeAnotherButton() {
+    var button = $("#show-me-another-button");
+
+    if (button.length > 0) {
+return button;
+    }
+
+    button = $('<button/>', {
+type: 'button',
+id: 'show-me-another-button',
+'class': 'xmanother',
+role: 'button',
+style: 'display: none;',
+title: 'Generate another version of this page',
+'aria-label': 'Generate another version of this page'
     });
+
+    button.append($('<i/>', {
+'class': 'fa fa-repeat',
+'aria-hidden': 'true'
+    }));
+
+    button.append($('<span/>', {
+'class': 'xronos-another-label xmhidden-small hidden-md-down'
+    }).html('&nbsp;Another'));
+
+    if ($(".xmdownload").length > 0) {
+	$(".xmdownload").first().before(button);
+    } else if ($("#math-edit-button").length > 0) {
+	$("#math-edit-button").after(button);
+    } else if ($(".xmupdate").length > 0) {
+	$(".xmupdate").first().before(button);
+    } else {
+	$("body").prepend(button);
+    }
+
+    return button;
+}
+
+$(function() {
+    ensureShowMeAnotherButton();
+
+    $(document)
+.off("click.xronosAnother", "#show-me-another-button")
+.on("click.xronosAnother", "#show-me-another-button", function() {
+    $("i", this).addClass("fa-spin");
+    $("#show-me-another-button i").css('animation-play-state', 'running');
+    xronosShowMeAnotherSage();
+});
 });
 
 var stripCDATA = function(code) {
@@ -149,7 +192,7 @@ $('script[type="text/sagemath"]').each(function() {
 
     // The snippet "rand" is enough to trigger the "Another..." button
     if (code.match('rand')) {
-$("#show-me-another-button").show();
+ensureShowMeAnotherButton().show();
     }
 
     if ($.trim(code).length > 0) {

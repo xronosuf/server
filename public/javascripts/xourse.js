@@ -31,12 +31,162 @@ var updateSearch = function() {
     xourseIsotope.arrange({ filter: filtering });   
 };
 
+var installXronosSidebarCompletionLabels = function() {
+    var updateTimer = null;
+    var roundToNearest = 1;
+
+    if (typeof window === 'undefined' || typeof document === 'undefined') {
+        return;
+    }
+
+    var percentFromCard = function(card) {
+        var rawCompletion = card.getAttribute('data-max-completion');
+        var n;
+        var bar;
+        var styleWidth;
+        var match;
+        var ariaValue;
+
+        if (rawCompletion !== null && rawCompletion !== '') {
+            n = Number(rawCompletion);
+            if (Number.isFinite(n)) {
+                return Math.max(0, Math.min(100, n * 100));
+            }
+        }
+
+        bar = card.querySelector('.progress-bar');
+
+        if (bar) {
+            ariaValue = bar.getAttribute('aria-valuenow');
+            if (ariaValue !== null && ariaValue !== '') {
+                n = Number(ariaValue);
+                if (Number.isFinite(n)) {
+                    return Math.max(0, Math.min(100, n));
+                }
+            }
+
+            styleWidth = bar.style && bar.style.width;
+            match = styleWidth && String(styleWidth).match(/([\d.]+)%/);
+
+            if (match) {
+                n = Number(match[1]);
+                if (Number.isFinite(n)) {
+                    return Math.max(0, Math.min(100, n));
+                }
+            }
+        }
+
+        return null;
+    };
+
+    var directCompletionLabel = function(card) {
+        var children = card.children;
+        var i;
+
+        for (i = 0; i < children.length; i++) {
+            if (children[i].classList && children[i].classList.contains('xronos-completion-label')) {
+                return children[i];
+            }
+        }
+
+        return null;
+    };
+
+    var updateLabels = function() {
+        document.querySelectorAll('.toc .activity-card').forEach(function(card) {
+            var percent;
+            var rounded;
+            var text;
+            var label;
+
+            if (card.classList.contains('card-sectionheading') || card.classList.contains('part')) {
+                return;
+            }
+
+            percent = percentFromCard(card);
+
+            if (percent === null) {
+                return;
+            }
+
+            rounded = Math.round(percent / roundToNearest) * roundToNearest;
+
+            if (rounded >= 100) {
+                text = 'DONE';
+            } else {
+                text = rounded.toString() + '%';
+            }
+
+            label = directCompletionLabel(card);
+
+            if (!label) {
+                label = document.createElement('span');
+                label.className = 'xronos-completion-label';
+                label.setAttribute('aria-hidden', 'true');
+                card.appendChild(label);
+            }
+
+            if (label.textContent !== text) {
+                label.textContent = text;
+            }
+
+            if (rounded >= 100) {
+                label.classList.add('xronos-completion-complete');
+                card.classList.add('xronos-completion-card-complete');
+            } else {
+                label.classList.remove('xronos-completion-complete');
+                card.classList.remove('xronos-completion-card-complete');
+            }
+
+            card.classList.add('xronos-has-completion-label');
+        });
+    };
+
+    var scheduleUpdate = function() {
+        window.clearTimeout(updateTimer);
+        updateTimer = window.setTimeout(updateLabels, 100);
+    };
+
+    if (!window.xronosSidebarCompletionLabelsInstalled) {
+        window.addEventListener('xronos:gradebookRecorded', scheduleUpdate);
+        window.xronosSidebarCompletionLabelsInstalled = true;
+    }
+
+    document.querySelectorAll('.toc').forEach(function(toc) {
+        if (toc.xronosCompletionObserver) {
+            toc.xronosCompletionObserver.disconnect();
+        }
+
+        if (typeof MutationObserver !== 'undefined') {
+            toc.xronosCompletionObserver = new MutationObserver(scheduleUpdate);
+            toc.xronosCompletionObserver.observe(toc, {
+                subtree: true,
+                childList: true,
+                attributes: true,
+                attributeFilter: [
+                    'data-max-completion',
+                    'style',
+                    'class',
+                    'aria-valuenow',
+                    'aria-valuemax'
+                ]
+            });
+        }
+    });
+
+    updateLabels();
+
+    window.xronosUpdateSidebarCompletionLabels = updateLabels;
+};
+
+
 var layoutXourse = function( ) {
     var xourse = $(this);
     // console.log('layoutXourse for ');
     // console.log(xourse);
 
     $('.activity-card', xourse).activityCard();
+    installXronosSidebarCompletionLabels();
 
 	xourse.find('.part').each(function (index, value) {
 		$(this).click(function () {

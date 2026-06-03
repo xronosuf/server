@@ -1,6 +1,38 @@
 var $ = require('jquery');
 var _ = require('underscore');
 
+var xronosDispatchGradebookRecorded = function(payload, result) {
+    var event;
+
+    if (typeof window === 'undefined' || typeof window.dispatchEvent !== 'function') {
+        return;
+    }
+
+    try {
+        if (typeof window.CustomEvent === 'function') {
+            event = new window.CustomEvent('xronos:gradebookRecorded', {
+                detail: {
+                    payload: payload,
+                    result: result
+                }
+            });
+        } else if (typeof document !== 'undefined' && typeof document.createEvent === 'function') {
+            event = document.createEvent('CustomEvent');
+            event.initCustomEvent('xronos:gradebookRecorded', false, false, {
+                payload: payload,
+                result: result
+            });
+        }
+
+        if (event) {
+            window.dispatchEvent(event);
+        }
+    } catch (e) {
+        // The gradebook submission itself succeeded; do not let a UI event
+        // helper interfere with that workflow.
+    }
+};
+
 exports.update = _.debounce( function() {
     var pointsEarned = 0;
     
@@ -34,6 +66,7 @@ exports.update = _.debounce( function() {
 	contentType: 'application/json',	
 	success: function( result ) {
 	    console.log( "Recorded gradebook",payload );
+	    xronosDispatchGradebookRecorded(payload, result);
 	    $('.progress-bar', ".progress.completion-meter").removeClass( 'bg-danger' );
 	    $('.progress-bar', ".progress.completion-meter").addClass( 'bg-success' );
 	    $(".progress.completion-meter").attr('title', 'Grade submitted at '  + (new Date()).toLocaleTimeString() );

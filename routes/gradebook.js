@@ -108,84 +108,153 @@ setInterval( process, 10000 );
 
 exports.record = function(req, res, next) {
     var repositoryName = req.params.repository;
+    var now = Date.now();
+
+    var bridgeHasGradePassback = function(bridge) {
+        var pointsPossible = parseInt(bridge.pointsPossible);
+
+        return !!(
+            bridge &&
+            bridge.lisResultSourcedid &&
+            bridge.lisOutcomeServiceUrl &&
+            !isNaN(pointsPossible) &&
+            pointsPossible > 0
+        );
+    };
+
+    var bridgeIsOpen = function(bridge) {
+        return !(bridge && bridge.dueDate && bridge.dueDate < now);
+    };
+
+    var buildGradeSyncStatus = function(bridges) {
+        var status = {
+            bridgeCount: bridges.length,
+            gradePassbackBridgeCount: 0,
+            activeGradePassbackBridgeCount: 0,
+            queuedGradePassbackCount: 0,
+            hasGradePassback: false,
+            hasActiveGradePassback: false,
+            queuedGradePassback: false,
+            state: 'not-syncing',
+            reason: 'no-bridge'
+        };
+
+        bridges.forEach(function(bridge) {
+            if (bridgeHasGradePassback(bridge)) {
+                status.gradePassbackBridgeCount += 1;
+
+                if (bridgeIsOpen(bridge)) {
+                    status.activeGradePassbackBridgeCount += 1;
+                }
+            }
+        });
+
+        status.hasGradePassback = status.gradePassbackBridgeCount > 0;
+        status.hasActiveGradePassback = status.activeGradePassbackBridgeCount > 0;
+
+        if (status.hasActiveGradePassback) {
+            status.state = 'syncing';
+            status.reason = 'active-passback';
+        } else if (status.hasGradePassback) {
+            status.state = 'not-syncing';
+            status.reason = 'grade-passback-closed';
+        } else if (status.bridgeCount > 0) {
+            status.state = 'not-syncing';
+            status.reason = 'missing-passback-fields';
+        }
+
+        return status;
+    };
 
     if (!req.user) {
-	next('No user logged in.');
+        next('No user logged in.');
     } else {
-		console.log('gradebook.record for ' + req.user._id + ' (' + repositoryName +'/'+ req.params.path +')');
-	mdb.LtiBridge.find( {user: req.user._id, repository: repositoryName, path:req.params.path }, function(err, bridges) {
-		// console.log('i')
-	    if (err) {
-			console.log(err)
-		next(err);
-	    } else {
-			// console.log('n')
-			// console.log(bridges)
-		async.each( bridges,
-			    function(bridge, callback) {
-					// console.log(bridge.dueDate)
-					// console.log(bridge.dueDate < Date.now())
-				// Silently ignore attempts to submit homework after the due date
-				if (bridge.dueDate < Date.now()) {
-				    callback(null);
-				    return;
-				}
-				
-				var pointsPossible = parseInt(bridge.pointsPossible);
-				// console.log(pointsPossible)
-				if (pointsPossible == 0) {
-				    callback(null);
-				    return;
-				}
+        console.log('gradebook.record for ' + req.user._id + ' (' + repositoryName +'/'+ req.params.path +')');
 
-				// BADBAD: round to a couple decimal places to avoid some weird appearances on canvas
-				var resultScore = Math.ceil(100 * parseFloat(req.body.pointsEarned) / parseFloat(req.body.pointsPossible)) / 100.0;
-				var resultTotalScore = Math.ceil(100 * parseFloat(req.body.pointsEarned) / parseFloat(req.body.pointsPossible) * pointsPossible)/100.0;
+        mdb.LtiBridge.find( {user: req.user._id, repository: repositoryName, path:req.params.path }, function(err, bridges) {
+            var gradeSync;
 
-				// No need to record zeros in the gradebook
-				if (resultScore == 0) {
-				    callback(null);
-				    return;				    
-				}
+            if (err) {
+                console.log(err);
+                next(err);
+            } else {
+                gradeSync = buildGradeSyncStatus(bridges);
 
-				var better = false;
+                async.each( bridges,
+                    function(bridge, callback) {
+                        var pointsPossible;
+                        var resultScore;
+                        var resultTotalScore;
+                        var better;
 
-				if (((!bridge.resultScore) || (bridge.resultScore < resultScore)) && (!isNaN(resultScore))) { 
-				    bridge.resultScore = resultScore;
-				    better = true;
-				}
-				if (((!bridge.resultTotalScore) || (bridge.resultTotalScore < resultTotalScore)) && (!isNaN(resultTotalScore))) {
-				    bridge.resultTotalScore = resultTotalScore;
-				    better = true;
-				}
+                        /*
+                         * Bridges without passback fields cannot sync to Canvas.
+                         * Keep reporting them in gradeSync, but do not queue them.
+                         */
+                        if (!bridgeHasGradePassback(bridge)) {
+                            callback(null);
+                            return;
+                        }
 
-				if (better == false) {
-				    callback(null);
-				    return;
-				}
-				
-				console.log('New best score for bridge: '+bridge.resultScore + ' / ' + bridge.resultTotalScore); 
-				bridge.submittedScore = false;
-				
-				bridge.save(function(err) {
-				    if (!err) {
-					var debouncedTime = Date.now() + DEBOUNCE;
-					if (debouncedTime > bridge.dueDate)
-					    debouncedTime = bridge.dueDate;
-					
-					client.zadd('gradebook', debouncedTime, bridge._id.toString());
-				    }
-				    
-				    callback(err);
-				});
-			    },
-			    function(err) {
-				if (err) 
-				    res.status(500).json(err);			    
-				else
-				    res.json({ok: true});			    
-			    });
-	    }
-	});
+                        // Silently ignore attempts to submit homework after the due date
+                        if (!bridgeIsOpen(bridge)) {
+                            callback(null);
+                            return;
+                        }
+
+                        pointsPossible = parseInt(bridge.pointsPossible);
+
+                        // BADBAD: round to a couple decimal places to avoid some weird appearances on canvas
+                        resultScore = Math.ceil(100 * parseFloat(req.body.pointsEarned) / parseFloat(req.body.pointsPossible)) / 100.0;
+                        resultTotalScore = Math.ceil(100 * parseFloat(req.body.pointsEarned) / parseFloat(req.body.pointsPossible) * pointsPossible)/100.0;
+
+                        // No need to record zeros in the gradebook
+                        if (resultScore == 0) {
+                            callback(null);
+                            return;
+                        }
+
+                        better = false;
+
+                        if (((!bridge.resultScore) || (bridge.resultScore < resultScore)) && (!isNaN(resultScore))) {
+                            bridge.resultScore = resultScore;
+                            better = true;
+                        }
+                        if (((!bridge.resultTotalScore) || (bridge.resultTotalScore < resultTotalScore)) && (!isNaN(resultTotalScore))) {
+                            bridge.resultTotalScore = resultTotalScore;
+                            better = true;
+                        }
+
+                        if (better == false) {
+                            callback(null);
+                            return;
+                        }
+
+                        console.log('New best score for bridge: '+bridge.resultScore + ' / ' + bridge.resultTotalScore);
+                        bridge.submittedScore = false;
+
+                        bridge.save(function(err) {
+                            if (!err) {
+                                var debouncedTime = Date.now() + DEBOUNCE;
+                                if (bridge.dueDate && debouncedTime > bridge.dueDate)
+                                    debouncedTime = bridge.dueDate;
+
+                                client.zadd('gradebook', debouncedTime, bridge._id.toString());
+                                gradeSync.queuedGradePassbackCount += 1;
+                                gradeSync.queuedGradePassback = true;
+                            }
+
+                            callback(err);
+                        });
+                    },
+                    function(err) {
+                        if (err)
+                            res.status(500).json(err);
+                        else
+                            res.json({ok: true, gradeSync: gradeSync});
+                    });
+            }
+        });
     }
 };
+

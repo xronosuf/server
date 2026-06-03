@@ -15173,7 +15173,7 @@ body:has(.wrapper .main-inhoud > .toc) {
   right: 0.45rem !important;
   top: 50% !important;
   transform: translateY(-50%) !important;
-  font-size: 0.72rem !important;
+  font-size: 0.82rem !important;
   line-height: 1 !important;
   opacity: 0.78 !important;
   white-space: nowrap !important;
@@ -15432,6 +15432,87 @@ body:has(.wrapper .main-inhoud > .toc) {
   cursor: pointer !important;
 }
 
+/*
+ * Xronos UF Canvas grade-sync indicator
+ *
+ * Compact Canvas grade-sync status shown beside the activity/xourse title.
+ * Text is included so the status is not communicated by color alone.
+ */
+.xronos-grade-sync-status {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 0.35rem !important;
+  margin-left: 0.75rem !important;
+  margin-right: 0.75rem !important;
+  padding: 0.22rem 0.65rem !important;
+  border-radius: 999px !important;
+  border: 1px solid rgba(0, 0, 0, 0.18) !important;
+  background: rgba(255, 255, 255, 0.82) !important;
+  color: #222 !important;
+  font-size: 0.92rem !important;
+  line-height: 1.2 !important;
+  vertical-align: middle !important;
+  white-space: nowrap !important;
+}
+
+.xronos-grade-sync-dot {
+  display: inline-block !important;
+  width: 0.78rem !important;
+  height: 0.78rem !important;
+  border-radius: 50% !important;
+  border: 1px solid rgba(0, 0, 0, 0.28) !important;
+  background: #6c757d !important;
+  flex: 0 0 auto !important;
+}
+
+.xronos-grade-sync-syncing .xronos-grade-sync-dot {
+  background: #28a745 !important;
+}
+
+.xronos-grade-sync-not-syncing .xronos-grade-sync-dot {
+  background: #dc3545 !important;
+}
+
+.xronos-grade-sync-error .xronos-grade-sync-dot {
+  background: #ffc107 !important;
+}
+
+.xronos-grade-sync-checking .xronos-grade-sync-dot {
+  background: #6c757d !important;
+}
+
+.xronos-grade-sync-help {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 1.18rem !important;
+  height: 1.18rem !important;
+  padding: 0 !important;
+  border: 1px solid rgba(0, 0, 0, 0.25) !important;
+  border-radius: 50% !important;
+  background: rgba(255, 255, 255, 0.65) !important;
+  color: inherit !important;
+  font-size: 0.72rem !important;
+  font-weight: 700 !important;
+  line-height: 1 !important;
+  cursor: pointer !important;
+}
+
+.xronos-grade-sync-help:hover,
+.xronos-grade-sync-help:focus {
+  background: #fff !important;
+  outline: 2px solid rgba(0, 0, 0, 0.18) !important;
+  outline-offset: 1px !important;
+}
+
+@media (max-width: 760px) {
+  .xronos-grade-sync-label {
+    display: none !important;
+  }
+  .xronos-grade-sync-status {
+    margin-left: 0.45rem !important;
+  }
+}
 .xourse-cards {
   margin: 0;
   padding: 0;

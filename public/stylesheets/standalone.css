@@ -15407,6 +15407,36 @@ div.scroll::-webkit-scrollbar-thumb {
   background-color: #292b2c;
 }
 
+/*
+ * Xronos UF sidebar TOC practice-card click fix
+ *
+ * Practice cards generate their visible "Practice: N" label with ::before,
+ * while the actual anchor has no visible text. In the left TOC/sidebar, the
+ * empty anchor did not cover the visible generated label, so clicking the
+ * visible practice row did nothing.
+ *
+ * Restore a full-row clickable anchor only for practice cards in the TOC.
+ */
+.toc .activity-card.practice {
+  position: relative;
+}
+
+.toc .activity-card.practice > a:first-of-type {
+  position: absolute !important;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: block !important;
+  width: 100%;
+  height: 100%;
+  z-index: 900;
+}
+
+.toc .activity-card.practice::before {
+  pointer-events: none;
+}
+
 /* I do not understand why this is in bootstrap, but without it there
    is space between my breadcrumb'd navbar and the content */
 nav .breadcrumb {

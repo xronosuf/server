@@ -1053,3 +1053,54 @@ body:has(.wrapper .main-inhoud > .toc) {
   }
 }
 
+/*
+ * Xronos UF legacy hint adapter
+ *
+ * Some current compiled content emits KULeuven-style accordion hints
+ * (h3.xmhint + .xmhint-content). activity.js converts those back into
+ * a legacy Xronos-style reveal button with a short lockout timer.
+ *
+ * Keep the button at the author's vertical hint position, but force it to
+ * be left-aligned rather than floated/positioned in the upper-right.
+ */
+.xronos-legacy-hint {
+  display: none;
+  margin: 0.75rem 0 1rem 0;
+  padding: 0.75rem 1rem;
+  border-left: 4px solid #5bc0de;
+  background: rgba(91, 192, 222, 0.08);
+}
+
+.problem-environment > .xronos-legacy-hint-button {
+  display: block !important;
+  float: none !important;
+  position: static !important;
+  left: auto !important;
+  right: auto !important;
+  top: auto !important;
+  bottom: auto !important;
+  transform: none !important;
+  width: fit-content !important;
+  max-width: max-content !important;
+  clear: both !important;
+  margin: 0.5rem 0 0.75rem 0 !important;
+  text-align: left !important;
+}
+
+.xronos-legacy-hint-button .counter,
+.xronos-legacy-hint-button .hint-unlocked {
+  display: none;
+}
+
+.xronos-legacy-hint-button .hint-locked {
+  display: inline;
+}
+
+.xronos-legacy-hint-button.xronos-hints-unlocked .hint-locked {
+  display: none;
+}
+
+.xronos-legacy-hint-button.xronos-hints-unlocked .hint-unlocked {
+  display: inline;
+}
+

@@ -63,6 +63,24 @@ function parseFormattedInput( format, input ) {
     return undefined;
 }
 
+
+function displayTexForCorrectStudentAnswer(result, instructorAnswerTex) {
+    var response = result.persistentData('response');
+
+    /*
+     * Once an answer is validated as correct, show the student's submitted
+     * response rather than replacing it with the instructor/canonical answer.
+     *
+     * If no response is available, fall back to the instructor answer so older
+     * saved state or unusual show-answer paths still render something useful.
+     */
+    if (response !== undefined && response !== null && response !== '') {
+        return response.toString();
+    }
+
+    return instructorAnswerTex;
+}
+
 function assignGlobalVariable( answerBox, text ) {
     var result = answerBox;
     
@@ -294,7 +312,7 @@ exports.connectMathAnswer = function(result, answer) {
 			if (m) {
 				mjElement.hide()
 				console.log(scriptElement.attr('type'))
-				scriptElement.after("<script type='"+ scriptElement.attr('type') + "' id='" + solScriptElementId + "'>" + tex.replace(answerRegExp, "{\\color{blue} " + m[2] + "}")+"</script>")
+				scriptElement.after("<script type='"+ scriptElement.attr('type') + "' id='" + solScriptElementId + "'>" + tex.replace(answerRegExp, "{\\color{blue} " + displayTexForCorrectStudentAnswer(result, m[2]) + "}")+"</script>")
 				MathJax.Hub.Queue(["Typeset", MathJax.Hub, "#" + solScriptElementId]);
 			}
 		}

@@ -111,14 +111,9 @@ if config.showLogin
             input.form-control#password(name="password",type="password")
           button.btn.btn-primary.btn-default#button-login(type="submit") Sign In
 
-//- General contact if no xourse
-if !landingPage && !(repositoryName && ((activity && activity.xourse && activity.xourse.path) || (xourse && xourse.path)))
-        div.xmhelp: a(href=(config.emailMain))
-          i.fa.fa-envelope-o
-          span.xmhidden-small &nbsp; Contact
-
-//- Contact instructors if xourse (and activity)
-if !landingPage && (repositoryName && ((activity && activity.xourse && activity.xourse.path) || (xourse && xourse.path)))
-        div.xmhelp: a(id="contact-instructor", href=toValidPath(`/${repositoryName}/${(activity ? (activity.xourse) : xourse).path}/instructors`))
-          i.fa.fa-envelope-o
-          span.xmhidden-small &nbsp; Contact
+//- Contact button intentionally suppressed for Xronos.
+//- Keep an invisible non-link spacer so neighboring topbar controls
+//- remain in approximately the same positions.
+div.xmhelp.xronos-contact-spacer(aria-hidden="true", style="visibility: hidden; pointer-events: none;")
+  i.fa.fa-envelope-o
+  span.xmhidden-small &nbsp; Contact

@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="-10 0 190 42"
+     preserveAspectRatio="xMinYMid meet"
+     role="img"
+     aria-labelledby="xronosWordmarkTitle">
+  <title id="xronosWordmarkTitle">Xronos</title>
+
+  <text x="6" y="31"
+        font-family="STIX Two Math, Cambria Math, STIXGeneral, Georgia, serif"
+        font-size="38"
+        font-style="italic"
+        font-weight="700"
+        fill="#0B4F8A"
+        stroke="#F2A900"
+        stroke-width="2.8"
+        paint-order="stroke fill">χ</text>
+
+  <text x="28" y="29.5"
+        font-family="Arial Black, Helvetica Neue, Helvetica, Arial, sans-serif"
+        font-size="26"
+        font-weight="900"
+        letter-spacing="-1.1"
+        fill="#F2A900"
+        stroke="#0B4F8A"
+        stroke-width="1.8"
+        paint-order="stroke fill">ronos</text>
+
+  <line x1="8" y1="35.5" x2="96" y2="35.5"
+        stroke="#F2A900"
+        stroke-width="3.2"
+        stroke-linecap="round" />
+</svg>

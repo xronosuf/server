@@ -1,0 +1,116 @@
+/*
+ * Xronos branding entry point.
+ *
+ * This file is intentionally separate from the main server CSS so that
+ * Xronos/host-institution branding can eventually be controlled from one
+ * predictable place.
+ *
+ * Currently active:
+ * - shared server wordmark/logo styling
+ *
+ * Future brandable areas:
+ * - main activity topbar background
+ * - activity title/navigation bar color
+ * - left sidebar tile colors by tile type
+ * - general institution accent colors
+ */
+
+:root {
+  /*
+   * Current Xronos defaults. These variables are mostly documentation for now;
+   * later patches can wire existing selectors to these names one area at a time.
+   */
+  --xronos-brand-primary: #00407A;        /* current dark blue page/topbar background */
+  --xronos-brand-accent: #E08A24;         /* current orange activity title bar */
+  --xronos-brand-logo-bg: #F4F4F4;        /* logo background */
+  --xronos-brand-logo-fg: #050505;        /* logo foreground */
+
+  /*
+   * Future tile color variables.
+   *
+   * These are placeholders only. Do not rely on them until the relevant tile
+   * selectors have been migrated in a later patch.
+   *
+   * --xronos-tile-part-bg:
+   * --xronos-tile-chapter-bg:
+   * --xronos-tile-section-bg:
+   * --xronos-tile-practice-bg:
+   * --xronos-activity-title-bg:
+   * --xronos-activity-page-bg:
+   */
+}
+
+/*
+ * Shared brand mark.
+ *
+ * Both the main navbar and activity pages should use views/layouts/branding/
+ * brand-mark.pug so the logo is consistent everywhere.
+ */
+.xronos-brand-mark {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  text-decoration: none !important;
+}
+
+.xronos-brand-mark:hover,
+.xronos-brand-mark:focus {
+  text-decoration: none !important;
+}
+
+\g<1>2.05rem\3
+  width: auto;
+  max-width: 10rem;
+}
+
+/* Main navbar / xourse tile view. */
+.navbar .xronos-brand-mark,
+.xronos-brand-mark.navbar-brand {
+  margin-right: 1rem;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+/* Activity/tile topbar. */
+.main-title .xronos-brand-mark,
+.topbar .xronos-brand-mark {
+  margin-right: 1rem;
+}
+
+.main-title .xronos-brand-mark-image,
+.topbar .xronos-brand-mark-image {
+  height: 1.95rem;
+}
+
+/* === Xronos approved brand wordmark sizing === */
+.xronos-brand-mark,
+a.xronos-brand-mark,
+.navbar-brand.xronos-brand-mark {
+  display: inline-flex !important;
+  align-items: center !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  line-height: 1 !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+.xronos-brand-mark-image,
+img.xronos-brand-mark-image,
+img.brandlogo.xronos-brand-mark-image {
+  display: block !important;
+  height: 3.45rem !important;
+  width: auto !important;
+  max-width: none !important;
+  margin: 0 !important;
+  padding: 0 !important;
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+  object-fit: contain !important;
+}
+/* === /Xronos approved brand wordmark sizing === */
+

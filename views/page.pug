@@ -20,8 +20,8 @@ block modals
 
 block maintitle
 
-    a(href=config.brandHomeLink)
-        img.brandlogo.logo(src=toValidPath(versionPath(config.brandLogo)))
+    include layouts/branding/brand-mark
+    +brandMark("logo")
 
     //- Show xourse-logo (if there is one...)
     if (activity.xourse.logo) && (activity.xourse.logo != '')

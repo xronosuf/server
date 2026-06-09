@@ -36,6 +36,11 @@ block maintitle
         a(href=activity.xourse.path) !{activity.xourse.title}
     else
       span.title-activity !{activity.title}
+
+    if typeof xronosSagecellPageAuth === "function"
+      - var xronosSagecellAuth = xronosSagecellPageAuth(activity)
+      script.
+        window.xronosSagecellAuth = !{JSON.stringify(xronosSagecellAuth)};
     div.lds-ring(id="loadingSpinner")
           div
           div

@@ -327,12 +327,20 @@ return false;
 
 function postSageRaw(requestCode) {
     return new Promise(function(resolve, reject) {
-$.ajax({
+	var xronosSagecellRequestData = {
+	    code: requestCode
+	};
+	var xronosSagecellAuth = window.xronosSagecellAuth || {};
+
+	if (xronosSagecellAuth.payload && xronosSagecellAuth.token) {
+	    xronosSagecellRequestData.xronosSagecellPayload = JSON.stringify(xronosSagecellAuth.payload);
+	    xronosSagecellRequestData.xronosSagecellToken = xronosSagecellAuth.token;
+	}
+
+	$.ajax({
     type: "POST",
     url: "/sagecell/service",
-    data: {
-code: requestCode
-    },
+    data: xronosSagecellRequestData,
     dataType: "json",
     timeout: 60000
 }).done(function(response) {

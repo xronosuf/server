@@ -491,9 +491,173 @@ function sagecellProxyTryFallback(waitingKey, cacheKey, codeLength, form, reason
     });
 }
 
+
+/*
+ * Xronos SageCell page authorization.
+ *
+ * Raw SageCell is an internal compute service. Browser requests must go
+ * through /sagecell/service and include a short-lived token issued when Xronos
+ * rendered the activity page. This prevents unauthenticated direct use of the
+ * Xronos SageCell proxy as a general public code-execution endpoint.
+ *
+ * For multi-process or multi-server deployments, set SAGECELL_PAGE_AUTH_SECRET
+ * to the same long random value everywhere. If omitted, this process uses an
+ * ephemeral startup secret, which is fine for a single test server but makes
+ * page tokens invalid after restart.
+ */
+var xronosSagecellPageAuthRequired = (process.env.SAGECELL_REQUIRE_PAGE_AUTH !== "false");
+var xronosSagecellPageAuthMaxAgeMs = parseInt(process.env.SAGECELL_PAGE_AUTH_MAX_AGE_MS || "43200000", 10);
+var xronosSagecellPageAuthSecret =
+    process.env.SAGECELL_PAGE_AUTH_SECRET ||
+    process.env.SAGECELL_REQUEST_SIGNING_SECRET ||
+    crypto.randomBytes(32).toString("hex");
+
+if (!process.env.SAGECELL_PAGE_AUTH_SECRET && !process.env.SAGECELL_REQUEST_SIGNING_SECRET) {
+    console.error("[WARN] SAGECELL_PAGE_AUTH_SECRET is not set; using an ephemeral per-process SageCell page-auth secret.");
+}
+
+if (!Number.isFinite(xronosSagecellPageAuthMaxAgeMs) || xronosSagecellPageAuthMaxAgeMs <= 0) {
+    xronosSagecellPageAuthMaxAgeMs = 43200000;
+}
+
+function xronosSagecellPageAuthSign(payloadString) {
+    return crypto
+        .createHmac("sha256", xronosSagecellPageAuthSecret)
+        .update(payloadString)
+        .digest("hex");
+}
+
+function xronosSagecellTimingSafeEqual(a, b) {
+    var aBuffer;
+    var bBuffer;
+
+    if (typeof a !== "string" || typeof b !== "string") {
+        return false;
+    }
+
+    aBuffer = Buffer.from(a, "utf8");
+    bBuffer = Buffer.from(b, "utf8");
+
+    if (aBuffer.length !== bBuffer.length) {
+        return false;
+    }
+
+    return crypto.timingSafeEqual(aBuffer, bBuffer);
+}
+
+function xronosSagecellPageAuth(activity) {
+    var payload;
+    var payloadString;
+
+    if (!activity) {
+        return {
+            required: xronosSagecellPageAuthRequired,
+            payload: null,
+            token: null
+        };
+    }
+
+    payload = {
+        v: 1,
+        path: activity.path || "",
+        hash: activity.hash || "",
+        commit: activity.commit || "",
+        xoursePath: activity.xourse && activity.xourse.path ? activity.xourse.path : "",
+        issuedAt: Date.now()
+    };
+
+    payloadString = JSON.stringify(payload);
+
+    return {
+        required: xronosSagecellPageAuthRequired,
+        payload: payload,
+        token: xronosSagecellPageAuthSign(payloadString)
+    };
+}
+
+function xronosVerifySagecellPageAuth(req) {
+    var payloadString;
+    var token;
+    var expected;
+    var payload;
+    var age;
+
+    if (!xronosSagecellPageAuthRequired) {
+        return { ok: true, reason: "disabled" };
+    }
+
+    payloadString = req.body && req.body.xronosSagecellPayload;
+    token = req.body && req.body.xronosSagecellToken;
+
+    if (!payloadString || !token) {
+        return { ok: false, reason: "missing SageCell page authorization" };
+    }
+
+    expected = xronosSagecellPageAuthSign(payloadString);
+
+    if (!xronosSagecellTimingSafeEqual(token, expected)) {
+        return { ok: false, reason: "invalid SageCell page authorization" };
+    }
+
+    try {
+        payload = JSON.parse(payloadString);
+    } catch (e) {
+        return { ok: false, reason: "malformed SageCell page authorization" };
+    }
+
+    if (!payload || payload.v !== 1 || !payload.path || !payload.hash || !payload.issuedAt) {
+        return { ok: false, reason: "incomplete SageCell page authorization" };
+    }
+
+    age = Date.now() - payload.issuedAt;
+
+    if (age < 0 || age > xronosSagecellPageAuthMaxAgeMs) {
+        return { ok: false, reason: "expired SageCell page authorization" };
+    }
+
+    return { ok: true, reason: "ok", payload: payload };
+}
+
+function xronosSagecellForwardBody(body) {
+    var forwardBody = {};
+    var key;
+
+    body = body || {};
+
+    for (key in body) {
+        if (Object.prototype.hasOwnProperty.call(body, key) &&
+            !key.match(/^xronosSagecell/)) {
+            forwardBody[key] = body[key];
+        }
+    }
+
+    return forwardBody;
+}
+
+app.locals.xronosSagecellPageAuth = xronosSagecellPageAuth;
+
+app.use(function(req, res, next) {
+    res.locals.xronosSagecellPageAuth = xronosSagecellPageAuth;
+    next();
+});
+
+
 app.post('/sagecell/service', function(req, res) {
+    var authCheck = xronosVerifySagecellPageAuth(req);
     var code = (req.body && req.body.code) ? req.body.code : "";
+    var sagecellForwardBody = xronosSagecellForwardBody(req.body);
     var cacheKey = crypto.createHash('sha256').update(code).digest('hex');
+
+    if (!authCheck.ok) {
+        console.error("Rejected SageCell proxy request:", authCheck.reason);
+        res.status(403).json({
+            success: false,
+            ename: "XronosSageCellAuthorizationError",
+            evalue: authCheck.reason,
+            stderr: "SageCell request rejected: " + authCheck.reason + "\n"
+        });
+        return;
+    }
     var mode = sagecellServiceMode;
     var now = Date.now();
     var localCacheEntry = sagecellProxyCacheLocal[cacheKey];
@@ -538,16 +702,16 @@ return;
     sagecellProxyInFlight[waitingKey] = [res];
 
     if (mode === "remote-only") {
-sagecellProxyTryFallback(waitingKey, cacheKey, code.length, req.body, "remote-only mode");
+sagecellProxyTryFallback(waitingKey, cacheKey, code.length, sagecellForwardBody, "remote-only mode");
 return;
     }
 
     if (mode === "local-with-fallback" && localInCooldown) {
-sagecellProxyTryFallback(waitingKey, cacheKey, code.length, req.body, "local cooldown");
+sagecellProxyTryFallback(waitingKey, cacheKey, code.length, sagecellForwardBody, "local cooldown");
 return;
     }
 
-    sagecellProxyPost("local", config.sagecellService, req.body, function(err, response, body) {
+    sagecellProxyPost("local", config.sagecellService, sagecellForwardBody, function(err, response, body) {
 var statusCode;
 var contentType;
 var cacheable;
@@ -560,7 +724,7 @@ config.sagecellFallbackCooldownMs,
 "ms.",
 err || (response && response.statusCode)
     );
-    sagecellProxyTryFallback(waitingKey, cacheKey, code.length, req.body, err ? err.message : "HTTP " + (response && response.statusCode));
+    sagecellProxyTryFallback(waitingKey, cacheKey, code.length, sagecellForwardBody, err ? err.message : "HTTP " + (response && response.statusCode));
     return;
 }
 

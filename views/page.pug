@@ -78,7 +78,11 @@ block activity-title
           span.xmprev.xmhover: a(href=toValidPath("/" + repositoryName + "/" + activity.xourse.path + "/" + previousActivity),aria-label="previous activity")
             i.fa.fa-chevron-left
             span.xmhidden &larr; !{previousActivity}
-      span.title !{activity.title}
+      - var xronosDisplayActivityTitle = activity.title
+      - var xronosPracticeTitleMatch = activity.path && activity.path.match(/(?:^|\/)Practice\/[^\/]*Practice([0-9]+)(?:$|\/)/i)
+      - if (xronosPracticeTitleMatch)
+        - xronosDisplayActivityTitle = "Practice " + xronosPracticeTitleMatch[1]
+      span.title !{xronosDisplayActivityTitle}
       if nextActivity
           span.xmnext.xmhover: a(href=toValidPath("/" + repositoryName + "/" + activity.xourse.path + "/" + nextActivity))
             i.fa.fa-chevron-right

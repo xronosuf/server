@@ -15564,6 +15564,203 @@ body:has(.wrapper .main-inhoud > .toc) {
   display: inline;
 }
 
+/* === Xronos default content CSS migrated from common global.css ===
+ *
+ * These rules used to live in author-supplied repository-level global.css
+ * files primarily to restore English/Xronos defaults on the KULeuven-adapted
+ * server.  Keeping them in the server CSS makes global.css closer to an
+ * optional course override layer instead of a required baseline file.
+ *
+ * Intentionally NOT migrated here: temporary per-course TOC/practice click
+ * fixes.  Those are handled by the server's Xronos TOC/card CSS above.
+ */
+/* Hint / solution / answer labels. */
+.xmhint::before {
+  content: "Show hint" counter(hint_number, notfirst);
+}
+
+.xmhint.ui-state-active::before {
+  content: "Hide hint " counter(hint_number, notfirst);
+}
+
+.xmoplossing::before {
+  content: "Show solution";
+}
+
+.xmoplossing.ui-state-active::before {
+  content: "Hide solution";
+}
+
+.xmoplossing-content::before {
+  content: "Solution: ";
+  font-weight: bold;
+}
+
+.xmuitkomst::before {
+  content: "Show answer";
+}
+
+.xmuitkomst.ui-state-active::before {
+  content: "Hide answer";
+}
+
+.xmuitkomst-content::before {
+  content: "Answer: ";
+  font-weight: bold;
+}
+
+/* English environment labels. */
+.exercise::before {
+  content: "exercise" attr(numbered) ".";
+}
+
+.definition::before {
+  content: "definition" attr(numbered) ".";
+}
+
+.remark::before {
+  content: "remark" attr(numbered) ".";
+}
+
+.proposition::before {
+  content: "proposition" attr(numbered) ".";
+}
+
+.example::before {
+  content: "example" attr(numbered) ".";
+}
+
+.warning::before {
+  content: "warning" attr(numbered) ".";
+}
+
+.theorem::before {
+  content: "theorem" attr(numbered) ".";
+}
+
+.explanation::before {
+  content: "explanation" attr(numbered) ".";
+}
+
+.exploration::before {
+  content: "exploration" attr(numbered) ".";
+}
+
+.formula::before {
+  content: "formula" attr(numbered) ".";
+}
+
+.problem::before {
+  content: "problem" attr(numbered) ".";
+}
+
+.notation::before {
+  content: "notation" attr(numbered) ".";
+}
+
+.question::before {
+  content: "question" attr(numbered) ".";
+}
+
+/* English control labels. */
+span.hint-text {
+  display: none;
+}
+
+button.btn-reveal-hint::after {
+  content: "Show hint";
+}
+
+button.btn-reveal-hint.oplossing::after {
+  content: "Show solution";
+}
+
+.xmerase a span.xmhidden-small {
+  display: none;
+}
+
+.xmerase a::after {
+  content: "Clear";
+}
+
+span.show-check-text {
+  display: none !important;
+}
+
+button.btn-ximera-check::after {
+  content: "Check answer";
+}
+
+span.show-answer-text {
+  display: none !important;
+}
+
+span.show-answer-large button.btn-ximera-show-answer::after {
+  content: "Reveal answer";
+}
+
+#math-edit-button span {
+  display: none;
+}
+
+button#math-edit-button::before {
+  content: "Math Editor";
+}
+
+/* Previous / next labels. */
+a.next-activity::before {
+  content: "Next";
+}
+
+span#next-activity-label {
+  display: none;
+}
+
+a.prev-activity::after {
+  content: "Previous";
+}
+
+span#prev-activity-label {
+  display: none;
+}
+
+/* English should be the default visible language for Xronos. */
+.en-text {
+  display: initial;
+}
+
+.nl-text {
+  display: none;
+}
+
+/* Generated titletext labels. */
+.multiple-choice[titletext]::before {
+  content: attr(titletext);
+}
+
+.problem-environment[titletext]::before {
+  content: attr(titletext) attr(numbered) ".";
+}
+
+.theorem-like[titletext]::before {
+  content: attr(titletext);
+}
+
+.feedback[titletext]::before {
+  content: attr(titletext) ": ";
+}
+
+/* Outcome formatting. */
+.outcomeContent {
+  color: rgb(51, 0, 181);
+}
+
+.outcomeHead {
+  text-align: center;
+  font-weight: bold;
+}
+
+/* === /Xronos default content CSS migrated from common global.css === */
 .xourse-cards {
   margin: 0;
   padding: 0;

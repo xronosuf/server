@@ -253,5 +253,177 @@ $.fn.extend({
 
 	return;
     }
-});    
+});
 
+/* === Xronos contained activity topbar layout === */
+function xronosContainedTopbarText(el) {
+    return (el && el.textContent ? el.textContent : "").replace(/\s+/g, " ").trim();
+}
+
+function xronosContainedTopbarIsSlot(el) {
+    return el && el.classList && (
+        el.classList.contains("xronos-contained-search-slot") ||
+        el.classList.contains("xronos-contained-title-slot") ||
+        el.classList.contains("xronos-contained-grade-slot") ||
+        el.classList.contains("xronos-contained-action-slot") ||
+        el.classList.contains("xronos-contained-activity-slot")
+    );
+}
+
+function xronosContainedTopbarDirectChildMatching(mainTitle, predicate) {
+    var children = Array.prototype.slice.call(mainTitle.children);
+
+    return children.find(function(el) {
+        if (xronosContainedTopbarIsSlot(el)) {
+            return false;
+        }
+
+        return predicate(el);
+    });
+}
+
+function xronosContainedTopbarMoveLateControls(mainTitle) {
+    var gradeSlot = mainTitle.querySelector(".xronos-contained-grade-slot");
+    var actionSlot = mainTitle.querySelector(".xronos-contained-action-slot");
+
+    if (!gradeSlot || !actionSlot) {
+        return;
+    }
+
+    function directChildIn(container, predicate) {
+        var children = Array.prototype.slice.call(container.children || []);
+
+        return children.find(function(el) {
+            return predicate(el);
+        });
+    }
+
+    function gradeSyncPredicate(el) {
+        var text = xronosContainedTopbarText(el);
+        return /grade/i.test(text) && /sync/i.test(text);
+    }
+
+    var gradeSync = xronosContainedTopbarDirectChildMatching(mainTitle, gradeSyncPredicate);
+
+    /*
+     * The grade-sync pill is inserted by another script.  Depending on timing,
+     * it may be inserted relative to the Another/Math-Editor controls after
+     * those controls have already been moved into the action slot.  Rescue it
+     * from the action slot and move it back to the grade slot.
+     */
+    if (!gradeSync) {
+        gradeSync = directChildIn(actionSlot, gradeSyncPredicate);
+    }
+
+    var another = xronosContainedTopbarDirectChildMatching(mainTitle, function(el) {
+        return xronosContainedTopbarText(el).indexOf("Another") !== -1;
+    });
+
+    var mathEditor = xronosContainedTopbarDirectChildMatching(mainTitle, function(el) {
+        return el.id === "math-edit-button";
+    });
+
+    if (gradeSync && gradeSync.parentNode !== gradeSlot) {
+        gradeSlot.appendChild(gradeSync);
+    }
+
+    if (another && another.parentNode !== actionSlot) {
+        actionSlot.appendChild(another);
+    }
+
+    if (mathEditor && mathEditor.parentNode !== actionSlot) {
+        actionSlot.appendChild(mathEditor);
+    }
+
+    /*
+     * Keep the action controls in the intended order:
+     *   Another, then Math Editor.
+     *
+     * Late-arriving controls can otherwise appear in DOM insertion order,
+     * which may put Math Editor before Another.
+     */
+    if (another && mathEditor &&
+            another.parentNode === actionSlot &&
+            mathEditor.parentNode === actionSlot &&
+            another.nextSibling !== mathEditor) {
+        actionSlot.insertBefore(mathEditor, another.nextSibling);
+    }
+}
+
+function xronosContainedActivityTopbarLayout() {
+    var mainTitle = document.querySelector(".main-title");
+    var tocSearch = document.querySelector(".toc-search");
+    var activityTitle = document.querySelector(".activity-title");
+    var titleNode;
+
+    if (!mainTitle || !tocSearch || !activityTitle) {
+        return;
+    }
+
+    if (!mainTitle.classList.contains("xronos-contained-topbar-ready")) {
+        titleNode = mainTitle.querySelector(".title-xourse") || mainTitle.querySelector(".title-activity");
+
+        if (!titleNode) {
+            return;
+        }
+
+        var searchSlot = document.createElement("div");
+        var titleSlot = document.createElement("div");
+        var gradeSlot = document.createElement("div");
+        var actionSlot = document.createElement("div");
+        var activitySlot = document.createElement("div");
+
+        searchSlot.className = "xronos-contained-search-slot";
+        titleSlot.className = "xronos-contained-title-slot";
+        gradeSlot.className = "xronos-contained-grade-slot";
+        actionSlot.className = "xronos-contained-action-slot";
+        activitySlot.className = "xronos-contained-activity-slot";
+
+        searchSlot.appendChild(tocSearch);
+        titleSlot.appendChild(titleNode);
+        activitySlot.appendChild(activityTitle);
+
+        mainTitle.appendChild(searchSlot);
+        mainTitle.appendChild(titleSlot);
+        mainTitle.appendChild(gradeSlot);
+        mainTitle.appendChild(actionSlot);
+        mainTitle.appendChild(activitySlot);
+
+        var settings = mainTitle.querySelector(".xmsettings");
+        if (settings) {
+            mainTitle.appendChild(settings);
+        }
+
+        mainTitle.classList.add("xronos-contained-topbar-ready");
+    }
+
+    xronosContainedTopbarMoveLateControls(mainTitle);
+
+    if (!mainTitle.xronosContainedTopbarObserver) {
+        mainTitle.xronosContainedTopbarObserver = new MutationObserver(function() {
+            xronosContainedTopbarMoveLateControls(mainTitle);
+        });
+
+        mainTitle.xronosContainedTopbarObserver.observe(mainTitle, {
+            childList: true
+        });
+    }
+
+    /*
+     * Some controls, especially grade-sync status, may be inserted after the
+     * initial DOMContentLoaded pass.  Run a few delayed passes so we do not
+     * depend entirely on mutation timing.
+     */
+    [250, 750, 1500, 3000].forEach(function(delay) {
+        window.setTimeout(function() {
+            xronosContainedTopbarMoveLateControls(mainTitle);
+        }, delay);
+    });
+}
+
+if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", xronosContainedActivityTopbarLayout);
+} else {
+    xronosContainedActivityTopbarLayout();
+}
+/* === /Xronos contained activity topbar layout === */

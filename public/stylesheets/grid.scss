@@ -1301,3 +1301,259 @@ span#prev-activity-label {
   font-weight: bold;
 }
 /* === /Xronos default content CSS migrated from common global.css === */
+
+/* === Xronos contained activity topbar layout ===
+ *
+ * Two-row Xronos activity header.
+ *
+ * Columns:
+ *   1: logo/search
+ *   2: course title / grade sync
+ *   3: Another / start of orange activity title
+ *   4: Math Editor
+ *   5: flexible orange activity title space
+ *   6: Settings / far right
+ *
+ * Rows:
+ *   1: logo + top controls
+ *   2: search + course title + activity-title triad
+ *   3: small controlled blue spacer below row 2
+ */
+
+#wrapper.wrapper {
+  grid-template-rows: 84px minmax(0, 1fr);
+}
+
+.main-title.xronos-contained-topbar-ready {
+  display: grid;
+  grid-template-columns:
+    430px
+    max-content
+    auto
+    auto
+    minmax(260px, 1fr)
+    auto;
+  grid-template-rows: 42px 34px 8px;
+  column-gap: 0.75rem;
+  row-gap: 0;
+  align-items: center;
+  align-content: start;
+
+  height: 84px;
+  min-height: 84px;
+  padding: 2px 0.55rem 0 0.4rem;
+  box-sizing: border-box;
+  overflow: visible;
+}
+
+.main-title.xronos-contained-topbar-ready .xronos-brand-mark {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: start;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  margin: 0;
+  padding-top: 0;
+}
+
+.main-title.xronos-contained-topbar-ready .xronos-brand-mark-image {
+  display: block;
+  height: 3.05rem;
+}
+
+.main-title.xronos-contained-topbar-ready .xronos-contained-search-slot {
+  grid-column: 1;
+  grid-row: 2;
+  justify-self: stretch;
+  align-self: center;
+  min-width: 0;
+}
+
+.main-title.xronos-contained-topbar-ready .xronos-contained-search-slot .toc-search {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  margin: 0;
+  line-height: 1;
+}
+
+.main-title.xronos-contained-topbar-ready .xronos-contained-search-slot .toc-search input {
+  min-width: 0;
+  height: 1.55rem;
+  padding-top: 0.05rem;
+  padding-bottom: 0.05rem;
+}
+
+.main-title.xronos-contained-topbar-ready .xronos-contained-title-slot {
+  grid-column: 2;
+  grid-row: 2;
+  justify-self: start;
+  align-self: center;
+  min-width: max-content;
+  overflow: visible;
+}
+
+.main-title.xronos-contained-topbar-ready .xronos-contained-title-slot .title-xourse,
+.main-title.xronos-contained-topbar-ready .xronos-contained-title-slot .title-activity {
+  width: auto;
+  min-width: max-content;
+  margin: 0;
+  display: block;
+
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
+  font-size: 1.8rem;
+  line-height: 1.05;
+}
+
+.main-title.xronos-contained-topbar-ready .xronos-contained-title-slot .title-xourse a,
+.main-title.xronos-contained-topbar-ready .xronos-contained-title-slot .title-activity a {
+  color: white;
+  text-decoration: none;
+}
+
+.main-title.xronos-contained-topbar-ready .xronos-contained-grade-slot {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: end;
+  align-self: end;
+  padding-bottom: 0.25rem;
+
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  white-space: nowrap;
+  z-index: 20;
+  min-width: 0;
+  width: auto;
+}
+
+.main-title.xronos-contained-topbar-ready .xronos-contained-grade-slot > * {
+  width: auto !important;
+  max-width: max-content !important;
+  min-width: 0 !important;
+  flex: 0 0 auto !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  align-self: center !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  white-space: nowrap !important;
+}
+
+.main-title.xronos-contained-topbar-ready .xronos-contained-action-slot {
+  grid-column: 3 / 5;
+  grid-row: 1;
+  justify-self: start;
+  align-self: end;
+  padding-bottom: 0.25rem;
+
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 1.35rem;
+  white-space: nowrap;
+  z-index: 20;
+}
+
+.main-title.xronos-contained-topbar-ready .xronos-contained-action-slot > * {
+  width: auto !important;
+  max-width: max-content !important;
+  flex: 0 0 auto !important;
+  align-self: center !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+
+.main-title.xronos-contained-topbar-ready .xronos-contained-activity-slot {
+  grid-column: 3 / 7;
+  grid-row: 2;
+  justify-self: stretch;
+  align-self: center;
+  min-width: 0;
+  width: 100%;
+}
+
+.main-title.xronos-contained-topbar-ready .xronos-contained-activity-slot .activity-title {
+  width: 100%;
+  margin: 0;
+}
+
+.main-title.xronos-contained-topbar-ready .xronos-contained-activity-slot .activity-title-center {
+  display: grid;
+  grid-template-columns: auto minmax(260px, 1fr) auto;
+  column-gap: 0.75rem;
+  align-items: center;
+  width: 100%;
+}
+
+.main-title.xronos-contained-topbar-ready .xronos-contained-activity-slot .activity-title-center .title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 100%;
+  min-height: 1.85rem;
+  text-align: center;
+  margin: 0;
+
+  line-height: 1.1;
+  padding-top: 0;
+  padding-bottom: 0;
+}
+
+.main-title.xronos-contained-topbar-ready .xmsettings {
+  grid-column: 6;
+  grid-row: 1;
+  justify-self: end;
+  align-self: end;
+  padding-bottom: 0.25rem;
+  margin: 0;
+  white-space: nowrap;
+  z-index: 20;
+}
+
+.main-title.xronos-contained-topbar-ready .xmsettings-inhoud,
+.main-title.xronos-contained-topbar-ready .xmuser-inhoud,
+.main-title.xronos-contained-topbar-ready .xmdownload-inhoud {
+  top: 100%;
+  margin-top: 0.25rem;
+  z-index: 10000;
+}
+
+.main-title.xronos-contained-topbar-ready .xronos-contact-spacer {
+  display: none !important;
+}
+
+.main-title.xronos-contained-topbar-ready .xmdownload[style*="display: none"],
+.main-title.xronos-contained-topbar-ready #instructor-view-statistics[style*="display: none"],
+.main-title.xronos-contained-topbar-ready #math-edit-button[style*="display: none"] {
+  display: none !important;
+}
+
+.main-title.xronos-contained-topbar-ready + .main-inhoud {
+  display: grid;
+  grid-template-columns: 480px minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr);
+  column-gap: 0;
+  row-gap: 0;
+  min-height: 0;
+}
+
+.main-title.xronos-contained-topbar-ready + .main-inhoud > .toc {
+  grid-column: 1;
+  grid-row: 1;
+  align-self: stretch;
+  min-width: 0;
+}
+
+.main-title.xronos-contained-topbar-ready + .main-inhoud > .main-activity {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: stretch;
+  min-width: 0;
+}
+
+/* === /Xronos contained activity topbar layout === */

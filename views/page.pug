@@ -84,9 +84,21 @@ block activity-title
             i.fa.fa-chevron-left
             span.xmhidden &larr; !{previousActivity}
       - var xronosDisplayActivityTitle = activity.title
-      - var xronosPracticeTitleMatch = activity.path && activity.path.match(/(?:^|\/)Practice\/[^\/]*Practice([0-9]+)(?:$|\/)/i)
-      - if (xronosPracticeTitleMatch)
-        - xronosDisplayActivityTitle = "Practice " + xronosPracticeTitleMatch[1]
+      - var xronosPracticeNumber = null
+      - var xronosPracticePathMatch = activity.path && activity.path.match(/^(.*\/)?Practice\//i)
+      - if (xronosPracticePathMatch && activity.xourse && activity.xourse.activityToc)
+        - var xronosPracticeChapterPrefix = xronosPracticePathMatch[1] || ""
+        - var xronosPracticeCounter = 0
+        - for (var xronosTocIndex = 0; xronosTocIndex < activity.xourse.activityToc.length; xronosTocIndex++)
+          - var xronosTocCard = activity.xourse.activityToc[xronosTocIndex]
+          - var xronosTocHref = xronosTocCard && xronosTocCard.href
+          - if (xronosTocHref && xronosTocHref.indexOf(xronosPracticeChapterPrefix) === 0 && /\/Practice\//i.test(xronosTocHref))
+            - xronosPracticeCounter++
+            - if (xronosTocHref === activity.path)
+              - xronosPracticeNumber = xronosPracticeCounter
+              - break
+      - if (xronosPracticeNumber)
+        - xronosDisplayActivityTitle = "Practice " + xronosPracticeNumber
       span.title !{xronosDisplayActivityTitle}
       if nextActivity
           span.xmnext.xmhover: a(href=toValidPath("/" + repositoryName + "/" + activity.xourse.path + "/" + nextActivity))

@@ -134,6 +134,28 @@ function requireAuth(req, res) {
     return false;
 }
 
+exports.notAvailable = function(req, res) {
+    var repository = req.params.repository || '';
+
+    res.status(404);
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    res.send([
+        '<!doctype html>',
+        '<html>',
+        '<head>',
+        '<meta charset="utf-8">',
+        '<title>Ximera LTI Setup Not Available</title>',
+        '</head>',
+        '<body>',
+        '<h1>LTI setup is not available at the repository root</h1>',
+        '<p>This repository root does not appear to have its own LTI configuration.</p>',
+        '<p>Use the LTI setup page for a specific xourse or activity path instead, for example:</p>',
+        '<pre>/' + escapeHtml(repository) + '/someXourse/lti-setup</pre>',
+        '</body>',
+        '</html>'
+    ].join('\n'));
+};
+
 function configUrl(req) {
     var repository = req.params.repository;
     var activityPath = req.params.path;

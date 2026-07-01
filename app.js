@@ -946,10 +946,11 @@ app.get('/sw.js', function(req, res) {
 
     app.get( '/:repository/lti-setup',
              redirectUnnormalizeRepositoryName,
-             ltiSetup.show );
+             ltiSetup.notAvailable );
 
     app.get( '/:repository/:path(*)/lti-setup',
              redirectUnnormalizeRepositoryName,
+             page.activitiesFromRecentCommitsOnMaster,
              ltiSetup.show );
 
     app.get( '/:repository/:path(*)/lti.xml',

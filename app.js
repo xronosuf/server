@@ -26,6 +26,7 @@ var express = require('express')
   , repositories = require('./routes/repositories')
   , page = require('./routes/page')
   , keyserver = require('./routes/gpg')
+  , ltiSetup = require('./routes/lti-setup')
   , hashcash = require('./routes/hashcash')
   , supervising = require('./routes/supervising')
   , async = require('async')
@@ -942,6 +943,14 @@ app.get('/sw.js', function(req, res) {
 	     certificate.xourse );
 
     // BADBAD: i also need to serve pngs and pdfs and such from the repo here
+
+    app.get( '/:repository/lti-setup',
+             redirectUnnormalizeRepositoryName,
+             ltiSetup.show );
+
+    app.get( '/:repository/:path(*)/lti-setup',
+             redirectUnnormalizeRepositoryName,
+             ltiSetup.show );
 
     app.get( '/:repository/:path(*)/lti.xml',
 	     redirectUnnormalizeRepositoryName,

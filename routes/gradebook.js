@@ -63,6 +63,7 @@ function processGradebook(id, callback) {
 			    oauth: oauth,
 			    headers: {
 				'Content-Type': 'application/xml',
+				'User-Agent': 'Xronos/1.0 (University of Florida; https://xronos.clas.ufl.edu)',
 			    }
 			}, function(err, response, body) {
 			    if (err) {

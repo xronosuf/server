@@ -159,7 +159,7 @@ exports.record = function(req, res, next) {
     var now = Date.now();
 
     var bridgeHasGradePassback = function(bridge) {
-        var pointsPossible = parseInt(bridge.pointsPossible);
+        var pointsPossible = parseFloat(bridge.pointsPossible);
 
         return !!(
             bridge &&
@@ -250,7 +250,7 @@ exports.record = function(req, res, next) {
                             return;
                         }
 
-                        pointsPossible = parseInt(bridge.pointsPossible);
+                        pointsPossible = parseFloat(bridge.pointsPossible);
 
                         // BADBAD: round to a couple decimal places to avoid some weird appearances on canvas
                         resultScore = Math.ceil(100 * parseFloat(req.body.pointsEarned) / parseFloat(req.body.pointsPossible)) / 100.0;
@@ -264,11 +264,15 @@ exports.record = function(req, res, next) {
 
                         better = false;
 
-                        if (((!bridge.resultScore) || (bridge.resultScore < resultScore)) && (!isNaN(resultScore))) {
+                        /*
+                         * resultScore and resultTotalScore describe the same
+                         * Xronos progress.  Update them as a pair so a later
+                         * pointsPossible or rounding change cannot leave a
+                         * bridge with fields from two different calculations.
+                         */
+                        if ((!isNaN(resultScore)) && (!isNaN(resultTotalScore)) &&
+                            ((!bridge.resultTotalScore) || (bridge.resultTotalScore < resultTotalScore))) {
                             bridge.resultScore = resultScore;
-                            better = true;
-                        }
-                        if (((!bridge.resultTotalScore) || (bridge.resultTotalScore < resultTotalScore)) && (!isNaN(resultTotalScore))) {
                             bridge.resultTotalScore = resultTotalScore;
                             better = true;
                         }

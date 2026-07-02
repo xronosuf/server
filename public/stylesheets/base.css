@@ -16041,6 +16041,25 @@ span#prev-activity-label {
   white-space: nowrap;
 }
 
+/*
+ * YouTube embeds are wrapped in Bootstrap's responsive embed container.
+ * Older/deprecated author-side video sizing can leave that wrapper much
+ * narrower than the activity column, so make YouTube responsive wrappers use
+ * most of the available content width while preserving a slight visual inset.
+ */
+.main-activity .embed-responsive:has(.youtube-player) {
+  width: 94% !important;
+  max-width: 72rem !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+.main-activity .embed-responsive:has(.youtube-player) .youtube-player,
+.main-activity .embed-responsive:has(.youtube-player) iframe {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+
 .main-title.xronos-contained-topbar-ready + .main-inhoud {
   display: grid;
   grid-template-columns: 480px minmax(0, 1fr);

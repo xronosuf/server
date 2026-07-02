@@ -279,6 +279,21 @@ function normalizeRepositoryName(name) {
   return name.replace(/[^0-9A-Za-z-]/, "").toLowerCase();
 }
 
+
+function validCanvasCustomDate(value) {
+  if (!value) return false;
+
+  /*
+   * Canvas may leave substitution variables such as
+   * $Canvas.assignment.dueAt.iso8601 unexpanded. Do not pass those
+   * placeholders to moment, since they are not real dates and trigger
+   * noisy fallback warnings.
+   */
+  if (typeof value === "string" && value.charAt(0) === "$") return false;
+
+  return moment(value).isValid();
+}
+
 // Test this with  http://lti.tools/test/tc.php
 function addLmsAccount(req, identifier, profile, done) {
   //console.log("Add Lms Account:");
@@ -370,14 +385,13 @@ function addLmsAccount(req, identifier, profile, done) {
           //console.log("Found bridge:");
           // update the bridge, roles, etc.
           if (roles) bridge.roles = roles;
-          if (profile.custom_due_at && moment(profile.custom_due_at).isValid())
+          if (validCanvasCustomDate(profile.custom_due_at))
             bridge.dueDate = profile.custom_due_at;
           if (profile.custom_canvas_assignment_points_possible)
             bridge.pointsPossible =
               profile.custom_canvas_assignment_points_possible;
           if (
-            profile.custom_lock_at &&
-            moment(profile.custom_lock_at).isValid()
+            validCanvasCustomDate(profile.custom_lock_at)
           )
             bridge.untilDate = profile.custom_lock_at;
           if (profile.lis_result_sourcedid)
@@ -413,14 +427,13 @@ function addLmsAccount(req, identifier, profile, done) {
           };
 
           if (roles) hash.roles = roles;
-          if (profile.custom_due_at && moment(profile.custom_due_at).isValid())
+          if (validCanvasCustomDate(profile.custom_due_at))
             hash.dueDate = profile.custom_due_at;
           if (profile.custom_canvas_assignment_points_possible)
             hash.pointsPossible =
               profile.custom_canvas_assignment_points_possible;
           if (
-            profile.custom_lock_at &&
-            moment(profile.custom_lock_at).isValid()
+            validCanvasCustomDate(profile.custom_lock_at)
           )
             hash.untilDate = profile.custom_lock_at;
           if (profile.lis_result_sourcedid)

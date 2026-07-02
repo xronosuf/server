@@ -9,6 +9,7 @@ var  TwitterStrategy = require("passport-twitter").Strategy,
   githubApi = require("github"),
   moment = require("moment"),
   path = require("path");
+var gradebook = require("../routes/gradebook");
 
 module.exports.githubStrategy = function (rootUrl) {
   return new OAuth2Strategy(
@@ -294,6 +295,58 @@ function validCanvasCustomDate(value) {
   return moment(value).isValid();
 }
 
+function bridgeHasNoRecordedScore(bridge) {
+  return (
+    bridge &&
+    (bridge.resultScore === undefined || bridge.resultScore === null) &&
+    (bridge.resultTotalScore === undefined || bridge.resultTotalScore === null)
+  );
+}
+
+function shouldInitializeZeroGradePassback(bridge) {
+  return !!(
+    bridge &&
+    !bridge.instructionalStaff &&
+    bridgeHasNoRecordedScore(bridge) &&
+    gradebook.bridgeHasGradePassback(bridge) &&
+    gradebook.bridgeIsOpen(bridge)
+  );
+}
+
+function initializeZeroGradePassback(bridge, callback) {
+  if (!shouldInitializeZeroGradePassback(bridge)) {
+    callback(null);
+    return;
+  }
+
+  bridge.resultScore = 0;
+  bridge.resultTotalScore = 0;
+  bridge.submittedScore = false;
+
+  bridge.save(function (err) {
+    if (err) {
+      callback(err);
+      return;
+    }
+
+    gradebook.queueBridge(bridge, function (err) {
+      if (!err) {
+        console.log(
+          "Queued initial zero grade passback for bridge " +
+            bridge._id +
+            " (" +
+            bridge.repository +
+            "/" +
+            bridge.path +
+            ")"
+        );
+      }
+
+      callback(err);
+    });
+  });
+}
+
 // Test this with  http://lti.tools/test/tc.php
 function addLmsAccount(req, identifier, profile, done) {
   //console.log("Add Lms Account:");
@@ -447,7 +500,22 @@ function addLmsAccount(req, identifier, profile, done) {
             console.log("Error saving bridge");
             console.log(err);
             callback(err);
-          } else callback(null, bridge);
+            return;
+          }
+
+          initializeZeroGradePassback(bridge, function (err) {
+            if (err) {
+              /*
+               * A zero-grade initialization failure should not block the
+               * student's LTI launch.  Log it and allow the login flow to
+               * continue; later progress updates can still queue passback.
+               */
+              console.log("Error queueing initial zero grade passback");
+              console.log(err);
+            }
+
+            callback(null, bridge);
+          });
         });
       },
 

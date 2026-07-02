@@ -51,6 +51,17 @@ function logCanvasPassbackFailure(bridge, response, body) {
     }
 }
 
+function logCanvasPassbackSuccess(bridge) {
+    console.log(
+        'Canvas grade passback accepted for bridge ' +
+        bridge._id +
+        ' (' + bridge.repository + '/' + bridge.path + '): ' +
+        'resultScore=' + bridge.resultScore +
+        ', resultTotalScore=' + bridge.resultTotalScore +
+        ', pointsPossible=' + bridge.pointsPossible
+    );
+}
+
 // We now wait many minutes for grades to settle
 var DEBOUNCE = 1000 * 60 * 3;
 
@@ -103,6 +114,7 @@ function processGradebook(id, callback) {
                         console.log(err);
                         callback(err);
                     } else if (canvasPassbackSucceeded(response, body)) {
+                        logCanvasPassbackSuccess(bridge);
                         bridge.submittedScore = true;
                         bridge.save(callback);
                     } else {

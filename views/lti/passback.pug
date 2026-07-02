@@ -15,11 +15,11 @@ imsx_POXEnvelopeRequest(xmlns="http://www.imsglobal.org/services/ltiv1p1/xsd/ims
           if resultDataUrl
             resultData
               url #{resultDataUrl}
-          if resultTotalScore
+          if resultTotalScore !== undefined && resultTotalScore !== null
             resultTotalScore
               language en
               textString #{resultTotalScore}
-          if resultScore
+          if resultScore !== undefined && resultScore !== null
             resultScore
               language en
               textString #{resultScore}

@@ -65,6 +65,42 @@ function logCanvasPassbackSuccess(bridge) {
 // We now wait many minutes for grades to settle
 var DEBOUNCE = 1000 * 60 * 3;
 
+function canvasPointsPossible(bridge) {
+    return parseFloat(bridge && bridge.pointsPossible);
+}
+
+function bridgeHasGradePassback(bridge) {
+    var pointsPossible = canvasPointsPossible(bridge);
+
+    return !!(
+        bridge &&
+        bridge.lisResultSourcedid &&
+        bridge.lisOutcomeServiceUrl &&
+        !isNaN(pointsPossible) &&
+        pointsPossible > 0
+    );
+}
+
+function bridgeIsOpen(bridge, now) {
+    now = now || Date.now();
+
+    return !(bridge && bridge.dueDate && bridge.dueDate < now);
+}
+
+function queueBridge(bridge, callback) {
+    var debouncedTime = Date.now() + DEBOUNCE;
+
+    if (bridge.dueDate && debouncedTime > bridge.dueDate) {
+        debouncedTime = bridge.dueDate;
+    }
+
+    client.zadd('gradebook', debouncedTime, bridge._id.toString(), callback);
+}
+
+exports.bridgeHasGradePassback = bridgeHasGradePassback;
+exports.bridgeIsOpen = bridgeIsOpen;
+exports.queueBridge = queueBridge;
+
 function processGradebook(id, callback) {
 	console.log('Processing gradebook ' + id)
     mdb.LtiBridge.findOne( {_id: new mongo.ObjectID(id) }, function(err, bridge) {
@@ -157,22 +193,6 @@ setInterval( process, 10000 );
 exports.record = function(req, res, next) {
     var repositoryName = req.params.repository;
     var now = Date.now();
-
-    var bridgeHasGradePassback = function(bridge) {
-        var pointsPossible = parseFloat(bridge.pointsPossible);
-
-        return !!(
-            bridge &&
-            bridge.lisResultSourcedid &&
-            bridge.lisOutcomeServiceUrl &&
-            !isNaN(pointsPossible) &&
-            pointsPossible > 0
-        );
-    };
-
-    var bridgeIsOpen = function(bridge) {
-        return !(bridge && bridge.dueDate && bridge.dueDate < now);
-    };
 
     var buildGradeSyncStatus = function(bridges) {
         var status = {
@@ -286,17 +306,19 @@ exports.record = function(req, res, next) {
                         bridge.submittedScore = false;
 
                         bridge.save(function(err) {
-                            if (!err) {
-                                var debouncedTime = Date.now() + DEBOUNCE;
-                                if (bridge.dueDate && debouncedTime > bridge.dueDate)
-                                    debouncedTime = bridge.dueDate;
-
-                                client.zadd('gradebook', debouncedTime, bridge._id.toString());
-                                gradeSync.queuedGradePassbackCount += 1;
-                                gradeSync.queuedGradePassback = true;
+                            if (err) {
+                                callback(err);
+                                return;
                             }
 
-                            callback(err);
+                            queueBridge(bridge, function(err) {
+                                if (!err) {
+                                    gradeSync.queuedGradePassbackCount += 1;
+                                    gradeSync.queuedGradePassback = true;
+                                }
+
+                                callback(err);
+                            });
                         });
                     },
                     function(err) {

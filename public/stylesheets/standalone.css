@@ -15979,6 +15979,68 @@ span#prev-activity-label {
   display: none !important;
 }
 
+/*
+ * Legacy profile/login/settings controls predate the contained Xronos topbar.
+ * In the contained topbar, keep profile/login on the same visual line as
+ * settings while reserving space for the settings control on the far right.
+ */
+.main-title.xronos-contained-topbar-ready #loginUser,
+.main-title.xronos-contained-topbar-ready #loginGuest,
+.main-title.xronos-contained-topbar-ready .xmuser,
+.main-title.xronos-contained-topbar-ready .xmlogin {
+  grid-column: -2/-1;
+  grid-row: 1;
+  justify-self: end;
+  align-self: start;
+  width: auto;
+  max-width: max-content;
+  height: 28px;
+  line-height: 28px;
+  display: inline-block;
+  position: relative;
+  margin: 16px 6.5rem 0 0;
+  z-index: 5000;
+  top: auto;
+  left: auto;
+  right: auto;
+  bottom: auto;
+}
+
+.main-title.xronos-contained-topbar-ready .xmsettings,
+.main-title.xronos-contained-topbar-ready .xmdownload {
+  grid-row: 1;
+  justify-self: end;
+  align-self: start;
+  height: 28px;
+  line-height: 28px;
+  display: inline-block;
+  position: relative;
+  margin-top: 16px;
+  margin-bottom: 0;
+  z-index: 5000;
+  top: auto;
+  left: auto;
+  right: auto;
+  bottom: auto;
+  vertical-align: middle;
+}
+
+.main-title.xronos-contained-topbar-ready .xmuser-inhoud,
+.main-title.xronos-contained-topbar-ready .xmlogin-inhoud,
+.main-title.xronos-contained-topbar-ready .xmsettings-inhoud,
+.main-title.xronos-contained-topbar-ready .xmdownload-inhoud {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: auto;
+  bottom: auto;
+  z-index: 6000;
+  min-width: 12rem;
+  width: max-content;
+  max-width: 20rem;
+  white-space: nowrap;
+}
+
 .main-title.xronos-contained-topbar-ready + .main-inhoud {
   display: grid;
   grid-template-columns: 480px minmax(0, 1fr);

@@ -19,6 +19,38 @@ client.on('error', function (err) {
 
 var passback = pug.compileFile(path.join(__dirname,'../views/lti/passback.pug'));
 
+function canvasPassbackSucceeded(response, body) {
+    var statusCode = response && response.statusCode;
+    var bodyText = (body || '').toString();
+
+    return statusCode >= 200 && statusCode < 300 &&
+        /<imsx_codeMajor>\s*success\s*<\/imsx_codeMajor>/i.test(bodyText);
+}
+
+function compactCanvasResponse(body) {
+    return (body || '')
+        .toString()
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 500);
+}
+
+function logCanvasPassbackFailure(bridge, response, body) {
+    var statusCode = response && response.statusCode;
+    var excerpt = compactCanvasResponse(body);
+
+    console.log(
+        'Canvas grade passback was not accepted for bridge ' +
+        bridge._id +
+        ' (' + bridge.repository + '/' + bridge.path + '): HTTP ' +
+        (statusCode || 'unknown')
+    );
+
+    if (excerpt) {
+        console.log('Canvas passback response excerpt: ' + excerpt);
+    }
+}
+
 // We now wait many minutes for grades to settle
 var DEBOUNCE = 1000 * 60 * 3;
 
@@ -66,15 +98,18 @@ function processGradebook(id, callback) {
 				'User-Agent': 'Xronos/1.0 (University of Florida; https://xronos.clas.ufl.edu)',
 			    }
 			}, function(err, response, body) {
-			    if (err) {
-					console.log('Error when posting:')
-					console.log(err)
-				callback(err);
-			    } else {
-				bridge.submittedScore = true;
-				bridge.save(callback);
-			    }
-			});
+                    if (err) {
+                        console.log('Error when posting:');
+                        console.log(err);
+                        callback(err);
+                    } else if (canvasPassbackSucceeded(response, body)) {
+                        bridge.submittedScore = true;
+                        bridge.save(callback);
+                    } else {
+                        logCanvasPassbackFailure(bridge, response, body);
+                        callback(null);
+                    }
+                });
 		    }
 		}
 	    });

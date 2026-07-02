@@ -2,6 +2,29 @@ var $ = require('jquery');
 var _ = require('underscore');
 var gradebook = require('./gradebook');
 
+var VIDEO_COMPLETE_THRESHOLD = 0.8;
+
+function videoCompletionCredit(fractionViewed) {
+    var fraction = parseFloat(fractionViewed);
+
+    if (isNaN(fraction) || fraction <= 0) {
+        return 0;
+    }
+
+    /*
+     * YouTube player timestamps can stop just short of the nominal duration,
+     * and pedagogically we do not need exact frame-perfect completion for
+     * low-stakes Xronos progress. Treat sufficiently watched videos as
+     * complete for progress/gradebook purposes while leaving raw xAPI video
+     * telemetry unchanged.
+     */
+    if (fraction >= VIDEO_COMPLETE_THRESHOLD) {
+        return 1;
+    }
+
+    return Math.max(0, Math.min(1, fraction));
+}
+
 exports.progress = function(n,d) {
     var percent = Math.round(n*100 / d);
 
@@ -121,9 +144,7 @@ var update = _.debounce( function() {
     $('.youtube-player').each( function() {
 	videoCount = videoCount + 1;
 	var fraction = $(this).persistentData( 'fractionViewed' );
-	if (fraction) {
-	    totalViewed = totalViewed + fraction;
-	}
+	totalViewed = totalViewed + videoCompletionCredit(fraction);
     });
 
     // Activities that have NO problems will have total progress

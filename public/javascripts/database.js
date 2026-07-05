@@ -110,6 +110,16 @@ function differentialSynchronization() {
 
 var differentialSynchronizationDebounced = _.debounce( differentialSynchronization, DIFFSYNC_DEBOUNCE );
 
+function shouldSynchronizeSubmittedAnswerStateImmediately(key) {
+    /*
+     * Ordinary edits can use the normal debounce, but once a student actually
+     * checks/submits an answer, save the page-state database promptly.  Without
+     * this, xAPI/gradebook events can reach the server before the page-state
+     * diff, and a quick refresh can lose the visible submitted response.
+     */
+    return key === 'correct' || key === 'attempt' || key === 'checked';
+}
+
 var findRepositoryName = _.memoize( function( element ) {
     if ($(element).hasClass('activity'))
 	return $(element).attr( 'data-repository-name' );
@@ -205,7 +215,13 @@ $.fn.extend({
 	    }
 	    module.exports.commit();
 	    element.trigger( 'ximera:database' );
-	    differentialSynchronizationDebounced();
+
+	    if (shouldSynchronizeSubmittedAnswerStateImmediately(key)) {
+		debugLog.log('Saving submitted answer state to Xronos server immediately.', { key: key });
+		differentialSynchronization();
+	    } else {
+		differentialSynchronizationDebounced();
+	    }
 	});
 	
 	return this;

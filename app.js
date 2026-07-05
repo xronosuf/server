@@ -815,6 +815,8 @@ app.get('/sw.js', function(req, res) {
     app.delete('/users/:id/bridges/:bridge', function( req, res, next ) { user.deleteBridge( req, res, next ); } );    
 
     app.get('/supervise', supervising.watch );
+    app.get('/progress-audit/redeem', progressAudit.redeemForm );
+    app.post('/progress-audit/redeem', progressAudit.redeemToken );
 
     ////////////////////////////////////////////////////////////////
     // BADBAD: some permanent redirects for OSU courses from old URLs
@@ -1032,8 +1034,8 @@ app.get('/sw.js', function(req, res) {
     });
     
     app.get( '/:repository/:path(*)/gradebook',
-	     repositories.normalizeName,
-	     gradebook.record );
+     repositories.normalizeName,
+     gradebook.record );
     app.put( '/:repository/:path(*)/gradebook',
      repositories.normalizeName,
      gradebook.record );

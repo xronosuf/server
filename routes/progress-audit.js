@@ -397,6 +397,325 @@ function createToken(req, res) {
 }
 
 
+
+function hasInstructorRole(bridge) {
+    return (bridge.roles || []).some(function(role) {
+        return role.match(/Instructor/) ||
+            role.match(/Administrator/) ||
+            role.match(/TeachingAssistant/) ||
+            role.match(/Grader/);
+    });
+}
+
+function currentUserCanRedeemToken(req, auditToken, callback) {
+    var query;
+
+    if (!req.user || req.user.isGuest) {
+        callback(null, false);
+        return;
+    }
+
+    query = {
+        user: req.user._id,
+        repository: auditToken.repository
+    };
+
+    if (auditToken.toolConsumerInstanceGuid) {
+        query.toolConsumerInstanceGuid = auditToken.toolConsumerInstanceGuid;
+    }
+
+    if (auditToken.contextId) {
+        query.contextId = auditToken.contextId;
+    }
+
+    mdb.LtiBridge.find(query)
+        .lean()
+        .exec(function(err, bridges) {
+            if (err) {
+                callback(err, false);
+                return;
+            }
+
+            callback(null, bridges.some(hasInstructorRole));
+        });
+}
+
+function pad2(value) {
+    value = String(value);
+    return value.length < 2 ? '0' + value : value;
+}
+
+function timeZoneWallParts(value) {
+    var formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: REPORT_TIME_ZONE,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hourCycle: 'h23'
+    });
+    var parts = {};
+
+    formatter.formatToParts(new Date(value)).forEach(function(part) {
+        if (part.type !== 'literal') {
+            parts[part.type] = part.value;
+        }
+    });
+
+    return parts;
+}
+
+function newYorkWallTimeToDate(year, month, day, hour24, minute) {
+    var targetWall = Date.UTC(year, month - 1, day, hour24, minute, 0);
+    var guess = targetWall;
+    var i;
+    var parts;
+    var guessWall;
+
+    /*
+     * Convert an America/New_York wall-clock time into a UTC Date without
+     * assuming the server's local timezone.  Iterate so DST offsets are handled
+     * by Intl rather than by hard-coded -04/-05 offsets.
+     */
+    for (i = 0; i < 3; i += 1) {
+        parts = timeZoneWallParts(new Date(guess));
+        guessWall = Date.UTC(
+            parseInt(parts.year, 10),
+            parseInt(parts.month, 10) - 1,
+            parseInt(parts.day, 10),
+            parseInt(parts.hour, 10),
+            parseInt(parts.minute, 10),
+            parseInt(parts.second, 10)
+        );
+
+        guess += targetWall - guessWall;
+    }
+
+    return new Date(guess);
+}
+
+function defaultAsOfParts() {
+    var parts = timeZoneWallParts(new Date());
+
+    return {
+        asOfDate: parts.year + '-' + parts.month + '-' + parts.day,
+        asOfHour: '11',
+        asOfMinute: '59',
+        asOfAmPm: 'PM'
+    };
+}
+
+function asOfPartsFromBody(body) {
+    return {
+        asOfDate: ((body && body.asOfDate) || '').trim(),
+        asOfHour: ((body && body.asOfHour) || '').trim(),
+        asOfMinute: ((body && body.asOfMinute) || '').trim(),
+        asOfAmPm: ((body && body.asOfAmPm) || '').trim().toUpperCase()
+    };
+}
+
+function parseAsOfParts(parts) {
+    var match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(parts.asOfDate || '');
+    var hour = parseInt(parts.asOfHour, 10);
+    var minute = parseInt(parts.asOfMinute, 10);
+    var hour24;
+
+    if (!match) {
+        return null;
+    }
+
+    if (isNaN(hour) || hour < 1 || hour > 12) {
+        return null;
+    }
+
+    if (isNaN(minute) || minute < 0 || minute > 59) {
+        return null;
+    }
+
+    if (parts.asOfAmPm !== 'AM' && parts.asOfAmPm !== 'PM') {
+        return null;
+    }
+
+    hour24 = hour % 12;
+    if (parts.asOfAmPm === 'PM') {
+        hour24 += 12;
+    }
+
+    return newYorkWallTimeToDate(
+        parseInt(match[1], 10),
+        parseInt(match[2], 10),
+        parseInt(match[3], 10),
+        hour24,
+        minute
+    );
+}
+
+function renderRedeemPage(req, res, data) {
+    var defaults = defaultAsOfParts();
+
+    data = data || {};
+    data.asOfDate = data.asOfDate || defaults.asOfDate;
+    data.asOfHour = data.asOfHour || defaults.asOfHour;
+    data.asOfMinute = data.asOfMinute || defaults.asOfMinute;
+    data.asOfAmPm = data.asOfAmPm || defaults.asOfAmPm;
+
+    res.render('progress-audit/redeem', data);
+}
+
+function redeemForm(req, res) {
+    renderRedeemPage(req, res);
+}
+
+function redeemToken(req, res) {
+    var rawToken = ((req.body && req.body.token) || '').trim();
+    var asOfParts = asOfPartsFromBody(req.body);
+    var asOf = parseAsOfParts(asOfParts);
+
+    if (!rawToken) {
+        renderRedeemPage(req, res, Object.assign({
+            error: 'Enter a progress audit token.',
+            token: rawToken
+        }, asOfParts));
+        return;
+    }
+
+    if (!asOf) {
+        renderRedeemPage(req, res, Object.assign({
+            error: 'Enter a valid as-of date and time.',
+            token: rawToken
+        }, asOfParts));
+        return;
+    }
+
+    mdb.AuditToken.findOne({ tokenHash: tokenHash(rawToken) })
+        .lean()
+        .exec(function(err, auditToken) {
+            var unusable;
+
+            if (err) {
+                renderRedeemPage(req, res, Object.assign({
+                    error: 'There was a problem looking up the progress audit token.',
+                    token: rawToken
+                }, asOfParts));
+                return;
+            }
+
+            unusable = tokenIsUsable(auditToken);
+
+            if (unusable) {
+                renderRedeemPage(req, res, Object.assign({
+                    error: unusable,
+                    token: rawToken
+                }, asOfParts));
+                return;
+            }
+
+            currentUserCanRedeemToken(req, auditToken, function(err, allowed) {
+                if (err) {
+                    renderRedeemPage(req, res, Object.assign({
+                        error: 'There was a problem checking your instructor authorization.',
+                        token: rawToken
+                    }, asOfParts));
+                    return;
+                }
+
+                if (!allowed) {
+                    renderRedeemPage(req, res, Object.assign({
+                        error: 'You do not have instructor access for the Canvas course/repository associated with this token.',
+                        token: rawToken
+                    }, asOfParts));
+                    return;
+                }
+
+                findMilestones(auditToken, asOf, function(err, milestone, earliestAfter) {
+                    if (err) {
+                        renderRedeemPage(req, res, Object.assign({
+                            error: 'There was a problem reading progress milestones for this token.',
+                            token: rawToken
+                        }, asOfParts));
+                        return;
+                    }
+
+                    mdb.AuditToken.update(
+                        { _id: auditToken._id },
+                        { $set: { usedAt: new Date() } },
+                        function(updateErr) {
+                            if (updateErr) {
+                                console.log('Error recording progress audit token use');
+                                console.log(updateErr);
+                            }
+                        }
+                    );
+
+                    findCurrentMilestone(auditToken, function(err, currentMilestone) {
+                        if (err) {
+                            renderRedeemPage(req, res, Object.assign({
+                                error: 'There was a problem reading the current progress milestone for this token.',
+                                token: rawToken
+                            }, asOfParts));
+                            return;
+                        }
+
+                        renderRedeemPage(req, res, Object.assign({
+                            token: rawToken,
+                            report: auditReportViewModel(auditToken, asOf, milestone, currentMilestone),
+                            reportLines: tokenReportLines(auditToken, asOf, milestone, earliestAfter)
+                        }, asOfParts));
+                    });
+                });
+            });
+        });
+}
+
+
+
+function milestoneViewModel(milestone) {
+    if (!milestone) {
+        return null;
+    }
+
+    return {
+        observedAt: humanTime(milestone.observedAt),
+        observedAtUtc: iso(milestone.observedAt),
+        windowStartedAt: humanTime(milestone.windowStartedAt),
+        windowStartedAtUtc: iso(milestone.windowStartedAt),
+        progress: percent(milestone.score),
+        xronosPoints: points(milestone.pointsEarned) + ' / ' + points(milestone.pointsPossible),
+        canvasPoints: points(milestone.canvasScore) + ' / ' + points(milestone.canvasPointsPossible),
+        source: milestone.source || 'unknown',
+        id: milestone._id
+    };
+}
+
+
+function findCurrentMilestone(scope, callback) {
+    mdb.ProgressMilestone.findOne(baseMilestoneQuery(scope))
+        .sort({ observedAt: -1 })
+        .lean()
+        .exec(callback);
+}
+
+function auditReportViewModel(auditToken, asOf, milestone, currentMilestone) {
+    return {
+        scope: {
+            repository: auditToken.repository,
+            path: auditToken.path,
+            contextId: auditToken.contextId || 'unknown',
+            resourceLinkId: auditToken.resourceLinkId || 'unknown',
+            created: humanTime(auditToken.createdAt),
+            expires: humanTime(auditToken.expiresAt)
+        },
+        requested: {
+            human: humanTime(asOf),
+            utc: iso(asOf)
+        },
+        asOfMilestone: milestoneViewModel(milestone),
+        currentMilestone: milestoneViewModel(currentMilestone)
+    };
+}
+
 exports.REPORT_TIME_ZONE = REPORT_TIME_ZONE;
 exports.REPORT_TIME_ZONE_LABEL = REPORT_TIME_ZONE_LABEL;
 
@@ -408,6 +727,8 @@ exports.tokenIsUsable = tokenIsUsable;
 
 exports.tokenForm = tokenForm;
 exports.createToken = createToken;
+exports.redeemForm = redeemForm;
+exports.redeemToken = redeemToken;
 
 exports.baseMilestoneQuery = baseMilestoneQuery;
 exports.findMilestones = findMilestones;

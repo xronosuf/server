@@ -28,9 +28,10 @@ $(document).ready(function() {
 			$('#loginGuest').show();  // If enabled in the server !
 	}
 
-	// Instructors should see a "statistics" button
+	// Instructors should see instructor-only menu items.
 	if (user.instructorRepositoryPaths) {
 	    $('#menu-supervise').show();
+	    $('#progress-audit-redeem-link').show();
 	    
 	    user.instructorRepositoryPaths.forEach( function(p) {
 		if (window.location.pathname.startsWith(window.toValidPath(p)))

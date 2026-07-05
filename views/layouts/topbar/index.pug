@@ -64,6 +64,7 @@ div.xmuser#loginUser(style="display: none;")
         li a(href=url.replace('users/' + learner._id + '/', '')) <i class='fa fa-user'></i> Stop Pretending
       li: a(href=toValidPath(`/users/me`)) <i class='fa fa-cogs'></i> Profile
       li: a#menu-supervise(href=toValidPath('/supervise'),style="display: none;") <i class='fa fa-eye'></i> Supervise
+      li: a#progress-audit-redeem-link(href=toValidPath('/progress-audit/redeem'),style="display: none;") <i class='fa fa-search'></i> Redeem progress audit token
       if activity
         li: a#progress-audit-token-link(href="#", style="display: none;") <i class='fa fa-key'></i> Generate progress audit token
         li.xmerase(role="button", data-toggle="modal", data-target="#resetWarningModal")

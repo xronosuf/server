@@ -45,22 +45,6 @@ span.xmupdate: a.btn-warning.pulsate#pageUpdate(type="button",data-toggle="modal
            span.update-text    
 //- span.xmerase: a(role="button", data-toggle="modal", data-target="#resetWarningModal")
            i.fa.fa-eraser
-div.xmsettings
-  i.fa.fa-bars
-  span.xmhidden-small.hidden-md-down &nbsp;Settings&thinsp; 
-  i.fa.fa-caret-down.fa-2xs
-  ul.xmsettings-inhoud
-    if activity
-      //- Progress is now shown directly in the activity UI/sidebar.
-      //- Keep the old progress-toggle JavaScript untouched, but do not
-      //- expose a separate menu action that could confuse students.
-      li.xmerase(role="button", data-toggle="modal", data-target="#resetWarningModal")
-           i.fa.fa-eraser
-           span.nl-text.xmhidden-small &nbsp; Verwijder je antwoorden (op deze pagina)
-           span.en-text.xmhidden-small &nbsp; Remove your answers (on this page)
-           span.xmhidden
-           //-  span.erase-explanation-label Verwijder al je pogingen op deze pagina
-           //-  span.erase-explanation-text                                                                                                   
 if config.showEdit && activity && activity.path && repositoryMetadata
   li.xmwijzig: a(role="button",onclick=`location.href = \"https://${repositoryMetadata.github.Server}/${repositoryMetadata.github.Owner}/${repositoryMetadata.github.Repository}/edit/${repositoryMetadata.github.Branch}/${activity.path}.tex\";`)
     i.fa.fa-pencil 
@@ -80,6 +64,12 @@ div.xmuser#loginUser(style="display: none;")
         li a(href=url.replace('users/' + learner._id + '/', '')) <i class='fa fa-user'></i> Stop Pretending
       li: a(href=toValidPath(`/users/me`)) <i class='fa fa-cogs'></i> Profile
       li: a#menu-supervise(href=toValidPath('/supervise'),style="display: none;") <i class='fa fa-eye'></i> Supervise
+      if activity
+        li.xmerase(role="button", data-toggle="modal", data-target="#resetWarningModal")
+          i.fa.fa-eraser
+          span.nl-text.xmhidden-small &nbsp; Verwijder je antwoorden (op deze pagina)
+          span.en-text.xmhidden-small &nbsp; Remove your answers (on this page)
+          span.xmhidden
       //- li: a(href=toValidPath("/logout")) <i class='fa fa-sign-out'></i> Logout
 //- div#loginGuest(style="display: none;")
 if config.showLogin

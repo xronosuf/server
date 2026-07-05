@@ -46,7 +46,7 @@
   height: 100%;
 }
 
-.xmdownload, .xmsettings, .xmlogin, .xmuser {
+.xmdownload, .xmlogin, .xmuser {
   position: relative;
 }
 
@@ -54,7 +54,7 @@
   display: none;
 }
 
-.xmdownload-inhoud, .xmsettings-inhoud, .xmlogin-inhoud, .xmuser-inhoud {
+.xmdownload-inhoud, .xmlogin-inhoud, .xmuser-inhoud {
   display: none;
   position: absolute;
   list-style-type:none;
@@ -75,15 +75,15 @@
     padding: 0;
 }
 
-/* make items look like links ... */
-.xmsettings li {
+/* make non-anchor menu actions look like links ... */
+.xmuser li.xmerase {
   color: #0275d8;
+  cursor: pointer;
 }
 
 .xmdownload:hover .xmdownload-inhoud,
 .xmuser:hover .xmuser-inhoud,
-.xmlogin:hover .xmlogin-inhoud,
-.xmsettings:hover .xmsettings-inhoud
+.xmlogin:hover .xmlogin-inhoud
 {
   display: block;
 }
@@ -1504,18 +1504,6 @@ span#prev-activity-label {
   padding-bottom: 0;
 }
 
-.main-title.xronos-contained-topbar-ready .xmsettings {
-  grid-column: 6;
-  grid-row: 1;
-  justify-self: end;
-  align-self: end;
-  padding-bottom: 0.25rem;
-  margin: 0;
-  white-space: nowrap;
-  z-index: 20;
-}
-
-.main-title.xronos-contained-topbar-ready .xmsettings-inhoud,
 .main-title.xronos-contained-topbar-ready .xmuser-inhoud,
 .main-title.xronos-contained-topbar-ready .xmdownload-inhoud {
   top: 100%;
@@ -1537,7 +1525,7 @@ span#prev-activity-label {
 /*
  * Legacy profile/login/settings controls predate the contained Xronos topbar.
  * In the contained topbar, keep profile/login on the same visual line as
- * settings while reserving space for the settings control on the far right.
+ * the account/profile menu as the primary account control.
  */
 .main-title.xronos-contained-topbar-ready #loginUser,
 .main-title.xronos-contained-topbar-ready #loginGuest,
@@ -1553,7 +1541,7 @@ span#prev-activity-label {
   line-height: 28px;
   display: inline-block;
   position: relative;
-  margin: 16px 6.5rem 0 0;
+  margin: 16px 0 0 0;
   z-index: 5000;
   top: auto;
   left: auto;
@@ -1561,7 +1549,6 @@ span#prev-activity-label {
   bottom: auto;
 }
 
-.main-title.xronos-contained-topbar-ready .xmsettings,
 .main-title.xronos-contained-topbar-ready .xmdownload {
   grid-row: 1;
   justify-self: end;
@@ -1571,6 +1558,7 @@ span#prev-activity-label {
   display: inline-block;
   position: relative;
   margin-top: 16px;
+  margin-right: 6.5rem;
   margin-bottom: 0;
   z-index: 5000;
   top: auto;
@@ -1582,7 +1570,6 @@ span#prev-activity-label {
 
 .main-title.xronos-contained-topbar-ready .xmuser-inhoud,
 .main-title.xronos-contained-topbar-ready .xmlogin-inhoud,
-.main-title.xronos-contained-topbar-ready .xmsettings-inhoud,
 .main-title.xronos-contained-topbar-ready .xmdownload-inhoud {
   position: absolute;
   top: 100%;

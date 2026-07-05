@@ -30,12 +30,19 @@ var verbAttempted = verb("attempted");
 var verbAnswered = verb("answered");
 var verbCompleted = verb("completed");
 var verbSubmitted = xAPIverb("submit");
+var verbGeneratedAnotherVersion = {
+  id: "https://xronos.clas.ufl.edu/xapi/verbs/generated-another-version",
+  display: {
+    "en-US": "generated another version",
+  },
+};
 
 exports.verbExperienced = verb("experienced");
 exports.verbAttempted = verb("attempted");
 exports.verbAnswered = verb("answered");
 exports.verbCompleted = verb("completed");
 exports.verbSubmitted = xAPIverb("submit");
+exports.verbGeneratedAnotherVersion = verbGeneratedAnotherVersion;
 
 exports.activityHashToActivityObject = function (activityHash) {
   var result = {
@@ -92,6 +99,45 @@ exports.experienceActivityByHash = function (activityHash) {
 
 exports.experienceActivity = function (element) {
   return exports.experienceActivityByHash($(element).activityHash());
+};
+
+exports.generatedAnotherVersion = function (element, oldSeed, newSeed) {
+  var activityHash = $(element).activityHash();
+
+  if (activityHash === undefined) {
+    activityHash = $("#theActivity").attr("data-hash");
+  }
+
+  if (activityHash === undefined) {
+    return;
+  }
+
+  var extensions = {};
+  extensions["https://xronos.clas.ufl.edu/xapi/extensions/old-seed"] =
+    oldSeed === undefined ? null : oldSeed;
+  extensions["https://xronos.clas.ufl.edu/xapi/extensions/new-seed"] =
+    newSeed === undefined ? null : newSeed;
+
+  exports.recordStatement({
+    verb: verbGeneratedAnotherVersion,
+    object: {
+      objectType: "Activity",
+      id: ximeraUrl + "activities/" + activityHash + "/try-another",
+      definition: {
+        name: {
+          "en-US": "Generated another version",
+        },
+      },
+    },
+    result: {
+      extensions: extensions,
+    },
+    context: {
+      contextActivities: {
+        parent: exports.activityHashToActivityObject(activityHash),
+      },
+    },
+  });
 };
 
 exports.experienceProblem = function (element) {

@@ -2,6 +2,7 @@ var $ = require('jquery');
 var _ = require('underscore');
 var MathJax = require('mathjax');
 var database = require('./database');
+var TinCan = require('./tincan');
 
 var seeded = false;
 var seedCallbacks = [];
@@ -516,19 +517,20 @@ sageBatchTimer = null;
 
 function xronosShowMeAnotherSage() {
     var oldSeed = $("#seed").persistentData('seed');
+    var newSeed = oldSeed !== undefined ? oldSeed + 1 : 0;
 
     seed = undefined;
     clearSageClientCaches();
 
-    if (typeof database !== "undefined" && database.resetWork) {
-database.resetWork();
+    if (TinCan && TinCan.generatedAnotherVersion) {
+	TinCan.generatedAnotherVersion($("main.activity").first(), oldSeed, newSeed);
     }
 
-    if (oldSeed !== undefined) {
-$("#seed").persistentData('seed', oldSeed + 1);
-    } else {
-$("#seed").persistentData('seed', 0);
+    if (typeof database !== "undefined" && database.resetWork) {
+	database.resetWork();
     }
+
+    $("#seed").persistentData('seed', newSeed);
 
     return $("#seed").persistentData('seed');
 }

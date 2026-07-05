@@ -8,3 +8,19 @@
 *.old
 *.tmp
 *.swp
+
+# Local editor/backup files
+*~
+*.bak
+*.bak.*
+*.backup
+*.backup.*
+*.orig
+*.orig.*
+*.rej
+*.rej.*
+*.old
+*.old.*
+*.tmp
+*.tmp.*
+*.swp

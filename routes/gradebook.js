@@ -6,6 +6,7 @@ var config = require('../config');
 var async = require('async');
 const uuidv1 = require('uuid/v1');
 var mongo = require('mongodb');
+var progressMilestones = require('./progress-milestones');
 
 const Redis = require("ioredis");
 
@@ -100,6 +101,31 @@ function queueBridge(bridge, callback) {
 exports.bridgeHasGradePassback = bridgeHasGradePassback;
 exports.bridgeIsOpen = bridgeIsOpen;
 exports.queueBridge = queueBridge;
+
+function recordProgressMilestoneForBridge(req, repositoryName, bridge) {
+    if (bridge && bridge.instructionalStaff) {
+        return;
+    }
+
+    progressMilestones.record({
+        user: req.user && req.user._id,
+        repository: repositoryName,
+        path: req.params.path,
+        pointsEarned: req.body && req.body.pointsEarned,
+        pointsPossible: req.body && req.body.pointsPossible,
+        bridge: bridge,
+        source: 'gradebook'
+    }, function(err) {
+        if (err) {
+            console.log(
+                'Error recording progress milestone for bridge ' +
+                (bridge && bridge._id ? bridge._id : 'unknown')
+            );
+            console.log(err);
+        }
+    });
+}
+
 
 function processGradebook(id, callback) {
 	console.log('Processing gradebook ' + id)
@@ -254,6 +280,8 @@ exports.record = function(req, res, next) {
                         var resultScore;
                         var resultTotalScore;
                         var better;
+
+                        recordProgressMilestoneForBridge(req, repositoryName, bridge);
 
                         /*
                          * Bridges without passback fields cannot sync to Canvas.

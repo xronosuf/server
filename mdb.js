@@ -139,6 +139,65 @@ exports.initialize = function initialize(callback) {
     )
   );
 
+
+  exports.ProgressMilestone = mongoose.model(
+    "ProgressMilestone",
+    new mongoose.Schema(
+      {
+        user: { type: ObjectId, index: true, ref: "User" },
+        repository: { type: String, index: true },
+        path: { type: String, index: true },
+
+        pointsEarned: Number,
+        pointsPossible: Number,
+        score: { type: Number, index: true },
+
+        canvasPointsPossible: Number,
+        canvasScore: Number,
+
+        observedAt: { type: Date, index: true },
+        windowStartedAt: { type: Date, index: true },
+        source: { type: String, index: true },
+
+        bridge: { type: ObjectId, index: true, ref: "LtiBridge" },
+        toolConsumerInstanceGuid: { type: String, index: true },
+        contextId: { type: String, index: true },
+        resourceLinkId: { type: String, index: true },
+
+        activityHash: { type: String, index: true },
+        expiresAt: { type: Date, index: true }
+      },
+      {
+        minimize: false,
+      }
+    )
+  );
+
+  exports.AuditToken = mongoose.model(
+    "AuditToken",
+    new mongoose.Schema(
+      {
+        tokenHash: { type: String, index: true, unique: true },
+        user: { type: ObjectId, index: true, ref: "User" },
+        repository: { type: String, index: true },
+        path: { type: String, index: true },
+
+        bridge: { type: ObjectId, index: true, ref: "LtiBridge" },
+        toolConsumerInstanceGuid: { type: String, index: true },
+        contextId: { type: String, index: true },
+        resourceLinkId: { type: String, index: true },
+
+        createdAt: { type: Date, index: true },
+        expiresAt: { type: Date, index: true },
+        usedAt: Date,
+        revokedAt: Date
+      },
+      {
+        minimize: false,
+      }
+    )
+  );
+
   exports.Label = mongoose.model(
     "Label",
     new mongoose.Schema(

@@ -17,7 +17,8 @@ function announce( hash, answers ) {
 }
 
 $(function() {
-    $("#instructor-view-statistics").click( function() {
+    $("#instructor-view-statistics").click( function(event) {
+	event.preventDefault();
 	$("#instructor-view-statistics").hide();
 	
 	var url = $(this).attr('data-activity-url');

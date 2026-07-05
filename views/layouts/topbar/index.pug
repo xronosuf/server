@@ -33,7 +33,6 @@ if ( activity.downloads_xourse && activity.downloads_xourse.length > 0 ) || (act
               else
                 span.complete-course-text-download-text (#{download.label})
 include due-date        
-include statistics
 button.btn.btn-info#math-edit-button(role="button",style="display: none;")
     i.fa.fa-magic
     span.nl-text.hidden-md-down &nbsp;Wiskunde Editor
@@ -66,6 +65,7 @@ div.xmuser#loginUser(style="display: none;")
       li: a#menu-supervise(href=toValidPath('/supervise'),style="display: none;") <i class='fa fa-eye'></i> Supervise
       li: a#progress-audit-redeem-link(href=toValidPath('/progress-audit/redeem'),style="display: none;") <i class='fa fa-search'></i> Redeem progress audit token
       if activity
+        li: a#instructor-view-statistics(href="#", data-activity-url=repositoryName + '/' + activity.path, data-activity-hash=activity.hash, style="display: none;") <i class='fa fa-bar-chart'></i> View page statistics
         li: a#progress-audit-token-link(href="#", style="display: none;") <i class='fa fa-key'></i> Generate progress audit token
         li.xmerase(role="button", data-toggle="modal", data-target="#resetWarningModal")
           i.fa.fa-eraser

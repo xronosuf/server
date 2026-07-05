@@ -43,6 +43,13 @@ $(document).ready(function() {
 	// If there's git content loaded...
 	var repositoryName = $('main').attr('data-repository-name');
 	var xourse = $('main').attr('data-xourse-path');
+
+	if (xourse && repositoryName) {
+	    $('#progress-audit-token-link')
+		.attr('href', window.toValidPath('/' + repositoryName + '/' + xourse + '/progress-audit/token'))
+		.show();
+	}
+
 	if (xourse && repositoryName) {
 	    // and if we have 
 	    if (user.bridges) {

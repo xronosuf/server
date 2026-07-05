@@ -65,6 +65,7 @@ div.xmuser#loginUser(style="display: none;")
       li: a(href=toValidPath(`/users/me`)) <i class='fa fa-cogs'></i> Profile
       li: a#menu-supervise(href=toValidPath('/supervise'),style="display: none;") <i class='fa fa-eye'></i> Supervise
       if activity
+        li: a#progress-audit-token-link(href="#", style="display: none;") <i class='fa fa-key'></i> Generate progress audit token
         li.xmerase(role="button", data-toggle="modal", data-target="#resetWarningModal")
           i.fa.fa-eraser
           span.nl-text.xmhidden-small &nbsp; Verwijder je antwoorden (op deze pagina)

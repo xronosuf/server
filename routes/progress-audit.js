@@ -311,6 +311,92 @@ function bridgeReportLines(bridge, asOf, milestone, earliestAfter) {
         ]);
 }
 
+
+function assignmentUrl(req) {
+    return req.app.locals.toValidPath('/' + req.params.repository + '/' + req.params.path);
+}
+
+function currentUserAssignmentBridge(req, callback) {
+    var query;
+
+    if (!req.user || req.user.isGuest) {
+        callback(null, null);
+        return;
+    }
+
+    query = {
+        user: req.user._id,
+        repository: req.params.repository,
+        path: req.params.path
+    };
+
+    mdb.LtiBridge.findOne(query)
+        .sort({ _id: -1 })
+        .lean()
+        .exec(callback);
+}
+
+function renderTokenPage(req, res, data) {
+    data = data || {};
+    data.returnUrl = assignmentUrl(req);
+    res.render('progress-audit/token', data);
+}
+
+function tokenForm(req, res) {
+    currentUserAssignmentBridge(req, function(err, bridge) {
+        if (err) {
+            renderTokenPage(req, res, {
+                error: 'There was a problem looking up your Canvas/Xronos assignment connection.'
+            });
+            return;
+        }
+
+        if (!bridge) {
+            renderTokenPage(req, res, {
+                error: 'No Canvas/Xronos assignment connection was found for your account on this assignment. Launch this assignment from Canvas first, then try again.'
+            });
+            return;
+        }
+
+        renderTokenPage(req, res);
+    });
+}
+
+function createToken(req, res) {
+    currentUserAssignmentBridge(req, function(err, bridge) {
+        if (err) {
+            renderTokenPage(req, res, {
+                error: 'There was a problem looking up your Canvas/Xronos assignment connection.'
+            });
+            return;
+        }
+
+        if (!bridge) {
+            renderTokenPage(req, res, {
+                error: 'No Canvas/Xronos assignment connection was found for your account on this assignment. Launch this assignment from Canvas first, then try again.'
+            });
+            return;
+        }
+
+        createTokenForBridge(bridge, DEFAULT_EXPIRATION_HOURS, function(err, token, auditToken) {
+            if (err) {
+                renderTokenPage(req, res, {
+                    error: 'There was a problem creating your progress audit token.'
+                });
+                return;
+            }
+
+            renderTokenPage(req, res, {
+                token: token,
+                auditToken: auditToken,
+                created: humanTime(auditToken.createdAt),
+                expires: humanTime(auditToken.expiresAt)
+            });
+        });
+    });
+}
+
+
 exports.REPORT_TIME_ZONE = REPORT_TIME_ZONE;
 exports.REPORT_TIME_ZONE_LABEL = REPORT_TIME_ZONE_LABEL;
 
@@ -319,6 +405,9 @@ exports.tokenHash = tokenHash;
 exports.expirationHours = expirationHours;
 exports.createTokenForBridge = createTokenForBridge;
 exports.tokenIsUsable = tokenIsUsable;
+
+exports.tokenForm = tokenForm;
+exports.createToken = createToken;
 
 exports.baseMilestoneQuery = baseMilestoneQuery;
 exports.findMilestones = findMilestones;

@@ -6,6 +6,7 @@ var express = require('express')
   , certificate = require('./routes/certificate')
   , user = require('./routes/user')
   , gradebook = require('./routes/gradebook')
+  , progressAudit = require('./routes/progress-audit')
   , statistics = require('./routes/statistics')
   , xourses = require('./routes/xourses')
   , instructors = require('./routes/instructors')
@@ -1034,8 +1035,15 @@ app.get('/sw.js', function(req, res) {
 	     repositories.normalizeName,
 	     gradebook.record );
     app.put( '/:repository/:path(*)/gradebook',
-	     repositories.normalizeName,
-	     gradebook.record );    
+     repositories.normalizeName,
+     gradebook.record );
+
+    app.get( '/:repository/:path(*)/progress-audit/token',
+     repositories.normalizeName,
+     progressAudit.tokenForm );
+    app.post( '/:repository/:path(*)/progress-audit/token',
+     repositories.normalizeName,
+     progressAudit.createToken );
 
     // Instructors should be based around a context instead?
     app.get( '/:repository/:path(*)/instructors',

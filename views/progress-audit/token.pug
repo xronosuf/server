@@ -1,0 +1,59 @@
+extends ../layouts/main
+
+block title
+  | Progress Audit Token
+
+block content
+  div.container.mt-5
+    .row.p-2
+      h1(role="banner") Progress Audit Token
+
+  div.container.ml-5.p-5
+    main
+      if error
+        div.alert.alert-danger(role="alert")
+          strong Error:
+          |  #{error}
+
+      if token
+        div.alert.alert-warning(role="alert")
+          strong Copy this token now.
+          |  Xronos stores only a hash of this token, so it cannot be recovered later.
+
+        div.card.mb-4
+          div.card-header Token
+          div.card-body
+            textarea.form-control(readonly, rows="3") #{token}
+
+        dl.row
+          dt.col-sm-3 Repository
+          dd.col-sm-9 #{auditToken.repository}
+
+          dt.col-sm-3 Assignment path
+          dd.col-sm-9 #{auditToken.path}
+
+          dt.col-sm-3 Created
+          dd.col-sm-9 #{created}
+
+          dt.col-sm-3 Expires
+          dd.col-sm-9 #{expires}
+
+      else
+        p.
+          Generate a progress audit token for this Xronos assignment. You can share
+          this token with your instructor if you need them to check your recorded
+          Xronos progress for a specific time.
+
+        p.
+          The token is scoped to this assignment and expires automatically. Xronos
+          stores only a hash of the token, so the token is shown only once.
+
+        form(method="post")
+          button.btn.btn-primary(type="submit")
+            i.fa.fa-key
+            |  Generate progress audit token
+
+      p.mt-4
+        a.btn.btn-secondary(href=returnUrl)
+          i.fa.fa-arrow-left
+          |  Return to assignment

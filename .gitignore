@@ -1,0 +1,10 @@
+
+# Local editor/backup files
+*~
+*.bak
+*.backup
+*.orig
+*.rej
+*.old
+*.tmp
+*.swp

@@ -1,5 +1,6 @@
 var $ = require('jquery');
 var _ = require('underscore');
+var debugLog = require('./debug-log');
 
 var xronosGradeSyncMessages = {
     syncing: 'Xronos currently sees a Canvas grade-sync connection for this assignment.',
@@ -169,6 +170,7 @@ exports.update = _.debounce( function() {
     };
 
     $(".progress.completion-meter").attr('title', 'Submitting grade...' );
+    debugLog.log('Sent gradebook update to Xronos server; Canvas passback may be queued.', payload);
     
     $.ajax({
 	url: window.toValidPath('/' + xourseUrl + '/gradebook'),
@@ -176,7 +178,7 @@ exports.update = _.debounce( function() {
 	data: JSON.stringify(payload),
 	contentType: 'application/json',	
 	success: function( result ) {
-	    console.log( "Recorded gradebook",payload );
+	    debugLog.log('Xronos server accepted gradebook update; Canvas passback may be queued.', payload);
 	    xronosUpdateGradeSyncStatus(result && result.gradeSync);
 	    xronosDispatchGradebookRecorded(payload, result);
 	    $('.progress-bar', ".progress.completion-meter").removeClass( 'bg-danger' );
@@ -184,6 +186,11 @@ exports.update = _.debounce( function() {
 	    $(".progress.completion-meter").attr('title', 'Grade submitted at '  + (new Date()).toLocaleTimeString() );
 	},
 	error: function(jqXHR, err, exception) {
+	    debugLog.log('Xronos server did not accept gradebook update; Canvas passback was not queued from this request.', {
+		status: jqXHR && jqXHR.status,
+		error: err,
+		exception: exception
+	    });
 	    xronosUpdateGradeSyncStatus({state: 'error'});
 	    $(".progress.completion-meter").attr('title', 'Could not submit grade.' );
 	    $('.progress-bar', ".progress.completion-meter").removeClass( 'bg-success' );

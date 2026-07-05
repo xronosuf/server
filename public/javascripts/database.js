@@ -8,6 +8,7 @@ var jsondiffpatch = require('jsondiffpatch');
 
 var chat = require('./chat');
 var users = require('./users');
+var debugLog = require('./debug-log');
 
 var CANON = require('canon');
 var XXH = require('xxhashjs');
@@ -102,6 +103,7 @@ function differentialSynchronization() {
     if (delta !== undefined) {
 	saveWorkStatus( 'saving' );
 	socket.sendJSON( 'patch', delta, checksumObject(SHADOW) );
+	debugLog.log('Sent page state update to Xronos server.');
 	SHADOW = jsondiffpatch.clone(DATABASE);
     }
 }
@@ -198,6 +200,9 @@ $.fn.extend({
 	
 	// Trigger a remote update
 	_.defer( function() {    
+	    if (key === 'response') {
+		debugLog.log('Saved local response.');
+	    }
 	    module.exports.commit();
 	    element.trigger( 'ximera:database' );
 	    differentialSynchronizationDebounced();
@@ -337,6 +342,7 @@ function connectToServer() {
 	    socket.sendJSON( 'want-differential' );
 	} else {
 	    saveWorkStatus( 'saved', 'Uploaded at ' + (new Date()).toLocaleTimeString() );
+	    debugLog.log('Xronos server accepted page state update.');
 	}
     }, 100 );
 
@@ -453,6 +459,11 @@ module.exports.setCompletion = function(repositoryName, activityPath, complete) 
     }
 
     socket.sendJSON( 'completion', {repositoryName: repositoryName, activityPath: activityPath, complete: complete} );
+    debugLog.log('Sent page progress update to Xronos server.', {
+	repositoryName: repositoryName,
+	activityPath: activityPath,
+	complete: complete
+    });
 };
 
 module.exports.onCompletion = function(repositoryName, activityPath, callback) {

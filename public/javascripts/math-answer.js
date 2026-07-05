@@ -66,15 +66,30 @@ function parseFormattedInput( format, input ) {
 
 function displayTexForCorrectStudentAnswer(result, instructorAnswerTex) {
     var response = result.persistentData('response');
+    var parsed;
 
     /*
      * Once an answer is validated as correct, show the student's submitted
      * response rather than replacing it with the instructor/canonical answer.
      *
+     * Prefer a parsed LaTeX form when available so input such as 6(4)^14
+     * displays with the full exponent grouped, rather than TeX interpreting
+     * only the first character after ^ as the exponent.
+     *
      * If no response is available, fall back to the instructor answer so older
      * saved state or unusual show-answer paths still render something useful.
      */
     if (response !== undefined && response !== null && response !== '') {
+        try {
+            parsed = parseFormattedInput(result.attr('data-format'), response.toString());
+
+            if (parsed && typeof parsed.toLatex === 'function') {
+                return parsed.toLatex();
+            }
+        } catch (err) {
+            // Fall through to raw response below.
+        }
+
         return response.toString();
     }
 
@@ -295,8 +310,25 @@ exports.connectMathAnswer = function(result, answer) {
 	var solScriptElementId = scriptElement.attr('id') + "-sol"
 	var tex = scriptElement.text()
 	var a = MathJax.Hub.getAllJax(scriptElement.attr('id'))[0];
-	$("#" + solScriptElementId).prev().remove()
-	$("#" + solScriptElementId).remove()
+	/*
+	 * Historical solution-script cleanup removed the previous sibling of
+	 * the solution script.  On reload, if MathJax had not successfully
+	 * created a rendered replacement, that previous sibling could be the
+	 * original MathJax source script.  Removing it can make the entire
+	 * completed answer disappear.  We now update the existing MathJax
+	 * object in place, so only remove stale solution artifacts when they
+	 * are present and leave the original script/rendering alone.
+	 */
+	var existingSolScript = $("#" + solScriptElementId);
+	if (existingSolScript.length > 0) {
+	    var existingSolRender = existingSolScript.prev();
+
+	    if (existingSolRender.length > 0 && existingSolRender[0] !== scriptElement[0]) {
+		existingSolRender.remove();
+	    }
+
+	    existingSolScript.remove();
+	}
 	if (result.persistentData('correct')) {
 	    result.find('.btn-ximera-correct').show();
 	    result.find('.btn-ximera-incorrect').hide();
@@ -307,13 +339,22 @@ exports.connectMathAnswer = function(result, answer) {
 		result.find('.show-answer-large').hide();
 		
 		if ((tex.match(/\\answer/g) || []).length === 1) {
-			var answerRegExp = /\\answer (\[.*\])*{(.*)}/
+			var answerRegExp = /\\answer\s*(\[[^\]]*\])?\s*{(.*)}/
 			var m = tex.match(answerRegExp)
 			if (m) {
-				mjElement.hide()
-				console.log(scriptElement.attr('type'))
-				scriptElement.after("<script type='"+ scriptElement.attr('type') + "' id='" + solScriptElementId + "'>" + tex.replace(answerRegExp, "{\\color{blue} " + displayTexForCorrectStudentAnswer(result, m[2]) + "}")+"</script>")
-				MathJax.Hub.Queue(["Typeset", MathJax.Hub, "#" + solScriptElementId]);
+				var replacementTex = tex.replace(answerRegExp, "{\\color{blue} " + displayTexForCorrectStudentAnswer(result, m[2]) + "}");
+
+				/*
+				 * Update the existing MathJax object in place instead of creating
+				 * a second script and hiding the original rendering.  The old
+				 * hide-and-retypeset approach is fragile across inline/display
+				 * MathJax shapes and can leave completed answers invisible after
+				 * reload.
+				 */
+				if (a) {
+				    MathJax.Hub.Queue(["Text", a, replacementTex]);
+				    mjElement.show();
+				}
 			}
 		}
 

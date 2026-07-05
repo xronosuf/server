@@ -5,7 +5,15 @@ var learningRecordStore = require('./read-lrs.js');
 var async = require('async');
 
 function mergeResponseIntoAnswers( answers, entry ) {
-    console.log(entry);
+    /*
+     * Do not log raw learning-record entries by default.  These records may
+     * include student responses and should not be printed into routine server
+     * logs.  Enable only for local debugging when explicitly needed.
+     */
+    if (process.env.XIMERA_DEBUG_SUMMARY_RECORDS === 'true') {
+	console.log(entry);
+    }
+
     if (!(answers.responses))
 	answers.responses = {};
     

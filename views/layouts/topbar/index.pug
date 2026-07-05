@@ -51,15 +51,9 @@ div.xmsettings
   i.fa.fa-caret-down.fa-2xs
   ul.xmsettings-inhoud
     if activity
-      li.xmhideprogress(role="button")
-        span.xmprogresshidden#xmprogess-close
-          i.fa.fa-eye-slash
-          span.nl-text.xmhidden-small &nbsp;Verberg vooruitgang
-          span.en-text.xmhidden-small &nbsp;Hide progress
-        span#xmprogess-open
-          i.fa.fa-eye
-          span.nl-text.xmhidden-small &nbsp;Toon vooruitgang
-          span.en-text.xmhidden-small &nbsp;Show progress
+      //- Progress is now shown directly in the activity UI/sidebar.
+      //- Keep the old progress-toggle JavaScript untouched, but do not
+      //- expose a separate menu action that could confuse students.
       li.xmerase(role="button", data-toggle="modal", data-target="#resetWarningModal")
            i.fa.fa-eraser
            span.nl-text.xmhidden-small &nbsp; Verwijder je antwoorden (op deze pagina)

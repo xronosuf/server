@@ -15965,7 +15965,7 @@ span#prev-activity-label {
 .main-title.xronos-contained-topbar-ready .xmuser-inhoud,
 .main-title.xronos-contained-topbar-ready .xmdownload-inhoud {
   top: 100%;
-  margin-top: 0.25rem;
+  margin-top: 0;
   z-index: 10000;
 }
 

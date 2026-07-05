@@ -104,6 +104,58 @@ function points(value) {
     return (Math.round(value * 100) / 100).toString();
 }
 
+var REPORT_TIME_ZONE = 'America/New_York';
+var REPORT_TIME_ZONE_LABEL = 'ET';
+
+function pad2(value) {
+    return value < 10 ? '0' + value : String(value);
+}
+
+function timeParts(value) {
+    var formatter;
+    var parts;
+    var result = {};
+
+    if (!value) {
+        return null;
+    }
+
+    formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: REPORT_TIME_ZONE,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+    });
+
+    parts = formatter.formatToParts(new Date(value));
+
+    parts.forEach(function(part) {
+        if (part.type !== 'literal') {
+            result[part.type] = part.value;
+        }
+    });
+
+    return result;
+}
+
+function humanTime(value) {
+    var parts = timeParts(value);
+    var dayPeriod;
+
+    if (!parts) {
+        return 'unknown';
+    }
+
+    dayPeriod = (parts.dayPeriod || '').toLowerCase();
+
+    return parts.hour + ':' + parts.minute + dayPeriod + ', ' +
+        parts.month + '/' + parts.day + '/' + parts.year +
+        ' ' + REPORT_TIME_ZONE_LABEL;
+}
+
 function iso(value) {
     if (!value) {
         return 'unknown';
@@ -129,7 +181,8 @@ function printReport(bridge, asOf, milestone, earliestAfter) {
 
     console.log('Requested time');
     console.log('--------------');
-    console.log('As of:           ' + asOf.toISOString());
+    console.log('As of:           ' + humanTime(asOf));
+    console.log('As of UTC:       ' + asOf.toISOString());
     console.log('');
 
     if (!milestone) {
@@ -140,7 +193,8 @@ function printReport(bridge, asOf, milestone, earliestAfter) {
             console.log('');
             console.log('First later milestone');
             console.log('---------------------');
-            console.log('Observed at:      ' + iso(earliestAfter.observedAt));
+            console.log('Observed at:      ' + humanTime(earliestAfter.observedAt));
+            console.log('Observed UTC:     ' + iso(earliestAfter.observedAt));
             console.log('Progress:         ' + percent(earliestAfter.score));
             console.log('Xronos points:    ' + points(earliestAfter.pointsEarned) + ' / ' + points(earliestAfter.pointsPossible));
             console.log('Canvas points:    ' + points(earliestAfter.canvasScore) + ' / ' + points(earliestAfter.canvasPointsPossible));
@@ -151,8 +205,10 @@ function printReport(bridge, asOf, milestone, earliestAfter) {
 
     console.log('Result');
     console.log('------');
-    console.log('Latest milestone: ' + iso(milestone.observedAt));
-    console.log('Window started:   ' + iso(milestone.windowStartedAt));
+    console.log('Latest milestone: ' + humanTime(milestone.observedAt));
+    console.log('Latest UTC:       ' + iso(milestone.observedAt));
+    console.log('Window started:   ' + humanTime(milestone.windowStartedAt));
+    console.log('Window UTC:       ' + iso(milestone.windowStartedAt));
     console.log('Progress:         ' + percent(milestone.score));
     console.log('Xronos points:    ' + points(milestone.pointsEarned) + ' / ' + points(milestone.pointsPossible));
     console.log('Canvas points:    ' + points(milestone.canvasScore) + ' / ' + points(milestone.canvasPointsPossible));

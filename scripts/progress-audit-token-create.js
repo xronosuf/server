@@ -10,9 +10,9 @@
  *   node scripts/progress-audit-token-create.js --bridge BRIDGE_ID --hours 168
  */
 
-var crypto = require('crypto');
 var mdb = require('../mdb');
 var mongo = require('mongodb');
+var progressAudit = require('../routes/progress-audit');
 
 function usage(exitCode) {
     console.log([
@@ -77,63 +77,6 @@ function objectId(value, label) {
     return new mongo.ObjectID(value);
 }
 
-function expirationHours(value) {
-    var hours = parseInt(value || '168', 10);
-
-    if (isNaN(hours) || hours < 1) {
-        return 168;
-    }
-
-    if (hours > 2160) {
-        return 2160;
-    }
-
-    return hours;
-}
-
-function randomToken() {
-    return crypto.randomBytes(32)
-        .toString('base64')
-        .replace(/\+/g, '-')
-        .replace(/\//g, '_')
-        .replace(/=+$/g, '');
-}
-
-function tokenHash(token) {
-    return crypto.createHash('sha256').update(token).digest('hex');
-}
-
-function createTokenForBridge(bridge, hours, callback) {
-    var token = randomToken();
-    var hash = tokenHash(token);
-    var createdAt = new Date();
-    var expiresAt = new Date(createdAt.getTime() + hours * 60 * 60 * 1000);
-
-    var auditToken = new mdb.AuditToken({
-        tokenHash: hash,
-        user: bridge.user,
-        repository: bridge.repository,
-        path: bridge.path,
-
-        bridge: bridge._id,
-        toolConsumerInstanceGuid: bridge.toolConsumerInstanceGuid,
-        contextId: bridge.contextId,
-        resourceLinkId: bridge.resourceLinkId,
-
-        createdAt: createdAt,
-        expiresAt: expiresAt
-    });
-
-    auditToken.save(function(err, saved) {
-        if (err && err.code === 11000) {
-            createTokenForBridge(bridge, hours, callback);
-            return;
-        }
-
-        callback(err, token, saved);
-    });
-}
-
 var args = parseArgs(process.argv.slice(2));
 var bridgeId;
 var hours;
@@ -144,7 +87,7 @@ try {
     }
 
     bridgeId = objectId(args.bridge, 'bridge');
-    hours = expirationHours(args.hours);
+    hours = progressAudit.expirationHours(args.hours);
 } catch (e) {
     console.error(e.message);
     usage(1);
@@ -173,7 +116,7 @@ mdb.initialize(function(err) {
                 return;
             }
 
-            createTokenForBridge(bridge, hours, function(err, token, saved) {
+            progressAudit.createTokenForBridge(bridge, hours, function(err, token, saved) {
                 if (err) {
                     console.error(err);
                     process.exitCode = 1;
@@ -186,8 +129,10 @@ mdb.initialize(function(err) {
                     console.log('Path:         ' + saved.path);
                     console.log('Bridge ID:    ' + saved.bridge);
                     console.log('User ID:      ' + saved.user);
-                    console.log('Created UTC:  ' + saved.createdAt.toISOString());
-                    console.log('Expires UTC:  ' + saved.expiresAt.toISOString());
+                    console.log('Created:      ' + progressAudit.humanTime(saved.createdAt));
+                    console.log('Created UTC:  ' + progressAudit.iso(saved.createdAt));
+                    console.log('Expires:      ' + progressAudit.humanTime(saved.expiresAt));
+                    console.log('Expires UTC:  ' + progressAudit.iso(saved.expiresAt));
                     console.log('');
                     console.log('Token:');
                     console.log(token);

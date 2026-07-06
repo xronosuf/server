@@ -330,6 +330,7 @@ exports.render = function(req, res, next) {
 			     learner: req.learner,
 			     user: req.user,			     
 				 randomizationScope: req.randomizationScope || fallbackRandomizationScope(req.repositoryName),
+				 scopedSageBaseSeeds: req.scopedSageBaseSeeds || scopedSageBaseSeedsEnabled(),
 				 url: req.url });
     }
 };

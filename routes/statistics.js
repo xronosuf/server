@@ -48,6 +48,16 @@ function mergeAttemptStats(activity, attemptActivity) {
     return activity;
 }
 
+function mergeActivityStats(activity, activityStats) {
+    if (!activity || !activityStats) {
+        return activity;
+    }
+
+    activity._activityStats = activityStats;
+
+    return activity;
+}
+
 // BADBAD: This is horribly slow.
 exports.get = function(req, res, next) {
     var repository = req.params.repository;
@@ -74,6 +84,10 @@ exports.get = function(req, res, next) {
             mergeAttemptStats(
                 activity,
                 attemptSummary && attemptSummary.activities && attemptSummary.activities[activityHash]
+            );
+            mergeActivityStats(
+                activity,
+                attemptSummary && attemptSummary.activityStats && attemptSummary.activityStats[activityHash]
             );
 
             res.json(activity);

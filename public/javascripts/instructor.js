@@ -6,6 +6,10 @@ function announce( hash, answers ) {
     };
     
     Object.keys(answers).forEach( function(problem) {
+	if (problem.charAt(0) === '_') {
+	    return;
+	}
+
 	Object.keys(answers[problem]).forEach( function(answerable) {
 	    var element = $(selector(hash, problem, answerable));
 	    var statistics = answers[problem][answerable];

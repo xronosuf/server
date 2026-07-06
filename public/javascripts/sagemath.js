@@ -527,10 +527,16 @@ function xronosShowMeAnotherSage() {
     }
 
     if (typeof database !== "undefined" && database.resetWork) {
-	database.resetWork();
+	database.resetWork({
+	    preserve: {
+		seed: {
+		    seed: newSeed
+		}
+	    }
+	});
+    } else {
+	$("#seed").persistentData('seed', newSeed);
     }
-
-    $("#seed").persistentData('seed', newSeed);
 
     return $("#seed").persistentData('seed');
 }

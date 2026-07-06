@@ -495,9 +495,9 @@ module.exports.onCompletion = function(repositoryName, activityPath, callback) {
     }
 };
 
-// No need to confirm with the user to delete work---that happens via a Bootstrap Modal
-var clickResetWorkButton = function() {
+var resetWork = function(options) {
     var keys = _.keys( DATABASE );
+    var preserve = options && options.preserve ? options.preserve : {};
 
     _.each( keys,
 	    function( identifier ) {
@@ -506,13 +506,31 @@ var clickResetWorkButton = function() {
 		for( var i in hash ) {
 		    delete hash[i];
 		}
+
+		if (preserve[identifier]) {
+		    _.extend(hash, preserve[identifier]);
+		}
 	    });
+
+    _.each( preserve, function(value, identifier) {
+	if (!(identifier in DATABASE)) {
+	    DATABASE[identifier] = {};
+	}
+
+	_.extend(DATABASE[identifier], value);
+    });
 
     synchronizePageWithDatabase();
     differentialSynchronization();
 };
 
-module.exports.resetWork = clickResetWorkButton;
+// No need to confirm with the user to delete work---that happens via a Bootstrap Modal
+var clickResetWorkButton = function() {
+    resetWork();
+};
+
+module.exports.resetWork = resetWork;
+module.exports.synchronizeNow = differentialSynchronization;
 
 // After the document loads, every few seconds, make sure the database is saved.
 $(document).ready(function() {

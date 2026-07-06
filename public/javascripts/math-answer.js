@@ -205,71 +205,552 @@ exports.connectMathAnswer = function(result, answer) {
 	});
     });
 
-    result.on( 'ximera:statistics:answers', function(event, answers) {
-	var total = Object.keys( answers ).map( function(x) { return answers[x]; } ).reduce(function(a, b) { return a + b; });
+    result.on( 'ximera:statistics:answers', function(event, answers, statistics) {
+	function asNumber(value) {
+	    var number = Number(value);
 
-	var control = result.find( "input.form-control" );
+	    if (isNaN(number)) {
+		return 0;
+	    }
 
-	var table =
-		'<table class="table table-striped">' +
-		'<thead>' +
-		'  <tr>' +
-		'    <th>Number</th>' +
-		'    <th>Answer</th>' +
-		'  </tr>' +
-		'</thead><tbody>';
+	    return number;
+	}
 
-	var sortedAnswers = Object.keys( answers ).sort(function(a, b) {
-	    return - ( +(answers[a] > answers[b]) || +(answers[a] === answers[b]) - 1 );
+	function plural(word, count) {
+	    return count === 1 ? word : word + 's';
+	}
+
+	function formatStatisticValue(value) {
+	    var number;
+
+	    if (value === null || value === undefined) {
+		return '\u2014';
+	    }
+
+	    number = Number(value);
+
+	    if (isNaN(number)) {
+		return String(value);
+	    }
+
+	    if (number % 1 === 0) {
+		return String(number);
+	    }
+
+	    return String(Math.round(number * 10) / 10);
+	}
+
+	function countText(count, noun) {
+	    count = asNumber(count);
+
+	    return count + ' ' + plural(noun, count);
+	}
+
+	function countOfBare(count, total) {
+	    return asNumber(count) + ' of ' + asNumber(total);
+	}
+
+	function countOfWithNoun(count, total, noun) {
+	    count = asNumber(count);
+	    total = asNumber(total);
+
+	    return count + ' of ' + total + ' ' + plural(noun, total);
+	}
+
+	function compressedRanges(numbers) {
+	    var ranges = [];
+	    var start;
+	    var previous;
+
+	    numbers = numbers
+		.filter(function(number) {
+		    return !isNaN(number);
+		})
+		.sort(function(a, b) {
+		    return a - b;
+		});
+
+	    numbers.forEach(function(number) {
+		if (start === undefined) {
+		    start = number;
+		    previous = number;
+		    return;
+		}
+
+		if (number === previous + 1) {
+		    previous = number;
+		    return;
+		}
+
+		ranges.push(start === previous ? String(start) : String(start) + '\u2013' + String(previous));
+		start = number;
+		previous = number;
+	    });
+
+	    if (start !== undefined) {
+		ranges.push(start === previous ? String(start) : String(start) + '\u2013' + String(previous));
+	    }
+
+	    return ranges.join(', ');
+	}
+
+	function sortedSubmissions(answers) {
+	    return Object.keys(answers || {}).sort(function(a, b) {
+		var difference = asNumber(answers[b]) - asNumber(answers[a]);
+
+		if (difference !== 0) {
+		    return difference;
+		}
+
+		if (a < b) {
+		    return -1;
+		}
+
+		if (a > b) {
+		    return 1;
+		}
+
+		return 0;
+	    });
+	}
+
+	function totalSubmissionCount(answers) {
+	    return Object.keys(answers || {}).map(function(answer) {
+		return asNumber(answers[answer]);
+	    }).reduce(function(a, b) {
+		return a + b;
+	    }, 0);
+	}
+
+	function detailSection(title) {
+	    var details = $('<details/>', {
+		style: 'margin: 0.75rem 0;'
+	    });
+
+	    details.append($('<summary/>', {
+		style: 'cursor: pointer; font-weight: bold;'
+	    }).text(title));
+
+	    return details;
+	}
+
+	function simpleTable() {
+	    return $('<table/>', {
+		'class': 'table table-striped table-sm',
+		style: 'margin-top: 0.5rem;'
+	    });
+	}
+
+	function addMeasureRow(tableBody, label, value) {
+	    tableBody.append(
+		$('<tr/>')
+		    .append($('<th/>', {
+			scope: 'row'
+		    }).text(label))
+		    .append($('<td/>').text(value))
+	    );
+	}
+
+	function addSubMeasureRow(tableBody, label, value) {
+	    tableBody.append(
+		$('<tr/>')
+		    .append($('<td/>', {
+			style: 'padding-left: 2rem;'
+		    }).text(label))
+		    .append($('<td/>').text(value))
+	    );
+	}
+
+	function addDividerRow(tableBody, label) {
+	    tableBody.append(
+		$('<tr/>')
+		    .append($('<th/>', {
+			colspan: 2,
+			style: 'padding-top: 0.75rem;'
+		    }).text(label))
+	    );
+	}
+
+	function buildCommonSubmissionsSection(answers) {
+	    var section = detailSection('Most common submissions');
+	    var submissions = sortedSubmissions(answers);
+	    var topSubmissions = submissions.slice(0, 5);
+	    var hiddenSubmissions = submissions.slice(5);
+	    var repeatedThreeOrMore = 0;
+	    var repeatedTwice = 0;
+	    var oneOff = 0;
+	    var table = simpleTable();
+	    var tbody = $('<tbody/>');
+	    var hiddenSummary = $('<ul/>');
+
+	    table.append(
+		$('<thead/>').append(
+		    $('<tr/>')
+			.append($('<th/>').text('Submission'))
+			.append($('<th/>').text('Frequency'))
+		)
+	    );
+
+	    topSubmissions.forEach(function(submission) {
+		tbody.append(
+		    $('<tr/>')
+			.append($('<td/>').text(submission))
+			.append($('<td/>').text(asNumber(answers[submission])))
+		);
+	    });
+
+	    if (topSubmissions.length === 0) {
+		tbody.append(
+		    $('<tr/>').append(
+			$('<td/>', {
+			    colspan: 2
+			}).text('No submissions were found for this answer box.')
+		    )
+		);
+	    }
+
+	    table.append(tbody);
+	    section.append(table);
+
+	    hiddenSubmissions.forEach(function(submission) {
+		var count = asNumber(answers[submission]);
+
+		if (count >= 3) {
+		    repeatedThreeOrMore += 1;
+		} else if (count === 2) {
+		    repeatedTwice += 1;
+		} else if (count === 1) {
+		    oneOff += 1;
+		}
+	    });
+
+	    if (hiddenSubmissions.length > 0) {
+		section.append($('<h6/>').text('Additional hidden submissions'));
+
+		if (repeatedThreeOrMore > 0) {
+		    hiddenSummary.append($('<li/>').text(repeatedThreeOrMore + ' of the hidden ' + plural('submission', repeatedThreeOrMore) + ' occurred at least 3 times.'));
+		}
+
+		if (repeatedTwice > 0) {
+		    hiddenSummary.append($('<li/>').text(repeatedTwice + ' of the hidden ' + plural('submission', repeatedTwice) + ' occurred twice.'));
+		}
+
+		if (oneOff > 0) {
+		    hiddenSummary.append($('<li/>').text(oneOff + ' one-off ' + plural('submission', oneOff) + ' hidden.'));
+		}
+
+		section.append(hiddenSummary);
+	    }
+
+	    return section;
+	}
+
+	function ordinal(number) {
+	    var tens = number % 100;
+	    var ones = number % 10;
+
+	    if (tens >= 11 && tens <= 13) {
+		return number + 'th';
+	    }
+
+	    if (ones === 1) {
+		return number + 'st';
+	    }
+
+	    if (ones === 2) {
+		return number + 'nd';
+	    }
+
+	    if (ones === 3) {
+		return number + 'rd';
+	    }
+
+	    return number + 'th';
+	}
+
+	function versionTitle(versionNumber) {
+	    var labels = {
+		0: 'Original version',
+		1: 'Second version',
+		2: 'Third version',
+		3: 'Fourth version',
+		4: 'Fifth version',
+		5: 'Sixth version',
+		6: 'Seventh version',
+		7: 'Eighth version',
+		8: 'Ninth version',
+		9: 'Tenth version'
+	    };
+
+	    if (labels[versionNumber]) {
+		return labels[versionNumber];
+	    }
+
+	    return ordinal(versionNumber + 1) + ' version';
+	}
+
+	function displayedVersionNumber(versionNumber) {
+	    return asNumber(versionNumber) + 1;
+	}
+
+	function versionGeneratedNextAfterCorrect(version) {
+	    return Math.max(0, asNumber(version.studentsGeneratedNextVersion) - asNumber(version.studentsGeneratedNextVersionBeforeCorrect));
+	}
+
+	function buildVersionSection(version) {
+	    var generatedNextAfterCorrect = versionGeneratedNextAfterCorrect(version);
+	    var section = detailSection(versionTitle(asNumber(version.version)));
+	    var table = simpleTable();
+	    var tbody = $('<tbody/>');
+
+	    table.append(
+		$('<thead/>').append(
+		    $('<tr/>')
+			.append($('<th/>').text('Measure'))
+			.append($('<th/>').text('Value'))
+		)
+	    );
+
+	    addMeasureRow(tbody, 'Students who reached this version', countText(version.studentsReachedVersion, 'student'));
+	    addMeasureRow(tbody, 'Students who attempted this answer box', countText(version.studentsAttempted, 'student'));
+	    addMeasureRow(tbody, 'Total submissions to this answer box', countText(version.totalAttempts, 'submission'));
+
+	    addDividerRow(tbody, 'Students who were...');
+	    addSubMeasureRow(tbody, 'Eventually correct', countText(version.eventuallyCorrect, 'student'));
+	    addSubMeasureRow(tbody, 'Correct on first attempt', countText(version.correctOnFirstAttempt, 'student'));
+	    addSubMeasureRow(tbody, 'Correct on second attempt', countText(version.correctOnSecondAttempt, 'student'));
+	    addSubMeasureRow(tbody, 'Correct after 3 or more attempts', countText(version.correctAfterThreeOrMoreAttempts, 'student'));
+
+	    addMeasureRow(tbody, 'Mean attempts to first correct', formatStatisticValue(version.meanAttemptsToFirstCorrectAmongEventuallyCorrect));
+
+	    if (asNumber(version.studentsGeneratedNextVersion) > 0) {
+		addMeasureRow(tbody, 'Students who generated another version afterward', countText(version.studentsGeneratedNextVersion, 'student'));
+		addSubMeasureRow(tbody, '...after getting this answer correct', countText(generatedNextAfterCorrect, 'student'));
+		addSubMeasureRow(tbody, '...before getting this answer correct', countText(version.studentsGeneratedNextVersionBeforeCorrect, 'student'));
+		addSubMeasureRow(tbody, '...without attempting this answer', countText(version.studentsGeneratedNextVersionWithoutAttempt, 'student'));
+	    }
+
+	    table.append(tbody);
+	    section.append(table);
+
+	    return section;
+	}
+
+	function allVersions(episodes) {
+	    var versions = episodes.versions || {};
+
+	    return Object.keys(versions)
+		.map(function(key) {
+		    return versions[key];
+		})
+		.sort(function(a, b) {
+		    return asNumber(a.version) - asNumber(b.version);
+		});
+	}
+
+	function attemptedVersions(episodes) {
+	    return allVersions(episodes)
+		.filter(function(version) {
+		    return asNumber(version.studentsAttempted) > 0;
+		});
+	}
+
+	function noAttemptDisplayedVersions(episodes) {
+	    return allVersions(episodes)
+		.filter(function(version) {
+		    return asNumber(version.studentsAttempted) === 0;
+		})
+		.map(function(version) {
+		    return displayedVersionNumber(version.version);
+		});
+	}
+
+	function totalVersionCount(episodes) {
+	    return allVersions(episodes).length;
+	}
+
+	function versionsWithAttemptsCount(episodes) {
+	    return attemptedVersions(episodes).length;
+	}
+
+	function eventuallyCorrectAttemptedVersionCount(episodes) {
+	    return attemptedVersions(episodes).filter(function(version) {
+		return asNumber(version.eventuallyCorrect) > 0;
+	    }).length;
+	}
+
+	function correctOnFirstAttemptVersionCount(episodes) {
+	    return attemptedVersions(episodes).filter(function(version) {
+		return asNumber(version.correctOnFirstAttempt) > 0;
+	    }).length;
+	}
+
+	function buildVersionSummarySection(episodes) {
+	    var totalVersions = totalVersionCount(episodes);
+	    var attemptedCount = versionsWithAttemptsCount(episodes);
+	    var noAttemptVersions = noAttemptDisplayedVersions(episodes);
+	    var section = detailSection('Version summary for this answer box');
+	    var table = simpleTable();
+	    var tbody = $('<tbody/>');
+
+	    table.append(
+		$('<thead/>').append(
+		    $('<tr/>')
+			.append($('<th/>').text('Measure'))
+			.append($('<th/>').text('Value'))
+		)
+	    );
+
+	    addMeasureRow(tbody, 'Number of problem versions shown for this answer box', totalVersions);
+	    addMeasureRow(tbody, 'Number of versions with answer-box attempts', countOfBare(attemptedCount, totalVersions));
+	    addMeasureRow(tbody, 'Number of versions without answer-box attempts', countOfBare(totalVersions - attemptedCount, totalVersions));
+	    addMeasureRow(tbody, 'Attempted versions eventually correct', countOfWithNoun(eventuallyCorrectAttemptedVersionCount(episodes), attemptedCount, 'attempted version'));
+	    addMeasureRow(tbody, 'Attempted versions correct on first try', countOfWithNoun(correctOnFirstAttemptVersionCount(episodes), attemptedCount, 'attempted version'));
+
+	    if (noAttemptVersions.length > 0) {
+		addMeasureRow(tbody, 'Versions without attempts', 'versions ' + compressedRanges(noAttemptVersions));
+	    }
+
+	    table.append(tbody);
+	    section.append(table);
+
+	    return section;
+	}
+
+	function appendVersionSections(modalBody, statistics) {
+	    var attempts = statistics && statistics.attempts;
+	    var episodes = attempts && attempts.episodes;
+	    var versions;
+
+	    if (!episodes) {
+		return;
+	    }
+
+	    versions = attemptedVersions(episodes);
+
+	    versions.forEach(function(version) {
+		modalBody.append(buildVersionSection(version));
+	    });
+
+	    modalBody.append(buildVersionSummarySection(episodes));
+	}
+
+	function attemptedStudentCount(statistics) {
+	    return asNumber(statistics && statistics.attempts && statistics.attempts.attemptedStudents);
+	}
+
+	function answerAttemptVersionSummaryText(statistics) {
+	    var attempts = statistics && statistics.attempts;
+	    var episodes = attempts && attempts.episodes;
+	    var totalVersions;
+	    var attemptedCount;
+
+	    if (!episodes) {
+		return null;
+	    }
+
+	    totalVersions = totalVersionCount(episodes);
+	    attemptedCount = versionsWithAttemptsCount(episodes);
+
+	    return 'This answer box had attempts on ' + attemptedCount +
+		' of the ' + totalVersions + ' problem ' + plural('version', totalVersions) +
+		' shown to students.';
+	}
+
+	var total = totalSubmissionCount(answers);
+	var students = attemptedStudentCount(statistics);
+	var versionSummaryText = answerAttemptVersionSummaryText(statistics);
+	var inputBox = result.find( "input.form-control" );
+	var modal = $('<div/>', {
+	    'class': 'modal fade',
+	    tabindex: '-1',
+	    role: 'dialog'
+	});
+	var dialog = $('<div/>', {
+	    'class': 'modal-dialog modal-lg',
+	    role: 'document'
+	});
+	var content = $('<div/>', {
+	    'class': 'modal-content'
+	});
+	var header = $('<div/>', {
+	    'class': 'modal-header'
+	});
+	var modalBody = $('<div/>', {
+	    'class': 'modal-body'
+	});
+	var footer = $('<div/>', {
+	    'class': 'modal-footer'
 	});
 
-	sortedAnswers.slice(0,3).forEach( function(answer) {
-	    table = table + '<tr><td>' + answers[answer] + '</td><td>' + answer + '</td></tr>';
-	});
+	header.append(
+	    $('<button/>', {
+		type: 'button',
+		'class': 'close',
+		'data-dismiss': 'modal',
+		'aria-label': 'Close'
+	    }).append($('<span/>', {
+		'aria-hidden': 'true'
+	    }).html('&times;'))
+	);
 
-	var additionalAnswers = sortedAnswers.slice(3,sortedAnswers.length).join(', ');
-	
-	table = table + '</tbody></table>';
-	
-	var modal = $('<div class="modal fade" tabindex="-1" role="dialog">' + 
-		      '  <div class="modal-dialog">' + 
-		      '    <div class="modal-content">' + 
-		      '      <div class="modal-header">' + 
-		      '        <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>' + 
-		      '        <h4 class="modal-title">' + total + ' Answers</h4>' + 
-		      '      </div>' + 
-		      '      <div class="modal-body">' + 
-		      '        ' + table +
-		      '        <p>Additional Answers: ' + additionalAnswers + '<p>' +
-		      '      </div>' + 
-		      '      <div class="modal-footer">' + 
-		      '        <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>' + 
-		      '      </div>' + 
-		      '    </div><!-- /.modal-content -->' + 
-		      '  </div><!-- /.modal-dialog -->' + 
-		      '</div><!-- /.modal -->');
+	header.append($('<h4/>', {
+	    'class': 'modal-title'
+	}).text('Answer Statistics'));
+
+	modalBody.append($('<p/>').text(
+	    total + ' total ' + plural('submission', total) +
+	    ' to this answer box' +
+	    (students > 0 ? ' across ' + students + ' ' + plural('student', students) : '') +
+	    '.'
+	));
+
+	if (versionSummaryText) {
+	    modalBody.append($('<p/>').text(versionSummaryText));
+	}
+
+	modalBody.append(buildCommonSubmissionsSection(answers || {}));
+	appendVersionSections(modalBody, statistics);
+
+	footer.append($('<button/>', {
+	    type: 'button',
+	    'class': 'btn btn-default',
+	    'data-dismiss': 'modal'
+	}).text('Close'));
+
+	content.append(header);
+	content.append(modalBody);
+	content.append(footer);
+	dialog.append(content);
+	modal.append(dialog);
+
 	modal.uniqueId();
-	
-	$('body').prepend( modal );
-	modal.find('button').click( function() { modal.modal('hide'); } );
-	
+
+	$('body').prepend(modal);
+
+	modal.on('hidden.bs.modal', function() {
+	    modal.remove();
+	});
+
+	result.find('.xronos-answer-statistics-button').remove();
+
 	result.find('span.input-group-btn').prepend(
-	    $('<button class="btn btn-info" data-toggle="tooltip" data-placement="top" title="' + total + '  Answers">' +
-  	      '<i class="fa fa-bar-chart"/>' +
+	    $('<button class="btn btn-info xronos-answer-statistics-button" data-toggle="tooltip" data-placement="top" title="' + total + ' ' + plural('Submission', total) + '">' +
+	      '<i class="fa fa-bar-chart"/>' +
 	      '</button>')
 	);
 
-	result.find('button.btn-info').click( function() {
+	result.find('button.xronos-answer-statistics-button').click( function() {
 	    $('#' + modal.attr('id')).modal('show');
 	    return false;
 	});
-	
+
 	// fix the button size
 	var width = result.width();
 	inputBox.css( 'min-width', '2em' );
 	inputBox.width( width - (138 - 70) - 45);
-    });		
-    
+    });
+
     result.on( 'ximera:statistics:successes', function(event, successes) {
 	var total = Object.keys( successes ).map( function(x) { return successes[x]; } ).reduce(function(a, b) { return a + b; });
 

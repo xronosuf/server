@@ -14,7 +14,7 @@ Object.keys(answers[problem]).forEach( function(answerable) {
     var element = $(selector(hash, problem, answerable));
     var statistics = answers[problem][answerable];
 
-    element.trigger( "ximera:statistics:answers", statistics.responses );
+    element.trigger( "ximera:statistics:answers", [statistics.responses, statistics] );
     element.trigger( "ximera:statistics:successes", statistics.successes );
 });
     });

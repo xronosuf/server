@@ -7,7 +7,11 @@ var config = require('../config');
 var learningRecordStore = require('./read-lrs.js');
 
 var ANSWERED_VERB = 'http://adlnet.gov/expapi/verbs/answered';
+var GENERATED_ANOTHER_VERSION_VERB = 'https://xronos.clas.ufl.edu/xapi/verbs/generated-another-version';
 var ANSWER_ID_RE = /\/activities\/([^\/]+)\/problems\/([^\/]+)\/answers\/([^\/]+)/;
+var TRY_ANOTHER_ID_RE = /\/activities\/([^\/]+)\/try-another/;
+var OLD_SEED_EXTENSION = 'https://xronos.clas.ufl.edu/xapi/extensions/old-seed';
+var NEW_SEED_EXTENSION = 'https://xronos.clas.ufl.edu/xapi/extensions/new-seed';
 
 var schedulerStarted = false;
 var schedulerRunning = false;
@@ -119,6 +123,489 @@ function ensureAnswer(bucket, activityHash, problemId, answerId) {
     return bucket[key];
 }
 
+function activityLearnerKey(activityHash, learnerKey) {
+    return activityHash + '/' + learnerKey;
+}
+
+function ensureActivityLearnerEvents(bucket, activityHash, learnerKey) {
+    var key = activityLearnerKey(activityHash, learnerKey);
+
+    if (!bucket[key]) {
+        bucket[key] = [];
+    }
+
+    return bucket[key];
+}
+
+function sortByTimeAndSequence(a, b) {
+    if (a.time !== b.time) {
+        return a.time - b.time;
+    }
+
+    return a.sequence - b.sequence;
+}
+
+function xapiExtension(entry, extensionKey) {
+    var extensions = entry &&
+        entry.context &&
+        entry.context.extensions;
+
+    if (!extensions) {
+        return undefined;
+    }
+
+    return extensions[extensionKey];
+}
+
+function assignEpisodes(activityLearnerEvents) {
+    var episodeMetadata = {};
+
+    Object.keys(activityLearnerEvents).forEach(function(key) {
+        var events = activityLearnerEvents[key].slice();
+        var pieces = key.split('/');
+        var episode = 0;
+        var generatedVersionEvents = 0;
+
+        events.sort(sortByTimeAndSequence);
+
+        events.forEach(function(event) {
+            if (event.type === 'try-another') {
+                generatedVersionEvents += 1;
+                episode += 1;
+                event.episode = episode;
+                return;
+            }
+
+            if (event.type === 'answer') {
+                event.episode = episode;
+            }
+        });
+
+        episodeMetadata[key] = {
+            activityHash: pieces[0],
+            learnerKey: pieces[1],
+            maxEpisode: episode,
+            generatedVersionEvents: generatedVersionEvents
+        };
+    });
+
+    return episodeMetadata;
+}
+
+
+function episodeEventuallyCorrect(attempts) {
+    return attempts.some(function(attempt) {
+        return attempt.success === true;
+    });
+}
+
+function summarizeAttemptCollections(collections) {
+    var attemptedUnits = collections.length;
+    var eventuallyCorrect = 0;
+    var correctOnFirst = 0;
+    var correctOnSecond = 0;
+    var correctAfterThreePlus = 0;
+    var neverCorrect = 0;
+    var attemptsToFirstCorrect = [];
+    var attemptsToOutcomeAmongAttempted = [];
+    var totalSubmissionsPerAttemptedUnit = [];
+    var totalAttempts = 0;
+    var correctAttempts = 0;
+    var incorrectAttempts = 0;
+    var postFirstCorrectSubmissions = 0;
+
+    collections.forEach(function(collection) {
+        var attempts = collection.slice();
+        var firstCorrectIndex = null;
+
+        attempts.sort(sortByTimeAndSequence);
+
+        totalAttempts += attempts.length;
+        totalSubmissionsPerAttemptedUnit.push(attempts.length);
+
+        attempts.forEach(function(attempt) {
+            if (attempt.success === true) {
+                correctAttempts += 1;
+            } else if (attempt.success === false) {
+                incorrectAttempts += 1;
+            }
+        });
+
+        attempts.some(function(attempt, index) {
+            if (attempt.success === true) {
+                firstCorrectIndex = index + 1;
+                return true;
+            }
+
+            return false;
+        });
+
+        if (firstCorrectIndex === null) {
+            neverCorrect += 1;
+            attemptsToOutcomeAmongAttempted.push(attempts.length);
+        } else {
+            eventuallyCorrect += 1;
+            attemptsToFirstCorrect.push(firstCorrectIndex);
+            attemptsToOutcomeAmongAttempted.push(firstCorrectIndex);
+            postFirstCorrectSubmissions += Math.max(0, attempts.length - firstCorrectIndex);
+
+            if (firstCorrectIndex === 1) {
+                correctOnFirst += 1;
+            } else if (firstCorrectIndex === 2) {
+                correctOnSecond += 1;
+            } else {
+                correctAfterThreePlus += 1;
+            }
+        }
+    });
+
+    return {
+        attemptedUnits: attemptedUnits,
+        eventuallyCorrect: eventuallyCorrect,
+        correctOnFirstAttempt: correctOnFirst,
+        correctOnSecondAttempt: correctOnSecond,
+        correctAfterThreeOrMoreAttempts: correctAfterThreePlus,
+        neverCorrect: neverCorrect,
+        meanAttemptsToFirstCorrectAmongEventuallyCorrect: round(mean(attemptsToFirstCorrect)),
+        meanAttemptsToOutcomeAmongAttemptedUnits: round(mean(attemptsToOutcomeAmongAttempted)),
+        meanTotalSubmissionsPerAttemptedUnit: round(mean(totalSubmissionsPerAttemptedUnit)),
+        postFirstCorrectSubmissions: postFirstCorrectSubmissions,
+        totalAttempts: totalAttempts,
+        correctAttempts: correctAttempts,
+        incorrectAttempts: incorrectAttempts
+    };
+}
+
+function attemptsGroupedByEpisode(attempts) {
+    var grouped = {};
+
+    attempts.forEach(function(attempt) {
+        var episode = attempt.episode || 0;
+
+        if (!grouped[episode]) {
+            grouped[episode] = [];
+        }
+
+        grouped[episode].push(attempt);
+    });
+
+    return grouped;
+}
+
+function learnerMetadataForActivity(activityHash, episodeMetadata) {
+    return Object.keys(episodeMetadata).filter(function(key) {
+        return episodeMetadata[key].activityHash === activityHash;
+    }).map(function(key) {
+        return episodeMetadata[key];
+    });
+}
+
+function maxEpisodeForActivity(activityHash, episodeMetadata) {
+    var maxEpisode = 0;
+
+    learnerMetadataForActivity(activityHash, episodeMetadata).forEach(function(metadata) {
+        if (metadata.maxEpisode > maxEpisode) {
+            maxEpisode = metadata.maxEpisode;
+        }
+    });
+
+    return maxEpisode;
+}
+
+function summarizeAnswerVersionStats(answer, episodeMetadata) {
+    var metadataForActivity = learnerMetadataForActivity(answer.activityHash, episodeMetadata);
+    var maxEpisode = maxEpisodeForActivity(answer.activityHash, episodeMetadata);
+    var groupedByLearner = {};
+    var versions = {};
+    var version;
+
+    Object.keys(answer.learners).forEach(function(learnerKey) {
+        groupedByLearner[learnerKey] = attemptsGroupedByEpisode(answer.learners[learnerKey]);
+    });
+
+    for (version = 0; version <= maxEpisode; version += 1) {
+        (function(currentVersion) {
+            var collections = [];
+            var studentsReachedVersion = 0;
+            var studentsAttempted = 0;
+            var studentsGeneratedNextVersion = 0;
+            var studentsGeneratedNextVersionBeforeCorrect = 0;
+            var studentsGeneratedNextVersionWithoutAttempt = 0;
+            var collectionStats;
+
+            metadataForActivity.forEach(function(metadata) {
+                var learnerAttemptsByEpisode = groupedByLearner[metadata.learnerKey] || {};
+                var attempts = learnerAttemptsByEpisode[currentVersion] || [];
+                var eventuallyCorrect = episodeEventuallyCorrect(attempts);
+
+                if (metadata.maxEpisode < currentVersion) {
+                    return;
+                }
+
+                studentsReachedVersion += 1;
+
+                if (attempts.length > 0) {
+                    studentsAttempted += 1;
+                    collections.push(attempts);
+                }
+
+                if (metadata.maxEpisode > currentVersion) {
+                    studentsGeneratedNextVersion += 1;
+
+                    if (!eventuallyCorrect) {
+                        studentsGeneratedNextVersionBeforeCorrect += 1;
+                    }
+
+                    if (attempts.length === 0) {
+                        studentsGeneratedNextVersionWithoutAttempt += 1;
+                    }
+                }
+            });
+
+            collectionStats = summarizeAttemptCollections(collections);
+
+            versions[currentVersion] = {
+                version: currentVersion,
+                label: currentVersion === 0 ? 'Original Version' : 'Generated Version ' + currentVersion,
+                studentsReachedVersion: studentsReachedVersion,
+                studentsAttempted: studentsAttempted,
+                studentsGeneratedNextVersion: studentsGeneratedNextVersion,
+                studentsGeneratedNextVersionBeforeCorrect: studentsGeneratedNextVersionBeforeCorrect,
+                studentsGeneratedNextVersionWithoutAttempt: studentsGeneratedNextVersionWithoutAttempt,
+                eventuallyCorrect: collectionStats.eventuallyCorrect,
+                correctOnFirstAttempt: collectionStats.correctOnFirstAttempt,
+                correctOnSecondAttempt: collectionStats.correctOnSecondAttempt,
+                correctAfterThreeOrMoreAttempts: collectionStats.correctAfterThreeOrMoreAttempts,
+                neverCorrect: collectionStats.neverCorrect,
+                meanAttemptsToFirstCorrectAmongEventuallyCorrect: collectionStats.meanAttemptsToFirstCorrectAmongEventuallyCorrect,
+                meanAttemptsToOutcomeAmongAttemptedUnits: collectionStats.meanAttemptsToOutcomeAmongAttemptedUnits,
+                meanTotalSubmissionsPerAttemptedUnit: collectionStats.meanTotalSubmissionsPerAttemptedUnit,
+                totalAttempts: collectionStats.totalAttempts,
+                correctAttempts: collectionStats.correctAttempts,
+                incorrectAttempts: collectionStats.incorrectAttempts
+            };
+        })(version);
+    }
+
+    return versions;
+}
+
+function summarizeEpisodeStats(answer, episodeMetadata) {
+    var learnerKeys = Object.keys(answer.learners);
+    var firstEpisodeCollections = [];
+    var generatedEpisodeCollections = [];
+    var activityLearnerMetadata = learnerMetadataForActivity(answer.activityHash, episodeMetadata);
+    var learnersWithGeneratedVersions = 0;
+    var totalGeneratedEpisodes = 0;
+    var generatedEpisodesWithAttempts = 0;
+    var generatedEpisodesWithoutAttempts = 0;
+    var generatedEpisodesAfterPriorCorrect = 0;
+    var generatedEpisodesAfterPriorCorrectWithAttempts = 0;
+    var generatedEpisodesAfterPriorCorrectWithoutAttempts = 0;
+    var correctOnFirstGeneratedEpisodeAfterPriorCorrect = 0;
+
+    activityLearnerMetadata.forEach(function(metadata) {
+        if (metadata.maxEpisode > 0) {
+            learnersWithGeneratedVersions += 1;
+        }
+    });
+
+    learnerKeys.forEach(function(learnerKey) {
+        var attempts = answer.learners[learnerKey].slice();
+        var grouped = attemptsGroupedByEpisode(attempts);
+        var metadata = episodeMetadata[activityLearnerKey(answer.activityHash, learnerKey)] || {
+            maxEpisode: 0,
+            generatedVersionEvents: 0
+        };
+        var hadPriorCorrect = false;
+        var episode;
+        var episodeAttempts;
+
+        if (grouped[0] && grouped[0].length > 0) {
+            firstEpisodeCollections.push(grouped[0]);
+        }
+
+        hadPriorCorrect = episodeEventuallyCorrect(grouped[0] || []);
+
+        for (episode = 1; episode <= metadata.maxEpisode; episode += 1) {
+            episodeAttempts = grouped[episode] || [];
+            totalGeneratedEpisodes += 1;
+
+            if (episodeAttempts.length > 0) {
+                generatedEpisodesWithAttempts += 1;
+                generatedEpisodeCollections.push(episodeAttempts);
+            } else {
+                generatedEpisodesWithoutAttempts += 1;
+            }
+
+            if (hadPriorCorrect) {
+                generatedEpisodesAfterPriorCorrect += 1;
+
+                if (episodeAttempts.length > 0) {
+                    generatedEpisodesAfterPriorCorrectWithAttempts += 1;
+
+                    episodeAttempts.sort(sortByTimeAndSequence);
+
+                    if (episodeAttempts[0].success === true) {
+                        correctOnFirstGeneratedEpisodeAfterPriorCorrect += 1;
+                    }
+                } else {
+                    generatedEpisodesAfterPriorCorrectWithoutAttempts += 1;
+                }
+            }
+
+            if (episodeEventuallyCorrect(episodeAttempts)) {
+                hadPriorCorrect = true;
+            }
+        }
+    });
+
+    return {
+        learnersWithGeneratedVersions: learnersWithGeneratedVersions,
+        firstEpisode: summarizeAttemptCollections(firstEpisodeCollections),
+        generatedEpisodes: Object.assign(
+            {
+                totalEpisodes: totalGeneratedEpisodes,
+                episodesWithAttempts: generatedEpisodesWithAttempts,
+                episodesWithoutAttempts: generatedEpisodesWithoutAttempts
+            },
+            summarizeAttemptCollections(generatedEpisodeCollections)
+        ),
+        afterPriorCorrect: {
+            generatedEpisodesAfterPriorCorrect: generatedEpisodesAfterPriorCorrect,
+            episodesWithAttempts: generatedEpisodesAfterPriorCorrectWithAttempts,
+            episodesWithoutAttempts: generatedEpisodesAfterPriorCorrectWithoutAttempts,
+            correctOnFirstAttempt: correctOnFirstGeneratedEpisodeAfterPriorCorrect
+        },
+        versions: summarizeAnswerVersionStats(answer, episodeMetadata)
+    };
+}
+
+function summarizeActivityTryAnotherStats(activityLearnerEvents, episodeMetadata) {
+    var activities = {};
+
+    Object.keys(activityLearnerEvents).forEach(function(key) {
+        var events = activityLearnerEvents[key].slice();
+        var metadata = episodeMetadata[key];
+        var activityHash;
+        var versionAttempts = {};
+        var versionAnswerBoxes = {};
+        var version;
+        var totalAttempts;
+        var answerBoxCount;
+
+        if (!metadata) {
+            return;
+        }
+
+        activityHash = metadata.activityHash;
+
+        if (!activities[activityHash]) {
+            activities[activityHash] = {
+                observedStudents: 0,
+                studentsGeneratedZeroVersions: 0,
+                studentsGeneratedAtLeastOneVersion: 0,
+                studentsGeneratedAtLeastTwoVersions: 0,
+                studentsGeneratedAtLeastThreeVersions: 0,
+                totalGeneratedVersions: 0,
+                versions: {}
+            };
+        }
+
+        events.sort(sortByTimeAndSequence);
+
+        events.forEach(function(event) {
+            var answerBoxKey;
+
+            if (event.type !== 'answer') {
+                return;
+            }
+
+            version = event.episode || 0;
+            answerBoxKey = event.problemId + '/' + event.answerId;
+
+            versionAttempts[version] = versionAttempts[version] || 0;
+            versionAnswerBoxes[version] = versionAnswerBoxes[version] || {};
+
+            versionAttempts[version] += 1;
+            versionAnswerBoxes[version][answerBoxKey] = true;
+        });
+
+        activities[activityHash].observedStudents += 1;
+        activities[activityHash].totalGeneratedVersions += metadata.generatedVersionEvents;
+
+        if (metadata.generatedVersionEvents === 0) {
+            activities[activityHash].studentsGeneratedZeroVersions += 1;
+        }
+
+        if (metadata.generatedVersionEvents >= 1) {
+            activities[activityHash].studentsGeneratedAtLeastOneVersion += 1;
+        }
+
+        if (metadata.generatedVersionEvents >= 2) {
+            activities[activityHash].studentsGeneratedAtLeastTwoVersions += 1;
+        }
+
+        if (metadata.generatedVersionEvents >= 3) {
+            activities[activityHash].studentsGeneratedAtLeastThreeVersions += 1;
+        }
+
+        for (version = 1; version <= metadata.maxEpisode; version += 1) {
+            if (!activities[activityHash].versions[version]) {
+                activities[activityHash].versions[version] = {
+                    version: version,
+                    label: 'Generated Version ' + version,
+                    studentsGenerated: 0,
+                    studentsWithAnyAnswer: 0,
+                    studentsGeneratedNextVersionWithoutAnyAnswer: 0,
+                    totalAnswerAttempts: 0,
+                    answerBoxesAttempted: 0
+                };
+            }
+
+            totalAttempts = versionAttempts[version] || 0;
+            answerBoxCount = Object.keys(versionAnswerBoxes[version] || {}).length;
+
+            activities[activityHash].versions[version].studentsGenerated += 1;
+            activities[activityHash].versions[version].totalAnswerAttempts += totalAttempts;
+            activities[activityHash].versions[version].answerBoxesAttempted += answerBoxCount;
+
+            if (totalAttempts > 0) {
+                activities[activityHash].versions[version].studentsWithAnyAnswer += 1;
+            }
+
+            if (version < metadata.maxEpisode && totalAttempts === 0) {
+                activities[activityHash].versions[version].studentsGeneratedNextVersionWithoutAnyAnswer += 1;
+            }
+        }
+    });
+
+    Object.keys(activities).forEach(function(activityHash) {
+        var activity = activities[activityHash];
+
+        activity.percentGeneratedZeroVersions = percentage(
+            activity.studentsGeneratedZeroVersions,
+            activity.observedStudents
+        );
+        activity.percentGeneratedAtLeastOneVersion = percentage(
+            activity.studentsGeneratedAtLeastOneVersion,
+            activity.observedStudents
+        );
+        activity.percentGeneratedAtLeastTwoVersions = percentage(
+            activity.studentsGeneratedAtLeastTwoVersions,
+            activity.observedStudents
+        );
+        activity.percentGeneratedAtLeastThreeVersions = percentage(
+            activity.studentsGeneratedAtLeastThreeVersions,
+            activity.observedStudents
+        );
+    });
+
+    return activities;
+}
+
+
+
 function mean(values) {
     var total = 0;
 
@@ -141,100 +628,57 @@ function round(value) {
     return Math.round(value * 100) / 100;
 }
 
-function summarizeAnswer(answer) {
+function percentage(numerator, denominator) {
+    if (!denominator) {
+        return null;
+    }
+
+    return round((numerator / denominator) * 100);
+}
+
+function summarizeAnswer(answer, episodeMetadata) {
     var learnerKeys = Object.keys(answer.learners);
     var attemptedStudents = learnerKeys.length;
-    var eventuallyCorrect = 0;
-    var correctOnFirst = 0;
-    var correctOnSecond = 0;
-    var correctAfterThreePlus = 0;
-    var neverCorrect = 0;
-    var attemptsToFirstCorrect = [];
-    var attemptsToOutcomeAmongAllAttempted = [];
-    var totalSubmissionsPerAttemptedStudent = [];
-    var totalAttempts = 0;
-    var correctAttempts = 0;
-    var incorrectAttempts = 0;
-    var postFirstCorrectSubmissions = 0;
-
-    learnerKeys.forEach(function(learnerKey) {
-        var attempts = answer.learners[learnerKey].slice();
-
-        attempts.sort(function(a, b) {
-            if (a.time !== b.time) {
-                return a.time - b.time;
-            }
-
-            return a.sequence - b.sequence;
-        });
-
-        totalAttempts += attempts.length;
-        totalSubmissionsPerAttemptedStudent.push(attempts.length);
-
-        attempts.forEach(function(attempt) {
-            if (attempt.success === true) {
-                correctAttempts += 1;
-            } else if (attempt.success === false) {
-                incorrectAttempts += 1;
-            }
-        });
-
-        var firstCorrectIndex = null;
-
-        attempts.some(function(attempt, index) {
-            if (attempt.success === true) {
-                firstCorrectIndex = index + 1;
-                return true;
-            }
-
-            return false;
-        });
-
-        if (firstCorrectIndex === null) {
-            neverCorrect += 1;
-            attemptsToOutcomeAmongAllAttempted.push(attempts.length);
-        } else {
-            eventuallyCorrect += 1;
-            attemptsToFirstCorrect.push(firstCorrectIndex);
-            attemptsToOutcomeAmongAllAttempted.push(firstCorrectIndex);
-            postFirstCorrectSubmissions += Math.max(0, attempts.length - firstCorrectIndex);
-
-            if (firstCorrectIndex === 1) {
-                correctOnFirst += 1;
-            } else if (firstCorrectIndex === 2) {
-                correctOnSecond += 1;
-            } else {
-                correctAfterThreePlus += 1;
-            }
-        }
+    var collections = learnerKeys.map(function(learnerKey) {
+        return answer.learners[learnerKey];
     });
+    var collectionStats = summarizeAttemptCollections(collections);
 
     return {
         attemptedStudents: attemptedStudents,
-        eventuallyCorrect: eventuallyCorrect,
-        correctOnFirstAttempt: correctOnFirst,
-        correctOnSecondAttempt: correctOnSecond,
-        correctAfterThreeOrMoreAttempts: correctAfterThreePlus,
-        neverCorrect: neverCorrect,
-        meanAttemptsToFirstCorrectAmongEventuallyCorrect: round(mean(attemptsToFirstCorrect)),
-        meanAttemptsToOutcomeAmongAllAttemptedStudents: round(mean(attemptsToOutcomeAmongAllAttempted)),
-        meanTotalSubmissionsPerAttemptedStudent: round(mean(totalSubmissionsPerAttemptedStudent)),
-        postFirstCorrectSubmissions: postFirstCorrectSubmissions,
-        totalAttempts: totalAttempts,
-        correctAttempts: correctAttempts,
-        incorrectAttempts: incorrectAttempts
+        eventuallyCorrect: collectionStats.eventuallyCorrect,
+        correctOnFirstAttempt: collectionStats.correctOnFirstAttempt,
+        correctOnSecondAttempt: collectionStats.correctOnSecondAttempt,
+        correctAfterThreeOrMoreAttempts: collectionStats.correctAfterThreeOrMoreAttempts,
+        neverCorrect: collectionStats.neverCorrect,
+        meanAttemptsToFirstCorrectAmongEventuallyCorrect: collectionStats.meanAttemptsToFirstCorrectAmongEventuallyCorrect,
+        meanAttemptsToOutcomeAmongAllAttemptedStudents: collectionStats.meanAttemptsToOutcomeAmongAttemptedUnits,
+        meanTotalSubmissionsPerAttemptedStudent: collectionStats.meanTotalSubmissionsPerAttemptedUnit,
+        postFirstCorrectSubmissions: collectionStats.postFirstCorrectSubmissions,
+        totalAttempts: collectionStats.totalAttempts,
+        correctAttempts: collectionStats.correctAttempts,
+        incorrectAttempts: collectionStats.incorrectAttempts,
+        episodes: summarizeEpisodeStats(answer, episodeMetadata || {})
     };
 }
 
-function summarizeAnswersByActivity(answers) {
+function summarizeAnswersByActivity(answers, episodeMetadata, activityLearnerEvents) {
+    var tryAnotherStats = summarizeActivityTryAnotherStats(activityLearnerEvents || {}, episodeMetadata || {});
     var summary = {
         generatedAt: new Date().toISOString(),
-        activities: {}
+        activities: {},
+        activityStats: {}
     };
+
+    Object.keys(tryAnotherStats).forEach(function(activityHash) {
+        summary.activityStats[activityHash] = {
+            tryAnother: tryAnotherStats[activityHash]
+        };
+    });
 
     Object.keys(answers).forEach(function(key) {
         var answer = answers[key];
-        var stats = summarizeAnswer(answer);
+        var stats = summarizeAnswer(answer, episodeMetadata);
 
         summary.activities[answer.activityHash] = summary.activities[answer.activityHash] || {};
         summary.activities[answer.activityHash][answer.problemId] =
@@ -247,6 +691,7 @@ function summarizeAnswersByActivity(answers) {
 
 function buildFromLrs(lrsFilename, callback) {
     var answers = {};
+    var activityLearnerEvents = {};
     var sequence = 0;
 
     learningRecordStore.read(
@@ -257,23 +702,62 @@ function buildFromLrs(lrsFilename, callback) {
 
             try {
                 var objectId = entry.object && entry.object.id;
-                var matches = objectId && objectId.match(ANSWER_ID_RE);
+                var answeredMatches = objectId && objectId.match(ANSWER_ID_RE);
+                var tryAnotherMatches = objectId && objectId.match(TRY_ANOTHER_ID_RE);
+                var learnerKey = stableActorKey(entry);
+                var activityHash;
+                var events;
+                var answer;
+                var attempt;
 
-                if (matches &&
+                if (answeredMatches &&
                     entry.verb &&
                     entry.verb.id === ANSWERED_VERB) {
-                    var activityHash = matches[1];
-                    var problemId = matches[2];
-                    var answerId = matches[3];
-                    var answer = ensureAnswer(answers, activityHash, problemId, answerId);
-                    var learnerKey = stableActorKey(entry);
+                    activityHash = answeredMatches[1];
+                    answer = ensureAnswer(
+                        answers,
+                        activityHash,
+                        answeredMatches[2],
+                        answeredMatches[3]
+                    );
 
                     if (!answer.learners[learnerKey]) {
                         answer.learners[learnerKey] = [];
                     }
 
-                    answer.learners[learnerKey].push({
+                    attempt = {
+                        type: 'answer',
+                        problemId: answeredMatches[2],
+                        answerId: answeredMatches[3],
                         success: entry.result && entry.result.success,
+                        time: parseTime(entry, sequence),
+                        sequence: sequence,
+                        episode: 0
+                    };
+
+                    answer.learners[learnerKey].push(attempt);
+
+                    events = ensureActivityLearnerEvents(
+                        activityLearnerEvents,
+                        activityHash,
+                        learnerKey
+                    );
+                    events.push(attempt);
+                } else if (tryAnotherMatches &&
+                    entry.verb &&
+                    entry.verb.id === GENERATED_ANOTHER_VERSION_VERB) {
+                    activityHash = tryAnotherMatches[1];
+
+                    events = ensureActivityLearnerEvents(
+                        activityLearnerEvents,
+                        activityHash,
+                        learnerKey
+                    );
+
+                    events.push({
+                        type: 'try-another',
+                        oldSeed: xapiExtension(entry, OLD_SEED_EXTENSION),
+                        newSeed: xapiExtension(entry, NEW_SEED_EXTENSION),
                         time: parseTime(entry, sequence),
                         sequence: sequence
                     });
@@ -285,12 +769,15 @@ function buildFromLrs(lrsFilename, callback) {
             }
         },
         function(err) {
+            var episodeMetadata;
+
             if (err) {
                 callback(err);
                 return;
             }
 
-            callback(null, summarizeAnswersByActivity(answers));
+            episodeMetadata = assignEpisodes(activityLearnerEvents);
+            callback(null, summarizeAnswersByActivity(answers, episodeMetadata, activityLearnerEvents));
         }
     );
 }

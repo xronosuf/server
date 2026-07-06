@@ -210,25 +210,32 @@ function summarizeAttemptCollections(collections) {
     var attemptsToOutcomeAmongAttempted = [];
     var totalSubmissionsPerAttemptedUnit = [];
     var totalAttempts = 0;
+    var totalAttemptsRaw = 0;
     var correctAttempts = 0;
     var incorrectAttempts = 0;
     var postFirstCorrectSubmissions = 0;
+    var responses = {};
+    var rawResponses = {};
+    var omittedPostFirstCorrectResponses = {};
+
+    function addResponseCount(target, attempt) {
+        var response = attempt && attempt.response;
+
+        if (response) {
+            target[response] = (target[response] || 0) + 1;
+        }
+    }
 
     collections.forEach(function(collection) {
         var attempts = collection.slice();
+        var countedAttempts;
+        var omittedAttempts;
         var firstCorrectIndex = null;
 
         attempts.sort(sortByTimeAndSequence);
 
-        totalAttempts += attempts.length;
-        totalSubmissionsPerAttemptedUnit.push(attempts.length);
-
         attempts.forEach(function(attempt) {
-            if (attempt.success === true) {
-                correctAttempts += 1;
-            } else if (attempt.success === false) {
-                incorrectAttempts += 1;
-            }
+            addResponseCount(rawResponses, attempt);
         });
 
         attempts.some(function(attempt, index) {
@@ -241,13 +248,39 @@ function summarizeAttemptCollections(collections) {
         });
 
         if (firstCorrectIndex === null) {
+            countedAttempts = attempts;
+            omittedAttempts = [];
+        } else {
+            countedAttempts = attempts.slice(0, firstCorrectIndex);
+            omittedAttempts = attempts.slice(firstCorrectIndex);
+        }
+
+        totalAttemptsRaw += attempts.length;
+        totalAttempts += countedAttempts.length;
+        totalSubmissionsPerAttemptedUnit.push(countedAttempts.length);
+        postFirstCorrectSubmissions += omittedAttempts.length;
+
+        countedAttempts.forEach(function(attempt) {
+            addResponseCount(responses, attempt);
+
+            if (attempt.success === true) {
+                correctAttempts += 1;
+            } else if (attempt.success === false) {
+                incorrectAttempts += 1;
+            }
+        });
+
+        omittedAttempts.forEach(function(attempt) {
+            addResponseCount(omittedPostFirstCorrectResponses, attempt);
+        });
+
+        if (firstCorrectIndex === null) {
             neverCorrect += 1;
-            attemptsToOutcomeAmongAttempted.push(attempts.length);
+            attemptsToOutcomeAmongAttempted.push(countedAttempts.length);
         } else {
             eventuallyCorrect += 1;
             attemptsToFirstCorrect.push(firstCorrectIndex);
             attemptsToOutcomeAmongAttempted.push(firstCorrectIndex);
-            postFirstCorrectSubmissions += Math.max(0, attempts.length - firstCorrectIndex);
 
             if (firstCorrectIndex === 1) {
                 correctOnFirst += 1;
@@ -271,8 +304,12 @@ function summarizeAttemptCollections(collections) {
         meanTotalSubmissionsPerAttemptedUnit: round(mean(totalSubmissionsPerAttemptedUnit)),
         postFirstCorrectSubmissions: postFirstCorrectSubmissions,
         totalAttempts: totalAttempts,
+        totalAttemptsRaw: totalAttemptsRaw,
         correctAttempts: correctAttempts,
-        incorrectAttempts: incorrectAttempts
+        incorrectAttempts: incorrectAttempts,
+        responses: responses,
+        rawResponses: rawResponses,
+        omittedPostFirstCorrectResponses: omittedPostFirstCorrectResponses
     };
 }
 
@@ -290,6 +327,22 @@ function attemptsGroupedByEpisode(attempts) {
     });
 
     return grouped;
+}
+
+function attemptCollectionsByLearnerAndEpisode(answer) {
+    var collections = [];
+
+    Object.keys(answer.learners).forEach(function(learnerKey) {
+        var grouped = attemptsGroupedByEpisode(answer.learners[learnerKey]);
+
+        Object.keys(grouped).forEach(function(episode) {
+            if (grouped[episode].length > 0) {
+                collections.push(grouped[episode]);
+            }
+        });
+    });
+
+    return collections;
 }
 
 function learnerMetadataForActivity(activityHash, episodeMetadata) {
@@ -380,7 +433,9 @@ function summarizeAnswerVersionStats(answer, episodeMetadata) {
                 meanAttemptsToFirstCorrectAmongEventuallyCorrect: collectionStats.meanAttemptsToFirstCorrectAmongEventuallyCorrect,
                 meanAttemptsToOutcomeAmongAttemptedUnits: collectionStats.meanAttemptsToOutcomeAmongAttemptedUnits,
                 meanTotalSubmissionsPerAttemptedUnit: collectionStats.meanTotalSubmissionsPerAttemptedUnit,
+                postFirstCorrectSubmissions: collectionStats.postFirstCorrectSubmissions,
                 totalAttempts: collectionStats.totalAttempts,
+                totalAttemptsRaw: collectionStats.totalAttemptsRaw,
                 correctAttempts: collectionStats.correctAttempts,
                 incorrectAttempts: collectionStats.incorrectAttempts
             };
@@ -639,10 +694,12 @@ function percentage(numerator, denominator) {
 function summarizeAnswer(answer, episodeMetadata) {
     var learnerKeys = Object.keys(answer.learners);
     var attemptedStudents = learnerKeys.length;
-    var collections = learnerKeys.map(function(learnerKey) {
+    var studentCollections = learnerKeys.map(function(learnerKey) {
         return answer.learners[learnerKey];
     });
-    var collectionStats = summarizeAttemptCollections(collections);
+    var versionCollections = attemptCollectionsByLearnerAndEpisode(answer);
+    var collectionStats = summarizeAttemptCollections(studentCollections);
+    var versionCollectionStats = summarizeAttemptCollections(versionCollections);
 
     return {
         attemptedStudents: attemptedStudents,
@@ -654,10 +711,14 @@ function summarizeAnswer(answer, episodeMetadata) {
         meanAttemptsToFirstCorrectAmongEventuallyCorrect: collectionStats.meanAttemptsToFirstCorrectAmongEventuallyCorrect,
         meanAttemptsToOutcomeAmongAllAttemptedStudents: collectionStats.meanAttemptsToOutcomeAmongAttemptedUnits,
         meanTotalSubmissionsPerAttemptedStudent: collectionStats.meanTotalSubmissionsPerAttemptedUnit,
-        postFirstCorrectSubmissions: collectionStats.postFirstCorrectSubmissions,
-        totalAttempts: collectionStats.totalAttempts,
-        correctAttempts: collectionStats.correctAttempts,
-        incorrectAttempts: collectionStats.incorrectAttempts,
+        postFirstCorrectSubmissions: versionCollectionStats.postFirstCorrectSubmissions,
+        totalAttempts: versionCollectionStats.totalAttempts,
+        totalAttemptsRaw: versionCollectionStats.totalAttemptsRaw,
+        correctAttempts: versionCollectionStats.correctAttempts,
+        incorrectAttempts: versionCollectionStats.incorrectAttempts,
+        responses: versionCollectionStats.responses,
+        rawResponses: versionCollectionStats.rawResponses,
+        omittedPostFirstCorrectResponses: versionCollectionStats.omittedPostFirstCorrectResponses,
         episodes: summarizeEpisodeStats(answer, episodeMetadata || {})
     };
 }
@@ -730,6 +791,7 @@ function buildFromLrs(lrsFilename, callback) {
                         problemId: answeredMatches[2],
                         answerId: answeredMatches[3],
                         success: entry.result && entry.result.success,
+                        response: entry.result && entry.result.response,
                         time: parseTime(entry, sequence),
                         sequence: sequence,
                         episode: 0

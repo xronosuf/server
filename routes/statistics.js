@@ -41,6 +41,18 @@ function mergeAttemptStats(activity, attemptActivity) {
         Object.keys(attemptActivity[problemId] || {}).forEach(function(answerId) {
             if (activity[problemId] && activity[problemId][answerId]) {
                 activity[problemId][answerId].attempts = attemptActivity[problemId][answerId];
+
+                if (attemptActivity[problemId][answerId].responses) {
+                    activity[problemId][answerId].responses = attemptActivity[problemId][answerId].responses;
+                }
+
+                if (attemptActivity[problemId][answerId].rawResponses) {
+                    activity[problemId][answerId].rawResponses = attemptActivity[problemId][answerId].rawResponses;
+                }
+
+                if (attemptActivity[problemId][answerId].omittedPostFirstCorrectResponses) {
+                    activity[problemId][answerId].omittedPostFirstCorrectResponses = attemptActivity[problemId][answerId].omittedPostFirstCorrectResponses;
+                }
             }
         });
     });

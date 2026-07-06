@@ -513,15 +513,19 @@ exports.connectMathAnswer = function(result, answer) {
 
 	    addMeasureRow(tbody, 'Students who reached this version', countText(version.studentsReachedVersion, 'student'));
 	    addMeasureRow(tbody, 'Students who attempted this answer box', countText(version.studentsAttempted, 'student'));
-	    addMeasureRow(tbody, 'Total submissions to this answer box', countText(version.totalAttempts, 'submission'));
+	    addMeasureRow(tbody, 'Counted submissions to this answer box', countText(version.totalAttempts, 'submission'));
+
+	    if (asNumber(version.postFirstCorrectSubmissions) > 0) {
+		addMeasureRow(tbody, 'Submissions omitted after first correct', countText(version.postFirstCorrectSubmissions, 'submission'));
+	    }
 
 	    addDividerRow(tbody, 'Students who were...');
 	    addSubMeasureRow(tbody, 'Eventually correct', countText(version.eventuallyCorrect, 'student'));
 	    addSubMeasureRow(tbody, 'Correct on first attempt', countText(version.correctOnFirstAttempt, 'student'));
 	    addSubMeasureRow(tbody, 'Correct on second attempt', countText(version.correctOnSecondAttempt, 'student'));
-	    addSubMeasureRow(tbody, 'Correct after 3 or more attempts', countText(version.correctAfterThreeOrMoreAttempts, 'student'));
+	    addSubMeasureRow(tbody, 'Correct after 3 or more submissions', countText(version.correctAfterThreeOrMoreAttempts, 'student'));
 
-	    addMeasureRow(tbody, 'Mean attempts to first correct', formatStatisticValue(version.meanAttemptsToFirstCorrectAmongEventuallyCorrect));
+	    addMeasureRow(tbody, 'Mean submissions until first correct', formatStatisticValue(version.meanAttemptsToFirstCorrectAmongEventuallyCorrect));
 
 	    if (asNumber(version.studentsGeneratedNextVersion) > 0) {
 		addMeasureRow(tbody, 'Students who generated another version afterward', countText(version.studentsGeneratedNextVersion, 'student'));
@@ -602,8 +606,8 @@ exports.connectMathAnswer = function(result, answer) {
 	    );
 
 	    addMeasureRow(tbody, 'Number of problem versions shown for this answer box', totalVersions);
-	    addMeasureRow(tbody, 'Number of versions with answer-box attempts', countOfBare(attemptedCount, totalVersions));
-	    addMeasureRow(tbody, 'Number of versions without answer-box attempts', countOfBare(totalVersions - attemptedCount, totalVersions));
+	    addMeasureRow(tbody, 'Number of versions with counted answer-box submissions', countOfBare(attemptedCount, totalVersions));
+	    addMeasureRow(tbody, 'Number of versions without counted answer-box submissions', countOfBare(totalVersions - attemptedCount, totalVersions));
 	    addMeasureRow(tbody, 'Attempted versions eventually correct', countOfWithNoun(eventuallyCorrectAttemptedVersionCount(episodes), attemptedCount, 'attempted version'));
 	    addMeasureRow(tbody, 'Attempted versions correct on first try', countOfWithNoun(correctOnFirstAttemptVersionCount(episodes), attemptedCount, 'attempted version'));
 
@@ -639,6 +643,10 @@ exports.connectMathAnswer = function(result, answer) {
 	    return asNumber(statistics && statistics.attempts && statistics.attempts.attemptedStudents);
 	}
 
+	function omittedPostFirstCorrectSubmissionCount(statistics) {
+	    return asNumber(statistics && statistics.attempts && statistics.attempts.postFirstCorrectSubmissions);
+	}
+
 	function answerAttemptVersionSummaryText(statistics) {
 	    var attempts = statistics && statistics.attempts;
 	    var episodes = attempts && attempts.episodes;
@@ -652,7 +660,7 @@ exports.connectMathAnswer = function(result, answer) {
 	    totalVersions = totalVersionCount(episodes);
 	    attemptedCount = versionsWithAttemptsCount(episodes);
 
-	    return 'This answer box had attempts on ' + attemptedCount +
+	    return 'This answer box had counted submissions on ' + attemptedCount +
 		' of the ' + totalVersions + ' problem ' + plural('version', totalVersions) +
 		' shown to students.';
 	}
@@ -660,6 +668,7 @@ exports.connectMathAnswer = function(result, answer) {
 	var total = totalSubmissionCount(answers);
 	var students = attemptedStudentCount(statistics);
 	var versionSummaryText = answerAttemptVersionSummaryText(statistics);
+	var omittedPostFirstCorrectSubmissions = omittedPostFirstCorrectSubmissionCount(statistics);
 	var inputBox = result.find( "input.form-control" );
 	var modal = $('<div/>', {
 	    'class': 'modal fade',
@@ -699,7 +708,7 @@ exports.connectMathAnswer = function(result, answer) {
 	}).text('Answer Statistics'));
 
 	modalBody.append($('<p/>').text(
-	    total + ' total ' + plural('submission', total) +
+	    total + ' counted ' + plural('submission', total) +
 	    ' to this answer box' +
 	    (students > 0 ? ' across ' + students + ' ' + plural('student', students) : '') +
 	    '.'
@@ -707,6 +716,14 @@ exports.connectMathAnswer = function(result, answer) {
 
 	if (versionSummaryText) {
 	    modalBody.append($('<p/>').text(versionSummaryText));
+	}
+
+	if (omittedPostFirstCorrectSubmissions > 0) {
+	    modalBody.append($('<p/>').text(
+		omittedPostFirstCorrectSubmissions + ' additional ' +
+		plural('submission', omittedPostFirstCorrectSubmissions) +
+		' omitted from these statistics because they occurred after the same student had already submitted a correct answer for this answer box on that version.'
+	    ));
 	}
 
 	modalBody.append(buildCommonSubmissionsSection(answers || {}));

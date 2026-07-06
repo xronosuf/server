@@ -133,6 +133,8 @@ config.google.clientID         = process.env.GOOGLE_CLIENT_ID    || 'Your Key';
 config.google.clientSecret     = process.env.GOOGLE_CLIENT_SECRET || 'Your Secret';
 
 // LTI
+config.scopedSageBaseSeeds = process.env.XIMERA_SCOPED_SAGE_BASE_SEEDS === 'true';
+config.scopedSageBaseSeedsAfter = process.env.XIMERA_SCOPED_SAGE_BASE_SEEDS_AFTER || '2026-08-10T00:00:00-04:00';
 config.ltiAuth        = true;
 config.lti            = {};
 config.lti.key        = process.env.LTI_KEY    || 'Your Key';

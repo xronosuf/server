@@ -14,6 +14,7 @@ var ETag = require('./etag');
 var striptags = require('striptags');
 var url = require('url');
 var config = require('../config');
+var crypto = require('crypto');
 
 function authorization(req,res,next) {
     var authorization = undefined;
@@ -104,17 +105,132 @@ exports.fixHTML = function (activity) {
 						.replace(/&#x003E;/g, '>') : activity.html;
 }
 
+
+function normalizeActivityPathForBridge(path) {
+    if (!path) {
+return undefined;
+    }
+
+    return String(path).replace(/\.html$/, '');
+}
+
+function uniqueDefined(values) {
+    var seen = {};
+    var result = [];
+
+    values.forEach(function(value) {
+if (value === undefined || value === null || value === '') {
+    return;
+}
+
+if (!seen[value]) {
+    seen[value] = true;
+    result.push(value);
+}
+    });
+
+    return result;
+}
+
+function hashedRandomizationScope(scope) {
+    return crypto
+.createHash('sha256')
+.update(scope)
+.digest('hex')
+.slice(0, 32);
+}
+
+function fallbackRandomizationScope(repositoryName) {
+    return hashedRandomizationScope('public:' + repositoryName);
+}
+
+function randomizationScopeForActivity(req, activity, callback) {
+    var repositoryName = req.repositoryName || req.params.repository;
+    var fallback = fallbackRandomizationScope(repositoryName);
+
+    if (!req.user || !req.user._id || req.user.isGuest) {
+callback(null, fallback);
+return;
+    }
+
+    var bridgePaths = uniqueDefined([
+normalizeActivityPathForBridge(req.params.path),
+normalizeActivityPathForBridge(activity && activity.path),
+normalizeActivityPathForBridge(activity && activity.xourse && activity.xourse.path)
+    ]);
+
+    if (bridgePaths.length === 0) {
+callback(null, fallback);
+return;
+    }
+
+    mdb.LtiBridge
+.findOne({
+    user: req.user._id,
+    repository: repositoryName,
+    path: { $in: bridgePaths },
+    contextId: { $exists: true, $ne: null }
+})
+.sort({ _id: -1 })
+.exec(function(err, bridge) {
+    if (err) {
+callback(err);
+return;
+    }
+
+    if (!bridge || !bridge.contextId) {
+callback(null, fallback);
+return;
+    }
+
+    callback(null, hashedRandomizationScope('canvas-context:' + bridge.contextId));
+});
+}
+
+
+
+function scopedSageBaseSeedsEnabled() {
+    if (config.scopedSageBaseSeeds) {
+return true;
+    }
+
+    if (!config.scopedSageBaseSeedsAfter) {
+return false;
+    }
+
+    var cutoff = Date.parse(config.scopedSageBaseSeedsAfter);
+
+    if (isNaN(cutoff)) {
+return false;
+    }
+
+    return Date.now() >= cutoff;
+}
+
+
 exports.renderWithETag = function(req, res, next) {
-	var activity = req.activity;
-	
-    var etag = 'sha:' + activity.hash;
-    
-    ETag.checkIfNoneMatch( req, res, etag,
-			   function( setETag ) {
-			       setETag(res);
-			       res.set('Cache-Control', 'private, max-age=3600');
-			       exports.render( req, res, next );
-			   } );
+    var activity = req.activity;
+
+    randomizationScopeForActivity(req, activity, function(err, randomizationScope) {
+if (err) {
+    next(err);
+    return;
+}
+
+req.randomizationScope = randomizationScope;
+req.scopedSageBaseSeeds = scopedSageBaseSeedsEnabled();
+
+var etag = 'sha:' + activity.hash +
+    ':randomization-scope:' + randomizationScope +
+    ':scoped-sage-base-seeds:' + req.scopedSageBaseSeeds;
+
+ETag.checkIfNoneMatch( req, res, etag,
+       function( setETag ) {
+   setETag(res);
+   res.set('Cache-Control', 'private, max-age=3600');
+   exports.render( req, res, next );
+       } );
+    });
 };
 			       
 exports.render = function(req, res, next) {
@@ -200,6 +316,8 @@ exports.render = function(req, res, next) {
 				 learner: req.learner,
 				 user: req.user,		 
 				 previousActivity: previousActivity,
+				 randomizationScope: req.randomizationScope || fallbackRandomizationScope(req.repositoryName),
+				 scopedSageBaseSeeds: req.scopedSageBaseSeeds || scopedSageBaseSeedsEnabled(),
 				 url: req.url });		    
 	});
     } else {
@@ -211,6 +329,7 @@ exports.render = function(req, res, next) {
 			     repositoryName: req.repositoryName,
 			     learner: req.learner,
 			     user: req.user,			     
+				 randomizationScope: req.randomizationScope || fallbackRandomizationScope(req.repositoryName),
 				 url: req.url });
     }
 };

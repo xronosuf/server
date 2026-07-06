@@ -60,27 +60,69 @@ getSeed();
     }
 };
 
-var sendSeed = function(newSeed) {
-    if ((seed == newSeed) && (seed !== null)) {
-return;
-    }
-
-    seed = newSeed;
-
-    if (newSeed !== undefined) {
-currentSeedCode = "set_random_seed(" + newSeed + ")";
-    } else {
-currentSeedCode = "";
-
-if ($('main.activity').length > 0) {
+var legacyBaseSeedCode = function() {
     var activityPath = $('main.activity').attr('data-path');
     var currfilebase = activityPath.split('/').slice(-1)[0];
 
     var code = 'jobname="' + currfilebase + '"' + "\n";
     code = code + "import hashlib\n";
     code = code + "set_random_seed(int(hashlib.sha256(jobname.encode('utf-8')).hexdigest(), 16))";
-    currentSeedCode = code;
+    return code;
+};
+
+var scopedSageBaseSeedsEnabled = function() {
+    return $('main.activity').first().attr('data-scoped-sage-base-seeds') === 'true';
+};
+
+var sageSeedKey = function(newSeed) {
+    var activity = $('main.activity').first();
+    var randomizationScope = activity.attr('data-randomization-scope');
+    var repositoryName = activity.attr('data-repository-name') || '';
+    var xoursePath = activity.attr('data-xourse-path') || '';
+    var activityPath = activity.attr('data-path') || '';
+    var seedVersion = newSeed !== undefined ? String(newSeed) : 'base';
+
+    if (!randomizationScope) {
+randomizationScope = 'public:' + repositoryName;
+    }
+
+    return [
+randomizationScope,
+repositoryName,
+xoursePath,
+activityPath,
+seedVersion
+    ].join('/');
+};
+
+var scopedSeedCode = function(newSeed) {
+    var seedKey = sageSeedKey(newSeed);
+    var code = 'xronos_seed_key=' + JSON.stringify(seedKey) + "\n";
+    code = code + "import hashlib\n";
+    code = code + "set_random_seed(int(hashlib.sha256(xronos_seed_key.encode('utf-8')).hexdigest(), 16))";
+    return code;
+};
+
+var sendSeed = function(newSeed) {
+    if ((seed == newSeed) && (seed !== null)) {
+return;
+    }
+
+    seed = newSeed;
+    currentSeedCode = "";
+
+    if ($('main.activity').length > 0) {
+if (newSeed !== undefined || scopedSageBaseSeedsEnabled()) {
+    currentSeedCode = scopedSeedCode(newSeed);
+} else {
+    currentSeedCode = legacyBaseSeedCode();
 }
+
+return;
+    }
+
+    if (newSeed !== undefined) {
+currentSeedCode = "set_random_seed(" + newSeed + ")";
     }
 };
 
@@ -517,7 +559,8 @@ sageBatchTimer = null;
 
 function xronosShowMeAnotherSage() {
     var oldSeed = $("#seed").persistentData('seed');
-    var newSeed = oldSeed !== undefined ? oldSeed + 1 : 0;
+    var numericOldSeed = parseInt(oldSeed, 10);
+    var newSeed = oldSeed !== undefined && !isNaN(numericOldSeed) ? numericOldSeed + 1 : 0;
 
     seed = undefined;
     clearSageClientCaches();

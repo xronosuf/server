@@ -807,6 +807,16 @@ exports.connectMathAnswer = function(result, answer) {
 	var scriptElement = (divElement.attr('class') === 'MathJax_Display') ? divElement.next() :  mjElement.next()
 	var solScriptElementId = scriptElement.attr('id') + "-sol"
 	var tex = scriptElement.text()
+	if (scriptElement[0] && !scriptElement[0].hasAttribute("data-initial")) {
+	    /*
+	     * Remember the original TeX before completed-answer rendering
+	     * replaces \\answer{...} with the blue submitted answer.
+	     * Try Another clears answer state without a full page reload, so
+	     * the non-correct branch below needs this original TeX to restore
+	     * the answer box immediately.
+	     */
+	    scriptElement.attr("data-initial", tex);
+	}
 	var a = MathJax.Hub.getAllJax(scriptElement.attr('id'))[0];
 	/*
 	 * Historical solution-script cleanup removed the previous sibling of

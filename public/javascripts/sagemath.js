@@ -557,6 +557,31 @@ sageBatchTimer = null;
     sageQueue = Promise.resolve();
 }
 
+
+function restoreCompletedAnswerMathJax() {
+    $('script[type^="math/tex"][data-initial]').each(function() {
+	var scriptElement = $(this);
+	var initialTex = scriptElement.attr('data-initial');
+	var currentTex = scriptElement.text();
+
+	if (!initialTex || initialTex.indexOf('\\answer') < 0) {
+	    return;
+	}
+
+	if (currentTex === initialTex) {
+	    return;
+	}
+
+	var jax = MathJax.Hub.getAllJax(scriptElement.attr('id'))[0];
+
+	if (jax) {
+	    MathJax.Hub.Queue(["Text", jax, initialTex]);
+	} else {
+	    scriptElement.text(initialTex);
+	}
+    });
+}
+
 function xronosShowMeAnotherSage() {
     var oldSeed = $("#seed").persistentData('seed');
     var numericOldSeed = parseInt(oldSeed, 10);
@@ -580,6 +605,14 @@ function xronosShowMeAnotherSage() {
     } else {
 	$("#seed").persistentData('seed', newSeed);
     }
+
+    /*
+     * resetWork clears stored answer state, but completed answers may
+     * already have replaced their MathJax source with blue submitted-answer
+     * TeX. Restore those live MathJax items so Try Another shows answer
+     * boxes immediately, without requiring a manual page refresh.
+     */
+    restoreCompletedAnswerMathJax();
 
     return $("#seed").persistentData('seed');
 }

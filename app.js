@@ -510,6 +510,7 @@ function sagecellProxyTryFallback(waitingKey, cacheKey, codeLength, form, reason
  */
 var xronosSagecellPageAuthRequired = (process.env.SAGECELL_REQUIRE_PAGE_AUTH !== "false");
 var xronosSagecellPageAuthMaxAgeMs = parseInt(process.env.SAGECELL_PAGE_AUTH_MAX_AGE_MS || "43200000", 10);
+var xronosSagecellPageAuthRefreshGraceMs = parseInt(process.env.SAGECELL_PAGE_AUTH_REFRESH_GRACE_MS || "604800000", 10);
 var xronosSagecellPageAuthSecret =
     process.env.SAGECELL_PAGE_AUTH_SECRET ||
     process.env.SAGECELL_REQUEST_SIGNING_SECRET ||
@@ -521,6 +522,10 @@ if (!process.env.SAGECELL_PAGE_AUTH_SECRET && !process.env.SAGECELL_REQUEST_SIGN
 
 if (!Number.isFinite(xronosSagecellPageAuthMaxAgeMs) || xronosSagecellPageAuthMaxAgeMs <= 0) {
     xronosSagecellPageAuthMaxAgeMs = 43200000;
+}
+
+if (!Number.isFinite(xronosSagecellPageAuthRefreshGraceMs) || xronosSagecellPageAuthRefreshGraceMs <= 0) {
+    xronosSagecellPageAuthRefreshGraceMs = 604800000;
 }
 
 function xronosSagecellPageAuthSign(payloadString) {
@@ -546,6 +551,36 @@ function xronosSagecellTimingSafeEqual(a, b) {
     }
 
     return crypto.timingSafeEqual(aBuffer, bBuffer);
+}
+
+function xronosSagecellPageAuthFromPayload(payload) {
+    var refreshedPayload;
+    var payloadString;
+
+    if (!payload) {
+        return {
+            required: xronosSagecellPageAuthRequired,
+            payload: null,
+            token: null
+        };
+    }
+
+    refreshedPayload = {
+        v: 1,
+        path: payload.path || "",
+        hash: payload.hash || "",
+        commit: payload.commit || "",
+        xoursePath: payload.xoursePath || "",
+        issuedAt: Date.now()
+    };
+
+    payloadString = JSON.stringify(refreshedPayload);
+
+    return {
+        required: xronosSagecellPageAuthRequired,
+        payload: refreshedPayload,
+        token: xronosSagecellPageAuthSign(payloadString)
+    };
 }
 
 function xronosSagecellPageAuth(activity) {
@@ -578,12 +613,14 @@ function xronosSagecellPageAuth(activity) {
     };
 }
 
-function xronosVerifySagecellPageAuth(req) {
+function xronosVerifySagecellPageAuth(req, options) {
     var payloadString;
     var token;
     var expected;
     var payload;
     var age;
+
+    options = options || {};
 
     if (!xronosSagecellPageAuthRequired) {
         return { ok: true, reason: "disabled" };
@@ -614,11 +651,24 @@ function xronosVerifySagecellPageAuth(req) {
 
     age = Date.now() - payload.issuedAt;
 
-    if (age < 0 || age > xronosSagecellPageAuthMaxAgeMs) {
+    if (age < 0) {
         return { ok: false, reason: "expired SageCell page authorization" };
     }
 
-    return { ok: true, reason: "ok", payload: payload };
+    if (age > xronosSagecellPageAuthMaxAgeMs) {
+        if (!options.allowExpired ||
+            age > xronosSagecellPageAuthMaxAgeMs + xronosSagecellPageAuthRefreshGraceMs) {
+            return { ok: false, reason: "expired SageCell page authorization" };
+        }
+    }
+
+    return {
+        ok: true,
+        reason: "ok",
+        payload: payload,
+        age: age,
+        expired: age > xronosSagecellPageAuthMaxAgeMs
+    };
 }
 
 function xronosSagecellForwardBody(body) {
@@ -642,6 +692,24 @@ app.locals.xronosSagecellPageAuth = xronosSagecellPageAuth;
 app.use(function(req, res, next) {
     res.locals.xronosSagecellPageAuth = xronosSagecellPageAuth;
     next();
+});
+
+
+app.post('/sagecell/auth', function(req, res) {
+    var authCheck = xronosVerifySagecellPageAuth(req, { allowExpired: true });
+
+    if (!authCheck.ok) {
+        console.error("Rejected SageCell page-auth refresh:", authCheck.reason);
+        res.status(403).json({
+            success: false,
+            ename: "XronosSageCellAuthorizationError",
+            evalue: authCheck.reason,
+            stderr: "SageCell authorization refresh rejected: " + authCheck.reason + "\n"
+        });
+        return;
+    }
+
+    res.json(xronosSagecellPageAuthFromPayload(authCheck.payload));
 });
 
 

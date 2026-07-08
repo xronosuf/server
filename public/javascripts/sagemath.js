@@ -21,6 +21,7 @@ var visibleSageOutputsStarted = false;
 var sageRequestCache = {};
 var sageRequestInFlight = {};
 var sageQueue = Promise.resolve();
+var sageAuthRefreshInFlight = null;
 
 // Browser-side batching for expression-style Sage requests.
 // Many Xronos pages ask for many display values after one large common setup.
@@ -368,44 +369,153 @@ return false;
     return true;
 }
 
-function postSageRaw(requestCode) {
+function sageRequestAuthData() {
+    var xronosSagecellRequestData = {};
+    var xronosSagecellAuth = window.xronosSagecellAuth || {};
+
+    if (xronosSagecellAuth.payload && xronosSagecellAuth.token) {
+        xronosSagecellRequestData.xronosSagecellPayload = JSON.stringify(xronosSagecellAuth.payload);
+        xronosSagecellRequestData.xronosSagecellToken = xronosSagecellAuth.token;
+    }
+
+    return xronosSagecellRequestData;
+}
+
+function parseSageCellError(err) {
+    if (!err) {
+        return null;
+    }
+
+    if (err.responseText) {
+        try {
+            return JSON.parse(err.responseText);
+        } catch (e) {
+            // Fall through to the outer error object below.
+        }
+    }
+
+    if (err.ename) {
+        return err;
+    }
+
+    return null;
+}
+
+function isExpiredSageCellAuthorizationError(err) {
+    var parsed = parseSageCellError(err);
+
+    return parsed &&
+        parsed.ename === "XronosSageCellAuthorizationError" &&
+        parsed.evalue === "expired SageCell page authorization";
+}
+
+function refreshSageCellPageAuthorization() {
+    var xronosSagecellAuth = window.xronosSagecellAuth || {};
+
+    if (sageAuthRefreshInFlight) {
+        return sageAuthRefreshInFlight;
+    }
+
+    if (!xronosSagecellAuth.payload || !xronosSagecellAuth.token) {
+        return Promise.reject({
+            ename: "XronosSageCellAuthorizationRefreshError",
+            evalue: "missing current SageCell page authorization"
+        });
+    }
+
+    sageAuthRefreshInFlight = new Promise(function(resolve, reject) {
+        $.ajax({
+            type: "POST",
+            url: "/sagecell/auth",
+            data: sageRequestAuthData(),
+            dataType: "json",
+            timeout: 15000
+        }).done(function(response) {
+            if (typeof response === "string") {
+                response = JSON.parse(response);
+            }
+
+            if (!response || !response.payload || !response.token) {
+                reject({
+                    ename: "XronosSageCellAuthorizationRefreshError",
+                    evalue: "incomplete SageCell authorization refresh response"
+                });
+                return;
+            }
+
+            window.xronosSagecellAuth = response;
+            resolve(response);
+        }).fail(function(xhr, status, error) {
+            reject({
+                ename: "XronosSageCellAuthorizationRefreshError",
+                evalue: error || status,
+                status: status,
+                responseText: xhr.responseText
+            });
+        });
+    }).then(
+        function(response) {
+            sageAuthRefreshInFlight = null;
+            return response;
+        },
+        function(err) {
+            sageAuthRefreshInFlight = null;
+            throw err;
+        }
+    );
+
+    return sageAuthRefreshInFlight;
+}
+
+function postSageRawOnce(requestCode) {
     return new Promise(function(resolve, reject) {
-	var xronosSagecellRequestData = {
-	    code: requestCode
-	};
-	var xronosSagecellAuth = window.xronosSagecellAuth || {};
+        var xronosSagecellRequestData = sageRequestAuthData();
 
-	if (xronosSagecellAuth.payload && xronosSagecellAuth.token) {
-	    xronosSagecellRequestData.xronosSagecellPayload = JSON.stringify(xronosSagecellAuth.payload);
-	    xronosSagecellRequestData.xronosSagecellToken = xronosSagecellAuth.token;
-	}
+        xronosSagecellRequestData.code = requestCode;
 
-	$.ajax({
-    type: "POST",
-    url: "/sagecell/service",
-    data: xronosSagecellRequestData,
-    dataType: "json",
-    timeout: 60000
-}).done(function(response) {
-    if (typeof response === "string") {
-response = JSON.parse(response);
-    }
+        $.ajax({
+            type: "POST",
+            url: "/sagecell/service",
+            data: xronosSagecellRequestData,
+            dataType: "json",
+            timeout: 60000
+        }).done(function(response) {
+            if (typeof response === "string") {
+                response = JSON.parse(response);
+            }
 
-    if (!response.success) {
-reject(response);
-return;
-    }
+            if (!response.success) {
+                reject(response);
+                return;
+            }
 
-    resolve(response);
-}).fail(function(xhr, status, error) {
-    reject({
-ename: "SageCellRequestError",
-evalue: error || status,
-status: status,
-responseText: xhr.responseText
+            resolve(response);
+        }).fail(function(xhr, status, error) {
+            reject({
+                ename: "SageCellRequestError",
+                evalue: error || status,
+                status: status,
+                responseText: xhr.responseText
+            });
+        });
     });
-});
-    });
+}
+
+function postSageRaw(requestCode) {
+    return postSageRawOnce(requestCode).then(
+        function(response) {
+            return response;
+        },
+        function(err) {
+            if (!isExpiredSageCellAuthorizationError(err)) {
+                throw err;
+            }
+
+            return refreshSageCellPageAuthorization().then(function() {
+                return postSageRawOnce(requestCode);
+            });
+        }
+    );
 }
 
 function responseToResult(response) {

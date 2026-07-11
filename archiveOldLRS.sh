@@ -588,12 +588,198 @@ if [ "$summary_current" != true ]; then
     finish 1
 fi
 
+recovery_verification_failed() {
+    local reason="$1"
+
+    echo >&2
+    echo "============================================================" >&2
+    echo "ARCHIVE EXECUTION COMPLETED, BUT RECOVERY VERIFICATION FAILED" >&2
+    echo "============================================================" >&2
+    echo >&2
+    echo "Successful stages:" >&2
+    echo "  - Historical archive created and validated" >&2
+    echo "  - Retained LRS installed" >&2
+    echo "  - Xronos restarted successfully" >&2
+    echo "  - HTTP 200 confirmed" >&2
+    echo "  - Retained-window summaries rebuilt" >&2
+    echo >&2
+    echo "Failed stage:" >&2
+    echo "  - $reason" >&2
+    echo >&2
+    echo "Safety action:" >&2
+    echo "  - Rollback LRS was NOT deleted" >&2
+    echo "  - Rollback remains available at:" >&2
+    echo "    $rollback_file" >&2
+    echo "============================================================" >&2
+
+    rm -f "$reconstructed_file"
+    finish 1
+}
+
 echo
-echo "=== Final active and rollback files ==="
+echo "=== Verify exact rollback recovery from archive package ==="
+
+rollback_file="$repo_dir/learning-record-store.pre-archive-$before_date"
+historical_archive="$run_dir/learning-record-store.before-$before_date.snappy.gz"
+retained_archive="$run_dir/learning-record-store.retained.snappy"
+reconstructed_file="$run_dir/learning-record-store.reconstructed-verification"
+
+if [ ! -f "$rollback_file" ]; then
+    recovery_verification_failed       "Rollback LRS is missing before verification."
+fi
+
+if [ ! -f "$historical_archive" ]; then
+    recovery_verification_failed       "Historical archive component is missing."
+fi
+
+if [ ! -f "$retained_archive" ]; then
+    recovery_verification_failed       "Retained archive component is missing."
+fi
+
+(
+    cd "$run_dir" &&
+    sha256sum -c checksums.sha256 &&
+    gzip -t "learning-record-store.before-$before_date.snappy.gz"
+)
+
+if [ "$?" -ne 0 ]; then
+    recovery_verification_failed       "Archive checksum or gzip validation failed."
+fi
+
+rm -f "$reconstructed_file"
+
+if ! gzip -dc "$historical_archive" > "$reconstructed_file"; then
+    recovery_verification_failed       "Historical archive could not be decompressed."
+fi
+
+if ! tail -c +11 "$retained_archive" >> "$reconstructed_file"; then
+    recovery_verification_failed       "Retained archive component could not be appended."
+fi
+
+rollback_size=$(stat -c '%s' "$rollback_file")
+reconstructed_size=$(stat -c '%s' "$reconstructed_file")
+
+rollback_sha256=$(sha256sum "$rollback_file" | awk '{print $1}')
+reconstructed_sha256=$(sha256sum "$reconstructed_file" | awk '{print $1}')
+
+echo "Rollback size:      $rollback_size"
+echo "Reconstructed size: $reconstructed_size"
+echo "Rollback SHA-256:   $rollback_sha256"
+echo "Recreated SHA-256:  $reconstructed_sha256"
+
+if [ "$rollback_size" != "$reconstructed_size" ]; then
+    recovery_verification_failed       "Reconstructed LRS size does not match rollback."
+fi
+
+if [ "$rollback_sha256" != "$reconstructed_sha256" ]; then
+    recovery_verification_failed       "Reconstructed LRS SHA-256 does not match rollback."
+fi
+
+if ! cmp -s "$rollback_file" "$reconstructed_file"; then
+    recovery_verification_failed       "Reconstructed LRS is not byte-for-byte identical."
+fi
+
+echo "PASS: archive package recreates the rollback LRS byte-for-byte."
+
+python3 - \
+  "$run_dir/manifest.json" \
+  "$rollback_file" \
+  "$rollback_size" \
+  "$rollback_sha256" <<'PY'
+import json
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+manifest_file = Path(sys.argv[1])
+rollback_file = sys.argv[2]
+rollback_size = int(sys.argv[3])
+rollback_sha256 = sys.argv[4]
+
+manifest = json.loads(manifest_file.read_text())
+
+manifest["rollbackVerification"] = {
+    "verifiedAt": datetime.now(timezone.utc).isoformat(),
+    "method": (
+        "Historical gzip decompressed, followed by retained Snappy "
+        "stream with its duplicate 10-byte stream identifier omitted."
+    ),
+    "byteForByteIdentical": True,
+    "verifiedBytes": rollback_size,
+    "sha256": rollback_sha256,
+    "rollbackFile": rollback_file,
+    "rollbackLrsDeletedAfterVerification": False
+}
+
+manifest_file.write_text(
+    json.dumps(manifest, indent=2) + "\n"
+)
+PY
+
+if [ "$?" -ne 0 ]; then
+    recovery_verification_failed       "Successful verification could not be recorded in the manifest."
+fi
+
+rm -f "$reconstructed_file"
+
+if ! rm -f "$rollback_file"; then
+    echo >&2
+    echo "============================================================" >&2
+    echo "RECOVERY VERIFICATION PASSED, BUT CLEANUP FAILED" >&2
+    echo "============================================================" >&2
+    echo "The archive package recreated the original LRS exactly." >&2
+    echo "The rollback file could not be deleted:" >&2
+    echo "  $rollback_file" >&2
+    echo "The live retained LRS and archive package are unaffected." >&2
+    echo "============================================================" >&2
+    finish 1
+fi
+
+if [ -e "$rollback_file" ]; then
+    echo >&2
+    echo "============================================================" >&2
+    echo "RECOVERY VERIFICATION PASSED, BUT CLEANUP WAS INCOMPLETE" >&2
+    echo "============================================================" >&2
+    echo "The archive package recreated the original LRS exactly." >&2
+    echo "The rollback file still exists after the deletion command:" >&2
+    echo "  $rollback_file" >&2
+    echo "The live retained LRS and archive package are unaffected." >&2
+    echo "============================================================" >&2
+    finish 1
+fi
+
+python3 - "$run_dir/manifest.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+manifest_file = Path(sys.argv[1])
+manifest = json.loads(manifest_file.read_text())
+
+manifest["rollbackVerification"][
+    "rollbackLrsDeletedAfterVerification"
+] = True
+
+manifest_file.write_text(
+    json.dumps(manifest, indent=2) + "\n"
+)
+PY
+
+if [ "$?" -ne 0 ]; then
+    echo "Warning: rollback was deleted successfully, but the manifest" >&2
+    echo "could not be updated to record the deletion." >&2
+fi
+
+echo "Verified rollback LRS deleted:"
+echo "  $rollback_file"
+
+echo
+echo "=== Final active files ==="
 
 stat -c '%s bytes  %y  %n' \
   "$repo_dir/learning-record-store" \
-  "$repo_dir/learning-record-store.pre-archive-$before_date"
+  "$repo_dir/summary.json" \
+  "$repo_dir/answer-attempt-summary.json"
 
 echo
 echo "Archive package:"

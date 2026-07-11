@@ -25,8 +25,9 @@ function usage() {
         "Options:",
         "  --before YYYY-MM-DD       Archive records stored before this UTC date.",
         "  --years NUMBER            Calendar years to retain; default 2.",
+        "  --prepare                 Create and validate archive outputs without swapping.",
         "  --execute                 Perform archival and pruning.",
-        "                            Currently safety-locked pending dry-run review.",
+        "                            Currently safety-locked pending preparation review.",
         "  --help                    Show this help.",
         "",
         "Examples:",
@@ -81,7 +82,9 @@ function parseArguments(argv) {
         course: null,
         years: 2,
         before: null,
-        execute: false
+        execute: false,
+        prepare: false,
+        archiveRoot: "/lrs-archives"
     };
 
     for (var index = 0; index < argv.length; index += 1) {
@@ -119,6 +122,16 @@ function parseArguments(argv) {
             }
 
             options.years = parsePositiveInteger(argv[index], "--years");
+        } else if (argument === "--prepare") {
+            options.prepare = true;
+        } else if (argument === "--archive-root") {
+            index += 1;
+
+            if (index >= argv.length) {
+                throw new Error("--archive-root requires a path.");
+            }
+
+            options.archiveRoot = argv[index];
         } else if (argument === "--execute") {
             options.execute = true;
         } else if (argument === "--help" || argument === "-h") {
@@ -639,9 +652,23 @@ async function main() {
 
     if (options.execute) {
         throw new Error(
-            "--execute is safety-locked until the first dry-run split " +
-            "has been reviewed. Run without --execute."
+            "--execute is safety-locked until the first preparation run " +
+            "has been reviewed."
         );
+    }
+
+    if (options.prepare) {
+        var preparer = require("./prepare-lrs-archive");
+
+        await preparer.prepare({
+            course: options.course,
+            before: options.before,
+            archiveRoot: options.archiveRoot,
+            directory: repository.directory,
+            lrsFilename: repository.lrsFilename
+        });
+
+        return;
     }
 
     console.log("Scanning " + repository.lrsFilename);

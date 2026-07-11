@@ -3,11 +3,15 @@
 set -uo pipefail
 
 SERVER_DIR="/home/ximera/xronosuf/server"
+ARCHIVE_ROOT="/home/ximera/lrs-archives"
 CONTAINER_NAME="xronos"
+IMAGE_NAME="ghcr.io/ximeraproject/ximeraserver:v2.9"
 
 cd "$SERVER_DIR"
 
 course_name=""
+before_date=""
+years="2"
 execute_mode=false
 prepare_mode=false
 
@@ -20,6 +24,16 @@ for ((i=0; i<${#args[@]}; i++)); do
                 course_name="${args[$((i + 1))]}"
             fi
             ;;
+        --before)
+            if (( i + 1 < ${#args[@]} )); then
+                before_date="${args[$((i + 1))]}"
+            fi
+            ;;
+        --years)
+            if (( i + 1 < ${#args[@]} )); then
+                years="${args[$((i + 1))]}"
+            fi
+            ;;
         --prepare)
             prepare_mode=true
             ;;
@@ -29,27 +43,95 @@ for ((i=0; i<${#args[@]}; i++)); do
     esac
 done
 
+print_reminder() {
+    local status="$1"
+
+    echo
+    echo "============================================================"
+    echo "LRS archive reminder"
+    echo "============================================================"
+
+    if [ "$status" -ne 0 ]; then
+        echo "This run FAILED."
+        echo "Inspect the active, rollback, staged, and archive files"
+        echo "before retrying or removing anything."
+    elif [ "$execute_mode" = true ]; then
+        echo "This was an EXECUTION run."
+    elif [ "$prepare_mode" = true ]; then
+        echo "This was a PREPARATION run."
+        echo "The active LRS was not changed."
+    else
+        echo "This was a DRY RUN."
+        echo "No LRS files or summaries were changed."
+    fi
+
+    if [ -n "$course_name" ]; then
+        echo
+        echo "Repository/course:"
+        echo "  $course_name"
+    fi
+
+    echo
+    echo "Useful syntax:"
+    echo "  ./archiveOldLRS.sh --course mac2233limits"
+    echo "      Validate and preview the two-year split."
+    echo
+    echo "  ./archiveOldLRS.sh --course mac2233limits --prepare"
+    echo "      Create and validate outputs without swapping."
+    echo
+    echo "  ./archiveOldLRS.sh --course mac2233limits --execute"
+    echo "      Prepare, stop Xronos, process the tail, swap,"
+    echo "      restart, and rebuild retained-window summaries."
+    echo
+    echo "  ./archiveOldLRS.sh --course mac2233limits \\"
+    echo "      --before 2024-07-11 --execute"
+    echo "      Use an explicit UTC cutoff."
+    echo
+    echo "  ./archiveOldLRS.sh --help"
+    echo "============================================================"
+}
+
+finish() {
+    local status="$1"
+    print_reminder "$status"
+    exit "$status"
+}
+
 if ! podman container exists "$CONTAINER_NAME"; then
     echo "Error: container '$CONTAINER_NAME' does not exist." >&2
-    exit 1
+    finish 1
 fi
 
 if [ "$(podman inspect "$CONTAINER_NAME" --format '{{.State.Running}}')" != "true" ]; then
     echo "Error: container '$CONTAINER_NAME' is not running." >&2
-    exit 1
+    finish 1
 fi
 
-if [ "$prepare_mode" = true ]; then
-    podman run --rm       --entrypoint sh       -v /home/ximera/xronosuf/server:/usr/var/server       -v /home/ximera/lrs-archives:/lrs-archives       ghcr.io/ximeraproject/ximeraserver:v2.9       -lc '
-        cd /usr/var/server
+if [ "$execute_mode" = true ] && [ "$prepare_mode" = true ]; then
+    echo "Error: use either --prepare or --execute, not both." >&2
+    finish 1
+fi
 
-        set -a
-        . /usr/var/server/repositories/.env
-        set +a
+if [ "$execute_mode" != true ]; then
+    if [ "$prepare_mode" = true ]; then
+        podman run --rm \
+          --entrypoint sh \
+          -v "$SERVER_DIR:/usr/var/server" \
+          -v "$ARCHIVE_ROOT:/lrs-archives" \
+          "$IMAGE_NAME" \
+          -lc '
+            cd /usr/var/server
 
-        exec node scripts/archive-old-lrs.js "$@"
-      ' sh "$@"
-else
+            set -a
+            . /usr/var/server/repositories/.env
+            set +a
+
+            exec node scripts/archive-old-lrs.js "$@"
+          ' sh "$@"
+
+        finish $?
+    fi
+
     podman exec -i "$CONTAINER_NAME" sh -lc '
         cd /usr/var/server
 
@@ -59,51 +141,462 @@ else
 
         exec node scripts/archive-old-lrs.js "$@"
     ' sh "$@"
+
+    finish $?
 fi
 
-status=$?
-
-echo
-echo "============================================================"
-echo "LRS archive reminder"
-echo "============================================================"
-
-if [ "$status" -ne 0 ]; then
-    echo "This run FAILED or reported an incomplete live snapshot."
-    echo "No successful archive or prune should be assumed."
-elif [ "$execute_mode" = true ]; then
-    echo "This was an EXECUTION request."
-elif [ "$prepare_mode" = true ]; then
-    echo "This was a PREPARATION run."
-    echo "Archive outputs were created, but the active LRS was not changed."
-else
-    echo "This was a DRY RUN."
-    echo "No LRS files or summaries were changed."
+if [ -z "$course_name" ]; then
+    echo "Error: --course is required for --execute." >&2
+    finish 1
 fi
 
-if [ -n "$course_name" ]; then
-    echo
-    echo "Repository/course:"
-    echo "  $course_name"
+course_name="${course_name%.git}"
+
+if [[ ! "$course_name" =~ ^[A-Za-z0-9._-]+$ ]]; then
+    echo "Error: invalid repository name." >&2
+    finish 1
+fi
+
+repo_dir="$SERVER_DIR/repositories/$course_name.git"
+lrs_file="$repo_dir/learning-record-store"
+
+if [ ! -d "$repo_dir" ]; then
+    echo "Error: repository directory does not exist:" >&2
+    echo "  $repo_dir" >&2
+    finish 1
+fi
+
+if [ ! -f "$lrs_file" ]; then
+    echo "Error: learning-record-store is missing:" >&2
+    echo "  $lrs_file" >&2
+    finish 1
+fi
+
+if [ -z "$before_date" ]; then
+    before_date=$(
+        python3 - "$years" <<'PY'
+from datetime import datetime, timezone
+import sys
+
+years = int(sys.argv[1])
+today = datetime.now(timezone.utc)
+
+try:
+    cutoff = today.replace(year=today.year - years)
+except ValueError:
+    cutoff = today.replace(
+        year=today.year - years,
+        day=28
+    )
+
+print(cutoff.strftime("%Y-%m-%d"))
+PY
+    )
+fi
+
+if [[ ! "$before_date" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+    echo "Error: --before must use YYYY-MM-DD." >&2
+    finish 1
+fi
+
+rollback_lrs="$repo_dir/learning-record-store.pre-archive-$before_date"
+
+if [ -e "$rollback_lrs" ]; then
+    echo "Error: rollback LRS already exists:" >&2
+    echo "  $rollback_lrs" >&2
+    echo "This repository appears to have already been archived" >&2
+    echo "for this cutoff." >&2
+    finish 1
+fi
+
+latest_scheduler=$(
+    podman logs "$CONTAINER_NAME" 2>&1 |
+      grep 'Answer attempt summary scheduler' |
+      tail -n 1 || true
+)
+
+case "$latest_scheduler" in
+  *"scheduler is disabled."*)
+    ;;
+  *)
+    echo "Error: answer-attempt scheduler is not confirmed disabled." >&2
+    echo "Latest scheduler log:" >&2
+    echo "  ${latest_scheduler:-none}" >&2
+    finish 1
+    ;;
+esac
+
+echo "=== Build full answer-attempt summary ==="
+
+podman exec -i "$CONTAINER_NAME" sh -lc '
+  cd /usr/var/server
+
+  set -a
+  . /usr/var/server/repositories/.env
+  set +a
+
+  course="$1"
+
+  node - "$course" <<'"'"'NODE'"'"'
+var builder = require("./summarize/answer-attempt-summary");
+var course = process.argv[2];
+
+builder.rebuildRepository(course, function(err, result) {
+    if (err) {
+        console.error(err);
+        process.exit(1);
+    }
+
+    console.log(JSON.stringify(result, null, 2));
+    process.exit(0);
+});
+NODE
+' sh "$course_name"
+
+if [ "$?" -ne 0 ]; then
+    finish 1
 fi
 
 echo
-echo "Useful syntax:"
-echo "  ./archiveOldLRS.sh --course mac2233limits"
-echo "      Validate and preview the two-year archival split."
-echo
-echo "  ./archiveOldLRS.sh --course mac2233limits --before 2024-07-11"
-echo "      Preview an explicit UTC cutoff date."
-echo
-echo "  ./archiveOldLRS.sh --course mac2233limits --prepare"
-echo "      Create and validate archive outputs without changing the active LRS."
-echo
-echo "  ./archiveOldLRS.sh --course mac2233limits --execute"
-echo "      Build summaries, archive old records, prune, and restart Xronos."
-echo "      Execution remains safety-locked until preparation is reviewed."
-echo
-echo "  ./archiveOldLRS.sh --help"
-echo "      Display the complete option list."
-echo "============================================================"
+echo "=== Wait for incremental summary to become current ==="
 
-exit "$status"
+summary_current=false
+
+for attempt in $(seq 1 40); do
+    result=$(
+        python3 - "$repo_dir" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+repo = Path(sys.argv[1])
+lrs = repo / "learning-record-store"
+summary = repo / "summary.json"
+
+if not summary.exists():
+    print("missing")
+else:
+    try:
+        data = json.loads(summary.read_text())
+        if data.get("position") == lrs.stat().st_size:
+            print("current")
+        else:
+            print(
+                f"behind:{data.get('position')}:{lrs.stat().st_size}"
+            )
+    except Exception as exc:
+        print(f"error:{exc}")
+PY
+    )
+
+    echo "Summary status: $result"
+
+    if [ "$result" = "current" ]; then
+        summary_current=true
+        break
+    fi
+
+    sleep 15
+done
+
+if [ "$summary_current" != true ]; then
+    echo "Error: summary.json did not become current." >&2
+    finish 1
+fi
+
+echo
+echo "=== Prepare archive outputs while Xronos remains online ==="
+
+podman run --rm \
+  --entrypoint sh \
+  -v "$SERVER_DIR:/usr/var/server" \
+  -v "$ARCHIVE_ROOT:/lrs-archives" \
+  "$IMAGE_NAME" \
+  -lc '
+    cd /usr/var/server
+
+    set -a
+    . /usr/var/server/repositories/.env
+    set +a
+
+    exec node scripts/archive-old-lrs.js "$@"
+  ' sh \
+  --course "$course_name" \
+  --before "$before_date" \
+  --prepare
+
+if [ "$?" -ne 0 ]; then
+    finish 1
+fi
+
+run_dir=$(
+    find "$ARCHIVE_ROOT/$course_name/$before_date" \
+      -mindepth 1 \
+      -maxdepth 1 \
+      -type d \
+      -name 'prepare-*' \
+      | sort \
+      | tail -n 1
+)
+
+if [ -z "$run_dir" ] || [ ! -d "$run_dir" ]; then
+    echo "Error: could not locate preparation directory." >&2
+    finish 1
+fi
+
+echo
+echo "Preparation directory:"
+echo "  $run_dir"
+
+cp -p \
+  "$repo_dir/summary.json" \
+  "$run_dir/summary.full-lrs.json"
+
+cp -p \
+  "$repo_dir/answer-attempt-summary.json" \
+  "$run_dir/answer-attempt-summary.full-lrs.json"
+
+sha256sum \
+  "$run_dir/summary.full-lrs.json" \
+  "$run_dir/answer-attempt-summary.full-lrs.json" \
+  > "$run_dir/summaries.sha256"
+
+python3 - "$run_dir" "$repo_dir" <<'PY'
+import json
+import sys
+from datetime import datetime, timezone
+from pathlib import Path
+
+run_dir = Path(sys.argv[1])
+repo_dir = Path(sys.argv[2])
+
+manifest_file = run_dir / "manifest.json"
+manifest = json.loads(manifest_file.read_text())
+
+summary = json.loads(
+    (run_dir / "summary.full-lrs.json").read_text()
+)
+
+observed_lrs_size = (
+    repo_dir / "learning-record-store"
+).stat().st_size
+
+manifest["summarySnapshots"] = {
+    "capturedAt": datetime.now(timezone.utc).isoformat(),
+    "basicSummary": {
+        "filename": "summary.full-lrs.json",
+        "position": summary.get("position"),
+        "exactThroughByte": summary.get("position")
+    },
+    "answerAttemptSummary": {
+        "filename": "answer-attempt-summary.full-lrs.json",
+        "lrsSizeObservedWhenCopied": observed_lrs_size,
+        "coverageNote": (
+            "The builder has no stored byte position. This value records "
+            "the live LRS size observed when the completed summary file "
+            "was copied. Statements appended after its build may not be "
+            "represented in this historical snapshot; they remain in the "
+            "retained active LRS and rebuilt operational summary."
+        )
+    }
+}
+
+manifest_file.write_text(
+    json.dumps(manifest, indent=2) + "\n"
+)
+PY
+
+(
+    cd "$run_dir" &&
+    sha256sum -c checksums.sha256 &&
+    sha256sum -c summaries.sha256
+)
+
+if [ "$?" -ne 0 ]; then
+    finish 1
+fi
+
+container_run_dir=$(
+    python3 - "$run_dir" "$ARCHIVE_ROOT" <<'PY'
+from pathlib import Path
+import sys
+
+run_dir = Path(sys.argv[1]).resolve()
+archive_root = Path(sys.argv[2]).resolve()
+
+relative = run_dir.relative_to(archive_root)
+print("/lrs-archives/" + str(relative))
+PY
+)
+
+echo
+echo "=== Stop Xronos ==="
+
+podman stop -t 30 "$CONTAINER_NAME"
+
+if [ "$(podman inspect "$CONTAINER_NAME" --format '{{.State.Status}}')" != "exited" ]; then
+    echo "Error: Xronos did not stop." >&2
+    finish 1
+fi
+
+finalize_status=0
+
+podman run --rm \
+  --entrypoint sh \
+  -v "$SERVER_DIR:/usr/var/server" \
+  -v "$ARCHIVE_ROOT:/lrs-archives" \
+  "$IMAGE_NAME" \
+  -lc '
+    cd /usr/var/server
+
+    exec node scripts/finalize-lrs-archive.js "$@"
+  ' sh \
+  --course "$course_name" \
+  --before "$before_date" \
+  --run-directory "$container_run_dir" \
+  || finalize_status=$?
+
+echo
+echo "=== Start Xronos ==="
+
+podman start "$CONTAINER_NAME"
+
+if [ "$finalize_status" -ne 0 ]; then
+    echo "Finalization failed; Xronos was restarted." >&2
+    finish "$finalize_status"
+fi
+
+healthy=false
+
+for attempt in $(seq 1 45); do
+    code=$(
+        curl -sS \
+          -o /dev/null \
+          -w '%{http_code}' \
+          http://127.0.0.1:2000/ \
+          2>/dev/null || true
+    )
+
+    if [ "$code" = "200" ]; then
+        echo "HTTP 200"
+        healthy=true
+        break
+    fi
+
+    echo "Health attempt $attempt: HTTP ${code:-unavailable}"
+    sleep 2
+done
+
+if [ "$healthy" != true ]; then
+    echo "Error: Xronos did not return HTTP 200." >&2
+    finish 1
+fi
+
+latest_scheduler=$(
+    podman logs --since 10m "$CONTAINER_NAME" 2>&1 |
+      grep 'Answer attempt summary scheduler' |
+      tail -n 1 || true
+)
+
+case "$latest_scheduler" in
+  *"scheduler is disabled."*)
+    echo "$latest_scheduler"
+    ;;
+  *)
+    echo "Error: scheduler-disabled state was not confirmed." >&2
+    echo "${latest_scheduler:-No scheduler line found}" >&2
+    finish 1
+    ;;
+esac
+
+echo
+echo "=== Rebuild retained-window answer-attempt summary ==="
+
+podman exec -i "$CONTAINER_NAME" sh -lc '
+  cd /usr/var/server
+
+  set -a
+  . /usr/var/server/repositories/.env
+  set +a
+
+  course="$1"
+
+  node - "$course" <<'"'"'NODE'"'"'
+var builder = require("./summarize/answer-attempt-summary");
+var course = process.argv[2];
+
+builder.rebuildRepository(course, function(err, result) {
+    if (err) {
+        console.error(err);
+        process.exit(1);
+    }
+
+    console.log(JSON.stringify(result, null, 2));
+    process.exit(0);
+});
+NODE
+' sh "$course_name"
+
+if [ "$?" -ne 0 ]; then
+    finish 1
+fi
+
+echo
+echo "=== Wait for retained-window summary.json ==="
+
+summary_current=false
+
+for attempt in $(seq 1 60); do
+    result=$(
+        python3 - "$repo_dir" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+repo = Path(sys.argv[1])
+lrs = repo / "learning-record-store"
+summary = repo / "summary.json"
+
+if not summary.exists():
+    print("missing")
+else:
+    try:
+        data = json.loads(summary.read_text())
+        if data.get("position") == lrs.stat().st_size:
+            print("current")
+        else:
+            print(
+                f"behind:{data.get('position')}:{lrs.stat().st_size}"
+            )
+    except Exception as exc:
+        print(f"error:{exc}")
+PY
+    )
+
+    echo "Summary status: $result"
+
+    if [ "$result" = "current" ]; then
+        summary_current=true
+        break
+    fi
+
+    sleep 15
+done
+
+if [ "$summary_current" != true ]; then
+    echo "Error: retained-window summary did not become current." >&2
+    finish 1
+fi
+
+echo
+echo "=== Final active and rollback files ==="
+
+stat -c '%s bytes  %y  %n' \
+  "$repo_dir/learning-record-store" \
+  "$repo_dir/learning-record-store.pre-archive-$before_date"
+
+echo
+echo "Archive package:"
+echo "  $run_dir"
+
+finish 0

@@ -980,10 +980,33 @@ app.get('/sw.js', function(req, res) {
             successRedirect: config.toValidPath('/just-logged-in'),
 							failureRedirect: '/',
 							failureFlash: true}));
-        app.post('/:repository/:path(*)/lti', passport.authenticate('lms', {
-            successRedirect: config.toValidPath('/just-logged-in'),
-									     failureRedirect: '/',
-									     failureFlash: true}));	
+        app.post('/:repository/:path(*)/lti',
+                 passport.authenticate('lms', { failureRedirect: '/' }),
+                 function(req, res, next) {
+                     var destination;
+
+                     if (req.user && req.user.course) {
+                         destination = req.user.course;
+                     } else {
+                         destination = '/' + req.params.repository;
+                         if (req.params.path) {
+                             destination += '/' + req.params.path;
+                         }
+                     }
+
+                     destination = config.toValidPath(destination);
+
+                     if (req.session) {
+                         req.session.save(function(err) {
+                             if (err) {
+                                 return next(err);
+                             }
+                             res.redirect(destination);
+                         });
+                     } else {
+                         res.redirect(destination);
+                     }
+                 });
     }
     
     app.get('/logout', function (req, res) {

@@ -10,17 +10,23 @@ var xourseRelayoutMaskTimer = undefined;
 var xourseRelayoutMaskActive = false;
 
 var filtering = function() {
-	if ((typeof search === 'undefined') || (search.length == 0))
-		return $(this).hasClass('part') || $('.part').eq($(this).attr("data-part-counter") - 1).hasClass('part-open') 
-	else {
+	var parts = $(this).closest('.xourse, .toc').find('.part');
+
+	if ((typeof search === 'undefined') || (search.length == 0)) {
+		if (parts.length === 0)
+			return true;
+
+		return $(this).hasClass('part') || parts.eq($(this).attr("data-part-counter") - 1).hasClass('part-open');
+	} else {
 		var regexps = _.map(search.toLowerCase().split(" "), function (word) {
 			return new RegExp(word);
 		});
+
 		if ($(this).hasClass('part'))
 			return true;
 
-		if (!$('.part').eq($(this).attr("data-part-counter") - 1).hasClass('part-open'))
-			return false
+		if (parts.length > 0 && !parts.eq($(this).attr("data-part-counter") - 1).hasClass('part-open'))
+			return false;
 
 		var text = $(this).text().toLowerCase();
 

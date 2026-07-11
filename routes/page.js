@@ -438,6 +438,13 @@ exports.serve = function( mimetype ){
 					   res.end( blob, 'binary' );		
 				       })
 				       .catch( function(err) {
+						   if (mimetype === 'text/css') {
+						       res.contentType('text/css');
+						       res.set('Cache-Control', 'no-store');
+						       res.status(200).send('');
+						       return;
+						   }
+
 						   res.sendStatus(404)
 					   		//next(new Error(err));
 				       });

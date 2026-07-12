@@ -184,6 +184,240 @@ function gzipTest(filename) {
     );
 }
 
+function sha256Buffer(buffer) {
+    return crypto
+        .createHash("sha256")
+        .update(buffer)
+        .digest("hex");
+}
+
+async function readStatementChunk(fd, position, fileLimit) {
+    if (position + 4 > fileLimit) {
+        return null;
+    }
+
+    var header = Buffer.alloc(4);
+    var headerBytes = await readExactly(
+        fd,
+        header,
+        0,
+        4,
+        position
+    );
+
+    if (headerBytes !== 4) {
+        return null;
+    }
+
+    var kind = header.readUInt8(0);
+    var length = header.readUInt24LE(1);
+    var chunkBytes = 4 + length;
+
+    if (
+        kind !== 0x00 ||
+        length < 5 ||
+        length > 1024 * 1024 ||
+        position + chunkBytes > fileLimit
+    ) {
+        return null;
+    }
+
+    var payload = Buffer.alloc(length);
+    var payloadBytes = await readExactly(
+        fd,
+        payload,
+        0,
+        length,
+        position + 4
+    );
+
+    if (payloadBytes !== length) {
+        return null;
+    }
+
+    var original;
+
+    try {
+        original = await uncompress(payload);
+    } catch (error) {
+        return null;
+    }
+
+    if (!verifyChecksum(payload, original)) {
+        return null;
+    }
+
+    var statement;
+
+    try {
+        statement = JSON.parse(original);
+    } catch (error) {
+        return null;
+    }
+
+    var stored = new Date(statement.stored);
+
+    if (!statement.stored || isNaN(stored.getTime())) {
+        return null;
+    }
+
+    return {
+        position: position,
+        chunkBytes: chunkBytes,
+        stored: stored.toISOString()
+    };
+}
+
+async function validateConsecutiveStatements(
+    fd,
+    position,
+    fileLimit,
+    requiredCount
+) {
+    var current = position;
+    var statements = [];
+
+    for (
+        var index = 0;
+        index < requiredCount;
+        index += 1
+    ) {
+        var statement = await readStatementChunk(
+            fd,
+            current,
+            fileLimit
+        );
+
+        if (!statement) {
+            return null;
+        }
+
+        statements.push(statement);
+        current += statement.chunkBytes;
+    }
+
+    return {
+        resumePosition: position,
+        validatedThrough: current,
+        statements: statements
+    };
+}
+
+async function recoverZeroGap(
+    fd,
+    position,
+    fileLimit
+) {
+    var maximumSearchBytes = 8 * 1024 * 1024;
+    var searchBytes = Math.min(
+        maximumSearchBytes,
+        fileLimit - position
+    );
+
+    if (searchBytes < 5) {
+        return null;
+    }
+
+    var searchBuffer = Buffer.alloc(searchBytes);
+    var bytesRead = await readExactly(
+        fd,
+        searchBuffer,
+        0,
+        searchBytes,
+        position
+    );
+
+    if (bytesRead !== searchBytes) {
+        return null;
+    }
+
+    var firstNonzeroOffset = -1;
+
+    for (
+        var index = 0;
+        index < searchBuffer.length;
+        index += 1
+    ) {
+        if (searchBuffer[index] !== 0) {
+            firstNonzeroOffset = index;
+            break;
+        }
+    }
+
+    if (firstNonzeroOffset < 1) {
+        return null;
+    }
+
+    /*
+     * A compressed-data frame begins with kind byte 0x00.
+     * Its first nonzero byte can therefore be one of the
+     * following three length bytes.
+     */
+    var firstCandidateOffset = Math.max(
+        1,
+        firstNonzeroOffset - 3
+    );
+
+    for (
+        var candidateOffset = firstCandidateOffset;
+        candidateOffset <= firstNonzeroOffset;
+        candidateOffset += 1
+    ) {
+        var allPriorBytesAreZero = true;
+
+        for (
+            var prior = 0;
+            prior < candidateOffset;
+            prior += 1
+        ) {
+            if (searchBuffer[prior] !== 0) {
+                allPriorBytesAreZero = false;
+                break;
+            }
+        }
+
+        if (!allPriorBytesAreZero) {
+            continue;
+        }
+
+        var candidatePosition =
+            position + candidateOffset;
+
+        var validation =
+            await validateConsecutiveStatements(
+                fd,
+                candidatePosition,
+                fileLimit,
+                3
+            );
+
+        if (!validation) {
+            continue;
+        }
+
+        var gap = searchBuffer.slice(
+            0,
+            candidateOffset
+        );
+
+        return {
+            originalOffset: position,
+            resumePosition: candidatePosition,
+            length: gap.length,
+            sha256: sha256Buffer(gap),
+            validatedStatementCount:
+                validation.statements.length,
+            validatedThrough:
+                validation.validatedThrough,
+            followingStatements:
+                validation.statements,
+            rawBytes: gap
+        };
+    }
+
+    return null;
+}
+
 async function validateRetained(filename) {
     var fd = await openRead(filename);
     var stat = await statFile(filename);
@@ -367,6 +601,9 @@ async function prepare(options) {
         streamIdentifierChunks: 0,
         otherChunks: 0,
 
+        recoveredZeroGapBytes: 0,
+        recoveredZeroGaps: [],
+
         allStoredRange: {
             oldest: null,
             newest: null
@@ -427,6 +664,80 @@ async function prepare(options) {
                 throw new Error(
                     "Short source read at byte " + position
                 );
+            }
+
+            if (
+                options.recoverZeroGaps &&
+                kind === 0x00 &&
+                length === 0
+            ) {
+                var recoveredGap = await recoverZeroGap(
+                    sourceFd,
+                    position,
+                    snapshotSize
+                );
+
+                if (!recoveredGap) {
+                    throw new Error(
+                        "Zero-length data chunk at source byte " +
+                        position +
+                        " could not be safely resynchronized."
+                    );
+                }
+
+                /*
+                 * The malformed bytes occur among historical records.
+                 * Preserve them verbatim and in their original order in
+                 * the historical archive. They are deliberately omitted
+                 * from the clean retained operational LRS.
+                 */
+                await writeBuffer(
+                    gzip,
+                    recoveredGap.rawBytes
+                );
+
+                result.archiveNativeBytes +=
+                    recoveredGap.length;
+
+                result.recoveredZeroGapBytes +=
+                    recoveredGap.length;
+
+                result.recoveredZeroGaps.push({
+                    originalOffset:
+                        recoveredGap.originalOffset,
+                    resumePosition:
+                        recoveredGap.resumePosition,
+                    length:
+                        recoveredGap.length,
+                    sha256:
+                        recoveredGap.sha256,
+                    validatedStatementCount:
+                        recoveredGap.validatedStatementCount,
+                    validatedThrough:
+                        recoveredGap.validatedThrough,
+                    followingStatements:
+                        recoveredGap.followingStatements,
+                    disposition:
+                        "Preserved verbatim in historical archive; " +
+                        "omitted from retained active LRS."
+                });
+
+                console.log(
+                    "Recovered zero-filled gap at source byte " +
+                    recoveredGap.originalOffset +
+                    "; length=" +
+                    recoveredGap.length.toLocaleString() +
+                    "; resumed at=" +
+                    recoveredGap.resumePosition +
+                    "; validated next " +
+                    recoveredGap.validatedStatementCount +
+                    " statements."
+                );
+
+                position =
+                    recoveredGap.resumePosition;
+
+                continue;
             }
 
             if (kind === 0xff) {
@@ -591,6 +902,30 @@ async function prepare(options) {
         "Bytes appended during preparation: " +
         result.bytesAppendedDuringPreparation.toLocaleString()
     );
+    console.log(
+        "Recovered zero-filled gaps: " +
+        result.recoveredZeroGaps.length.toLocaleString()
+    );
+    console.log(
+        "Recovered zero-filled bytes: " +
+        result.recoveredZeroGapBytes.toLocaleString()
+    );
+
+    result.recoveredZeroGaps.forEach(function(gap, index) {
+        console.log(
+            "  Gap " +
+            (index + 1) +
+            ": offset=" +
+            gap.originalOffset +
+            ", length=" +
+            gap.length +
+            ", resume=" +
+            gap.resumePosition +
+            ", SHA-256=" +
+            gap.sha256
+        );
+    });
+
     console.log("");
     console.log("NO ACTIVE LRS FILE WAS CHANGED.");
 

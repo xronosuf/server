@@ -3,6 +3,7 @@
 
 var fs = require("fs");
 var path = require("path");
+var crypto = require("crypto");
 var snappy = require("snappy");
 var buffer24 = require("buffer24");
 var crc32 = require("fast-crc32c");
@@ -28,6 +29,8 @@ function usage() {
         "  --prepare                 Create and validate archive outputs without swapping.",
         "  --execute                 Perform archival and pruning.",
         "                            Currently safety-locked pending preparation review.",
+        "  --recover-zero-gaps       Recover narrowly validated zero-filled gaps.",
+        "                            Dry-run support is enabled first for review.",
         "  --help                    Show this help.",
         "",
         "Examples:",
@@ -84,6 +87,7 @@ function parseArguments(argv) {
         before: null,
         execute: false,
         prepare: false,
+        recoverZeroGaps: false,
         archiveRoot: "/lrs-archives"
     };
 
@@ -134,6 +138,8 @@ function parseArguments(argv) {
             options.archiveRoot = argv[index];
         } else if (argument === "--execute") {
             options.execute = true;
+        } else if (argument === "--recover-zero-gaps") {
+            options.recoverZeroGaps = true;
         } else if (argument === "--help" || argument === "-h") {
             usage();
             process.exit(0);
@@ -357,7 +363,241 @@ function updateDateRange(summary, date) {
     }
 }
 
-async function scanLrs(filename, cutoff) {
+function sha256Buffer(buffer) {
+    return crypto
+        .createHash("sha256")
+        .update(buffer)
+        .digest("hex");
+}
+
+async function readStatementChunk(fd, position, fileLimit) {
+    if (position + 4 > fileLimit) {
+        return null;
+    }
+
+    var header = Buffer.alloc(4);
+    var headerBytes = await readExactly(
+        fd,
+        header,
+        0,
+        4,
+        position
+    );
+
+    if (headerBytes !== 4) {
+        return null;
+    }
+
+    var kind = header.readUInt8(0);
+    var length = header.readUInt24LE(1);
+    var chunkBytes = 4 + length;
+
+    if (
+        kind !== 0x00 ||
+        length < 5 ||
+        length > 1024 * 1024 ||
+        position + chunkBytes > fileLimit
+    ) {
+        return null;
+    }
+
+    var payload = Buffer.alloc(length);
+    var payloadBytes = await readExactly(
+        fd,
+        payload,
+        0,
+        length,
+        position + 4
+    );
+
+    if (payloadBytes !== length) {
+        return null;
+    }
+
+    var original;
+
+    try {
+        original = await uncompress(payload);
+    } catch (error) {
+        return null;
+    }
+
+    if (!verifyChecksum(payload, original)) {
+        return null;
+    }
+
+    var statement;
+
+    try {
+        statement = JSON.parse(original);
+    } catch (error) {
+        return null;
+    }
+
+    var stored = new Date(statement.stored);
+
+    if (!statement.stored || isNaN(stored.getTime())) {
+        return null;
+    }
+
+    return {
+        position: position,
+        chunkBytes: chunkBytes,
+        stored: stored.toISOString()
+    };
+}
+
+async function validateConsecutiveStatements(
+    fd,
+    position,
+    fileLimit,
+    requiredCount
+) {
+    var current = position;
+    var statements = [];
+
+    for (
+        var index = 0;
+        index < requiredCount;
+        index += 1
+    ) {
+        var statement = await readStatementChunk(
+            fd,
+            current,
+            fileLimit
+        );
+
+        if (!statement) {
+            return null;
+        }
+
+        statements.push(statement);
+        current += statement.chunkBytes;
+    }
+
+    return {
+        resumePosition: position,
+        validatedThrough: current,
+        statements: statements
+    };
+}
+
+async function recoverZeroGap(
+    fd,
+    position,
+    fileLimit
+) {
+    var maximumSearchBytes = 8 * 1024 * 1024;
+    var searchBytes = Math.min(
+        maximumSearchBytes,
+        fileLimit - position
+    );
+
+    if (searchBytes < 5) {
+        return null;
+    }
+
+    var searchBuffer = Buffer.alloc(searchBytes);
+    var bytesRead = await readExactly(
+        fd,
+        searchBuffer,
+        0,
+        searchBytes,
+        position
+    );
+
+    if (bytesRead !== searchBytes) {
+        return null;
+    }
+
+    var firstNonzeroOffset = -1;
+
+    for (
+        var index = 0;
+        index < searchBuffer.length;
+        index += 1
+    ) {
+        if (searchBuffer[index] !== 0) {
+            firstNonzeroOffset = index;
+            break;
+        }
+    }
+
+    if (firstNonzeroOffset < 1) {
+        return null;
+    }
+
+    /*
+     * A valid compressed-data frame begins with kind byte 0x00.
+     * Therefore its first nonzero byte may occur in one of the
+     * following three length bytes. Test the few possible frame
+     * starts immediately before the first nonzero byte.
+     */
+    var firstCandidateOffset = Math.max(
+        1,
+        firstNonzeroOffset - 3
+    );
+
+    for (
+        var candidateOffset = firstCandidateOffset;
+        candidateOffset <= firstNonzeroOffset;
+        candidateOffset += 1
+    ) {
+        var allPriorBytesAreZero = true;
+
+        for (
+            var prior = 0;
+            prior < candidateOffset;
+            prior += 1
+        ) {
+            if (searchBuffer[prior] !== 0) {
+                allPriorBytesAreZero = false;
+                break;
+            }
+        }
+
+        if (!allPriorBytesAreZero) {
+            continue;
+        }
+
+        var candidatePosition =
+            position + candidateOffset;
+
+        var validation =
+            await validateConsecutiveStatements(
+                fd,
+                candidatePosition,
+                fileLimit,
+                3
+            );
+
+        if (!validation) {
+            continue;
+        }
+
+        var gap = searchBuffer.slice(
+            0,
+            candidateOffset
+        );
+
+        return {
+            originalOffset: position,
+            resumePosition: candidatePosition,
+            length: gap.length,
+            sha256: sha256Buffer(gap),
+            validatedStatementCount:
+                validation.statements.length,
+            validatedThrough:
+                validation.validatedThrough,
+            followingStatements:
+                validation.statements
+        };
+    }
+
+    return null;
+}
+
+async function scanLrs(filename, cutoff, recoverZeroGaps) {
     var initialStat = await statFile(filename);
     var snapshotSize = initialStat.size;
     var fd = await openFile(filename);
@@ -384,6 +624,9 @@ async function scanLrs(filename, cutoff) {
         invalidStoredDate: 0,
         checksumFailures: 0,
         decompressionFailures: 0,
+
+        recoveredZeroGapBytes: 0,
+        recoveredZeroGaps: [],
 
         all: {
             oldestStored: null,
@@ -433,6 +676,58 @@ async function scanLrs(filename, cutoff) {
 
             if (payloadBytes !== length) {
                 break;
+            }
+
+            if (
+                recoverZeroGaps &&
+                kind === 0x00 &&
+                length === 0
+            ) {
+                var recoveredGap = await recoverZeroGap(
+                    fd,
+                    position,
+                    snapshotSize
+                );
+
+                if (!recoveredGap) {
+                    throw new Error(
+                        "Zero-length data chunk at byte " +
+                        position +
+                        " could not be safely resynchronized."
+                    );
+                }
+
+                result.recoveredZeroGaps.push(
+                    recoveredGap
+                );
+
+                result.recoveredZeroGapBytes +=
+                    recoveredGap.length;
+
+                /*
+                 * Preserve the raw malformed bytes in the
+                 * historical archive size. They are omitted
+                 * from the future retained active stream.
+                 */
+                result.archiveFramedBytes +=
+                    recoveredGap.length;
+
+                console.log(
+                    "Recovered zero-filled gap at byte " +
+                    recoveredGap.originalOffset +
+                    "; length=" +
+                    recoveredGap.length.toLocaleString() +
+                    "; resumed at=" +
+                    recoveredGap.resumePosition +
+                    "; validated next " +
+                    recoveredGap.validatedStatementCount +
+                    " statements."
+                );
+
+                position =
+                    recoveredGap.resumePosition;
+
+                continue;
             }
 
             result.totalChunks += 1;
@@ -629,6 +924,43 @@ function printResult(options, repository, result) {
     console.log("  Stored dates:            " + result.invalidStoredDate);
     console.log("");
 
+    console.log("Recovered zero-filled gaps:");
+    console.log(
+        "  Gap count:               " +
+        result.recoveredZeroGaps.length
+    );
+    console.log(
+        "  Total zero bytes:        " +
+        result.recoveredZeroGapBytes.toLocaleString()
+    );
+
+    result.recoveredZeroGaps.forEach(function(gap, index) {
+        console.log(
+            "  Gap " +
+            (index + 1) +
+            ":                    offset=" +
+            gap.originalOffset +
+            ", length=" +
+            gap.length +
+            ", resume=" +
+            gap.resumePosition
+        );
+        console.log(
+            "    SHA-256:               " +
+            gap.sha256
+        );
+        console.log(
+            "    Following stored dates: " +
+            gap.followingStatements
+                .map(function(statement) {
+                    return statement.stored;
+                })
+                .join(", ")
+        );
+    });
+
+    console.log("");
+
     if (result.trailingBytesAtSnapshot !== 0) {
         console.log(
             "WARNING: the scan snapshot ended in an incomplete chunk. " +
@@ -665,7 +997,8 @@ async function main() {
             before: options.before,
             archiveRoot: options.archiveRoot,
             directory: repository.directory,
-            lrsFilename: repository.lrsFilename
+            lrsFilename: repository.lrsFilename,
+            recoverZeroGaps: options.recoverZeroGaps
         });
 
         return;
@@ -676,7 +1009,8 @@ async function main() {
 
     var result = await scanLrs(
         repository.lrsFilename,
-        options.before
+        options.before,
+        options.recoverZeroGaps
     );
 
     printResult(options, repository, result);

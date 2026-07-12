@@ -14,6 +14,8 @@ before_date=""
 years="2"
 execute_mode=false
 prepare_mode=false
+recover_zero_gaps=false
+skip_full_answer_summary=false
 
 args=("$@")
 
@@ -39,6 +41,12 @@ for ((i=0; i<${#args[@]}; i++)); do
             ;;
         --execute)
             execute_mode=true
+            ;;
+        --recover-zero-gaps)
+            recover_zero_gaps=true
+            ;;
+        --skip-full-answer-summary)
+            skip_full_answer_summary=true
             ;;
     esac
 done
@@ -86,6 +94,12 @@ print_reminder() {
     echo "  ./archiveOldLRS.sh --course mac2233limits \\"
     echo "      --before 2024-07-11 --execute"
     echo "      Use an explicit UTC cutoff."
+    echo
+    echo "  ./archiveOldLRS.sh --course mac2311keeran \\"
+    echo "      --before 2024-07-11 --recover-zero-gaps \\"
+    echo "      --skip-full-answer-summary --execute"
+    echo "      Recover validated zero gaps and skip an oversized"
+    echo "      all-time answer-summary rebuild."
     echo
     echo "  ./archiveOldLRS.sh --help"
     echo "============================================================"
@@ -226,18 +240,23 @@ case "$latest_scheduler" in
     ;;
 esac
 
-echo "=== Build full answer-attempt summary ==="
+if [ "$skip_full_answer_summary" = true ]; then
+    echo "=== Skip full answer-attempt summary rebuild ==="
+    echo "The all-time answer-attempt summary rebuild was explicitly skipped."
+    echo "This repository is too large for the current in-memory builder."
+else
+    echo "=== Build full answer-attempt summary ==="
 
-podman exec -i "$CONTAINER_NAME" sh -lc '
-  cd /usr/var/server
+    podman exec -i "$CONTAINER_NAME" sh -lc '
+      cd /usr/var/server
 
-  set -a
-  . /usr/var/server/repositories/.env
-  set +a
+      set -a
+      . /usr/var/server/repositories/.env
+      set +a
 
-  course="$1"
+      course="$1"
 
-  node - "$course" <<'"'"'NODE'"'"'
+      node - "$course" <<'"'"'NODE'"'"'
 var builder = require("./summarize/answer-attempt-summary");
 var course = process.argv[2];
 
@@ -251,20 +270,25 @@ builder.rebuildRepository(course, function(err, result) {
     process.exit(0);
 });
 NODE
-' sh "$course_name"
+    ' sh "$course_name"
 
-if [ "$?" -ne 0 ]; then
-    finish 1
+    if [ "$?" -ne 0 ]; then
+        finish 1
+    fi
 fi
 
 echo
-echo "=== Wait for incremental summary to become current ==="
+if [ "$skip_full_answer_summary" = true ]; then
+    echo "=== Preserve existing incremental summary as incomplete snapshot ==="
+    echo "Current summary.json will be archived with its recorded byte position."
+else
+    echo "=== Wait for incremental summary to become current ==="
 
-summary_current=false
+    summary_current=false
 
-for attempt in $(seq 1 40); do
-    result=$(
-        python3 - "$repo_dir" <<'PY'
+    for attempt in $(seq 1 40); do
+        result=$(
+            python3 - "$repo_dir" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -287,25 +311,36 @@ else:
     except Exception as exc:
         print(f"error:{exc}")
 PY
-    )
+        )
 
-    echo "Summary status: $result"
+        echo "Summary status: $result"
 
-    if [ "$result" = "current" ]; then
-        summary_current=true
-        break
+        if [ "$result" = "current" ]; then
+            summary_current=true
+            break
+        fi
+
+        sleep 15
+    done
+
+    if [ "$summary_current" != true ]; then
+        echo "Error: summary.json did not become current." >&2
+        finish 1
     fi
-
-    sleep 15
-done
-
-if [ "$summary_current" != true ]; then
-    echo "Error: summary.json did not become current." >&2
-    finish 1
 fi
 
 echo
 echo "=== Prepare archive outputs while Xronos remains online ==="
+
+prepare_args=(
+  --course "$course_name"
+  --before "$before_date"
+  --prepare
+)
+
+if [ "$recover_zero_gaps" = true ]; then
+    prepare_args+=(--recover-zero-gaps)
+fi
 
 podman run --rm \
   --entrypoint sh \
@@ -320,10 +355,7 @@ podman run --rm \
     set +a
 
     exec node scripts/archive-old-lrs.js "$@"
-  ' sh \
-  --course "$course_name" \
-  --before "$before_date" \
-  --prepare
+  ' sh "${prepare_args[@]}"
 
 if [ "$?" -ne 0 ]; then
     finish 1
@@ -348,20 +380,47 @@ echo
 echo "Preparation directory:"
 echo "  $run_dir"
 
-cp -p \
-  "$repo_dir/summary.json" \
-  "$run_dir/summary.full-lrs.json"
+summary_snapshot_present=false
+answer_summary_snapshot_present=false
 
-cp -p \
-  "$repo_dir/answer-attempt-summary.json" \
-  "$run_dir/answer-attempt-summary.full-lrs.json"
+if [ -f "$repo_dir/summary.json" ]; then
+    cp -p \
+      "$repo_dir/summary.json" \
+      "$run_dir/summary.full-lrs.json"
 
-sha256sum \
-  "$run_dir/summary.full-lrs.json" \
-  "$run_dir/answer-attempt-summary.full-lrs.json" \
-  > "$run_dir/summaries.sha256"
+    summary_snapshot_present=true
+fi
 
-python3 - "$run_dir" "$repo_dir" <<'PY'
+if [ -f "$repo_dir/answer-attempt-summary.json" ]; then
+    cp -p \
+      "$repo_dir/answer-attempt-summary.json" \
+      "$run_dir/answer-attempt-summary.full-lrs.json"
+
+    answer_summary_snapshot_present=true
+fi
+
+: > "$run_dir/summaries.sha256"
+
+if [ "$summary_snapshot_present" = true ]; then
+    (
+        cd "$run_dir" &&
+        sha256sum summary.full-lrs.json
+    ) >> "$run_dir/summaries.sha256"
+fi
+
+if [ "$answer_summary_snapshot_present" = true ]; then
+    (
+        cd "$run_dir" &&
+        sha256sum answer-attempt-summary.full-lrs.json
+    ) >> "$run_dir/summaries.sha256"
+fi
+
+python3 - \
+  "$run_dir" \
+  "$repo_dir" \
+  "$skip_full_answer_summary" \
+  "$summary_snapshot_present" \
+  "$answer_summary_snapshot_present" <<'PY'
 import json
 import sys
 from datetime import datetime, timezone
@@ -369,37 +428,98 @@ from pathlib import Path
 
 run_dir = Path(sys.argv[1])
 repo_dir = Path(sys.argv[2])
+skip_full = sys.argv[3] == "true"
+basic_present = sys.argv[4] == "true"
+answer_present = sys.argv[5] == "true"
 
 manifest_file = run_dir / "manifest.json"
 manifest = json.loads(manifest_file.read_text())
 
-summary = json.loads(
-    (run_dir / "summary.full-lrs.json").read_text()
-)
+lrs = repo_dir / "learning-record-store"
+observed_lrs_size = lrs.stat().st_size
 
-observed_lrs_size = (
-    repo_dir / "learning-record-store"
-).stat().st_size
-
-manifest["summarySnapshots"] = {
+snapshots = {
     "capturedAt": datetime.now(timezone.utc).isoformat(),
-    "basicSummary": {
-        "filename": "summary.full-lrs.json",
-        "position": summary.get("position"),
-        "exactThroughByte": summary.get("position")
-    },
-    "answerAttemptSummary": {
-        "filename": "answer-attempt-summary.full-lrs.json",
+    "fullRebuildSkipped": skip_full,
+}
+
+if basic_present:
+    summary_file = run_dir / "summary.full-lrs.json"
+    summary = json.loads(summary_file.read_text())
+    position = summary.get("position")
+
+    snapshots["basicSummary"] = {
+        "status": (
+            "current"
+            if position == observed_lrs_size
+            else "incomplete"
+        ),
+        "filename": summary_file.name,
+        "position": position,
+        "exactThroughByte": position,
         "lrsSizeObservedWhenCopied": observed_lrs_size,
         "coverageNote": (
-            "The builder has no stored byte position. This value records "
-            "the live LRS size observed when the completed summary file "
-            "was copied. Statements appended after its build may not be "
-            "represented in this historical snapshot; they remain in the "
-            "retained active LRS and rebuilt operational summary."
-        )
+            "This summary was copied without forcing a rebuild. "
+            "Its position records the exact byte through which it "
+            "is valid."
+            if skip_full
+            else
+            "This summary was required to be current before copying."
+        ),
     }
-}
+else:
+    snapshots["basicSummary"] = {
+        "status": "missing",
+        "filename": None,
+        "coverageNote": (
+            "No summary.json existed when the archive package "
+            "was prepared."
+        ),
+    }
+
+if answer_present:
+    answer_file = (
+        run_dir / "answer-attempt-summary.full-lrs.json"
+    )
+
+    snapshots["answerAttemptSummary"] = {
+        "status": (
+            "preserved-existing"
+            if skip_full
+            else "rebuilt"
+        ),
+        "filename": answer_file.name,
+        "lrsSizeObservedWhenCopied": observed_lrs_size,
+        "coverageNote": (
+            "The existing answer-attempt summary was preserved "
+            "without forcing a full rebuild. This format has no "
+            "stored byte position, so exact historical coverage "
+            "cannot be asserted."
+            if skip_full
+            else
+            "The answer-attempt summary was rebuilt immediately "
+            "before preparation. This format has no stored byte "
+            "position."
+        ),
+    }
+else:
+    snapshots["answerAttemptSummary"] = {
+        "status": "missing",
+        "filename": None,
+        "lrsSizeObservedWhenCopied": observed_lrs_size,
+        "coverageNote": (
+            "No answer-attempt-summary.json existed, and the "
+            "full rebuild was explicitly skipped because the "
+            "repository exceeded the current builder's practical "
+            "memory capacity."
+            if skip_full
+            else
+            "No answer-attempt-summary.json existed after the "
+            "requested full rebuild."
+        ),
+    }
+
+manifest["summarySnapshots"] = snapshots
 
 manifest_file.write_text(
     json.dumps(manifest, indent=2) + "\n"
@@ -409,7 +529,13 @@ PY
 (
     cd "$run_dir" &&
     sha256sum -c checksums.sha256 &&
-    sha256sum -c summaries.sha256
+    {
+        if [ -s summaries.sha256 ]; then
+            sha256sum -c summaries.sha256
+        else
+            echo "No summary snapshot files were present."
+        fi
+    }
 )
 
 if [ "$?" -ne 0 ]; then
@@ -511,8 +637,11 @@ esac
 
 echo
 echo "=== Rebuild retained-window answer-attempt summary ==="
+echo "Node heap limit: 4096 MiB"
 
-podman exec -i "$CONTAINER_NAME" sh -lc '
+podman exec -i \
+  -e NODE_OPTIONS=--max-old-space-size=4096 \
+  "$CONTAINER_NAME" sh -lc '
   cd /usr/var/server
 
   set -a

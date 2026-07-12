@@ -15,6 +15,7 @@ years="2"
 execute_mode=false
 prepare_mode=false
 recover_zero_gaps=false
+recover_corrupt_regions=false
 skip_full_answer_summary=false
 
 args=("$@")
@@ -44,6 +45,9 @@ for ((i=0; i<${#args[@]}; i++)); do
             ;;
         --recover-zero-gaps)
             recover_zero_gaps=true
+            ;;
+        --recover-corrupt-regions)
+            recover_corrupt_regions=true
             ;;
         --skip-full-answer-summary)
             skip_full_answer_summary=true
@@ -101,6 +105,12 @@ print_reminder() {
     echo "      Recover validated zero gaps and skip an oversized"
     echo "      all-time answer-summary rebuild."
     echo
+    echo
+    echo "  ./archiveOldLRS.sh --course mac2312manly \\"
+    echo "      --before 2024-07-12 --recover-corrupt-regions \\"
+    echo "      --prepare"
+    echo "      Recover a bounded malformed-frame region during preparation."
+    echo
     echo "  ./archiveOldLRS.sh --help"
     echo "============================================================"
 }
@@ -128,6 +138,116 @@ fi
 
 if [ "$execute_mode" != true ]; then
     if [ "$prepare_mode" = true ]; then
+        if [ -z "$course_name" ]; then
+            echo "Error: --course is required for --prepare." >&2
+            finish 1
+        fi
+
+        prepare_course="${course_name%.git}"
+
+        if [[ ! "$prepare_course" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "Error: invalid repository name." >&2
+            finish 1
+        fi
+
+        prepare_repo_dir="$SERVER_DIR/repositories/$prepare_course.git"
+
+        if [ ! -d "$prepare_repo_dir" ]; then
+            echo "Error: repository directory does not exist:" >&2
+            echo "  $prepare_repo_dir" >&2
+            finish 1
+        fi
+
+        if [ "$skip_full_answer_summary" = true ]; then
+            echo "=== Preserve existing incremental summary snapshot ==="
+            echo "Targeted summary update skipped by explicit request."
+        else
+            echo "=== Update incremental summary for selected repository ==="
+
+            podman exec -i \
+              -e XIMERA_SUMMARY_NO_SCHEDULER=true \
+              "$CONTAINER_NAME" sh -lc '
+              cd /usr/var/server
+
+              set -a
+              . /usr/var/server/repositories/.env
+              set +a
+
+              repository_name="$1.git"
+
+              node - "$repository_name" <<'"'"'NODE'"'"'
+var summarizer = require("./summarize/summarize");
+var repositoryName = process.argv[2];
+
+summarizer.summarizeRepository(
+    repositoryName,
+    function(error, summary) {
+        if (error) {
+            console.error(error);
+            process.exit(1);
+        }
+
+        console.log(
+            JSON.stringify(
+                {
+                    repository: repositoryName,
+                    position: summary.position
+                },
+                null,
+                2
+            )
+        );
+
+        process.exit(0);
+    }
+);
+NODE
+            ' sh "$prepare_course"
+
+            if [ "$?" -ne 0 ]; then
+                finish 1
+            fi
+
+            prepare_summary_status=$(
+                python3 - "$prepare_repo_dir" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+repo = Path(sys.argv[1])
+lrs = repo / "learning-record-store"
+summary_file = repo / "summary.json"
+
+if not summary_file.exists():
+    print("missing")
+    raise SystemExit(1)
+
+summary = json.loads(summary_file.read_text())
+position = summary.get("position")
+size = lrs.stat().st_size
+
+if not isinstance(position, int):
+    print(f"invalid-position:{position!r}")
+    raise SystemExit(1)
+
+if position < 0 or position > size:
+    print(f"out-of-range:{position}:{size}")
+    raise SystemExit(1)
+
+print(f"valid:{position}:{size}")
+PY
+            ) || {
+                echo "Error: incremental summary validation failed." >&2
+                echo "Summary status: ${prepare_summary_status:-unknown}" >&2
+                finish 1
+            }
+
+            echo "Summary status: $prepare_summary_status"
+        fi
+
+        echo
+        echo "=== Prepare archive outputs while Xronos remains online ==="
+
         podman run --rm \
           --entrypoint sh \
           -v "$SERVER_DIR:/usr/var/server" \
@@ -282,51 +402,93 @@ if [ "$skip_full_answer_summary" = true ]; then
     echo "=== Preserve existing incremental summary as incomplete snapshot ==="
     echo "Current summary.json will be archived with its recorded byte position."
 else
-    echo "=== Wait for incremental summary to become current ==="
+    echo "=== Update incremental summary for selected repository ==="
 
-    summary_current=false
+    podman exec -i \
+      -e XIMERA_SUMMARY_NO_SCHEDULER=true \
+      "$CONTAINER_NAME" sh -lc '
+      cd /usr/var/server
 
-    for attempt in $(seq 1 40); do
-        result=$(
-            python3 - "$repo_dir" <<'PY'
+      set -a
+      . /usr/var/server/repositories/.env
+      set +a
+
+      repository_name="$1.git"
+
+      node - "$repository_name" <<'"'"'NODE'"'"'
+var summarizer = require("./summarize/summarize");
+var repositoryName = process.argv[2];
+
+summarizer.summarizeRepository(
+    repositoryName,
+    function(error, summary) {
+        if (error) {
+            console.error(error);
+            process.exit(1);
+        }
+
+        console.log(
+            JSON.stringify(
+                {
+                    repository: repositoryName,
+                    position: summary.position
+                },
+                null,
+                2
+            )
+        );
+
+        process.exit(0);
+    }
+);
+NODE
+    ' sh "$course_name"
+
+    if [ "$?" -ne 0 ]; then
+        finish 1
+    fi
+
+    summary_status=$(
+        python3 - "$repo_dir" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 repo = Path(sys.argv[1])
 lrs = repo / "learning-record-store"
-summary = repo / "summary.json"
+summary_file = repo / "summary.json"
 
-if not summary.exists():
+if not summary_file.exists():
     print("missing")
-else:
-    try:
-        data = json.loads(summary.read_text())
-        if data.get("position") == lrs.stat().st_size:
-            print("current")
-        else:
-            print(
-                f"behind:{data.get('position')}:{lrs.stat().st_size}"
-            )
-    except Exception as exc:
-        print(f"error:{exc}")
+    raise SystemExit(1)
+
+try:
+    summary = json.loads(summary_file.read_text())
+    position = summary.get("position")
+    size = lrs.stat().st_size
+
+    if not isinstance(position, int):
+        print(f"invalid-position:{position!r}")
+        raise SystemExit(1)
+
+    if position < 0 or position > size:
+        print(f"out-of-range:{position}:{size}")
+        raise SystemExit(1)
+
+    print(f"valid:{position}:{size}")
+except Exception as exc:
+    print(f"error:{exc}")
+    raise SystemExit(1)
 PY
-        )
-
-        echo "Summary status: $result"
-
-        if [ "$result" = "current" ]; then
-            summary_current=true
-            break
-        fi
-
-        sleep 15
-    done
-
-    if [ "$summary_current" != true ]; then
-        echo "Error: summary.json did not become current." >&2
+    ) || {
+        echo "Error: incremental summary validation failed." >&2
+        echo "Summary status: ${summary_status:-unknown}" >&2
         finish 1
-    fi
+    }
+
+    echo "Summary status: $summary_status"
+    echo "The recorded position is an exact completed-frame coverage boundary."
+    echo "Later LRS bytes will remain outside this archived summary snapshot."
 fi
 
 echo
@@ -340,6 +502,10 @@ prepare_args=(
 
 if [ "$recover_zero_gaps" = true ]; then
     prepare_args+=(--recover-zero-gaps)
+fi
+
+if [ "$recover_corrupt_regions" = true ]; then
+    prepare_args+=(--recover-corrupt-regions)
 fi
 
 podman run --rm \
@@ -671,51 +837,91 @@ if [ "$?" -ne 0 ]; then
 fi
 
 echo
-echo "=== Wait for retained-window summary.json ==="
+echo "=== Update retained-window summary.json ==="
 
-summary_current=false
+podman exec -i \
+  -e XIMERA_SUMMARY_NO_SCHEDULER=true \
+  "$CONTAINER_NAME" sh -lc '
+  cd /usr/var/server
 
-for attempt in $(seq 1 60); do
-    result=$(
-        python3 - "$repo_dir" <<'PY'
+  set -a
+  . /usr/var/server/repositories/.env
+  set +a
+
+  repository_name="$1.git"
+
+  node - "$repository_name" <<'"'"'NODE'"'"'
+var summarizer = require("./summarize/summarize");
+var repositoryName = process.argv[2];
+
+summarizer.summarizeRepository(
+    repositoryName,
+    function(error, summary) {
+        if (error) {
+            console.error(error);
+            process.exit(1);
+        }
+
+        console.log(
+            JSON.stringify(
+                {
+                    repository: repositoryName,
+                    position: summary.position
+                },
+                null,
+                2
+            )
+        );
+
+        process.exit(0);
+    }
+);
+NODE
+' sh "$course_name"
+
+if [ "$?" -ne 0 ]; then
+    finish 1
+fi
+
+retained_summary_status=$(
+    python3 - "$repo_dir" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 repo = Path(sys.argv[1])
 lrs = repo / "learning-record-store"
-summary = repo / "summary.json"
+summary_file = repo / "summary.json"
 
-if not summary.exists():
+if not summary_file.exists():
     print("missing")
-else:
-    try:
-        data = json.loads(summary.read_text())
-        if data.get("position") == lrs.stat().st_size:
-            print("current")
-        else:
-            print(
-                f"behind:{data.get('position')}:{lrs.stat().st_size}"
-            )
-    except Exception as exc:
-        print(f"error:{exc}")
+    raise SystemExit(1)
+
+try:
+    summary = json.loads(summary_file.read_text())
+    position = summary.get("position")
+    size = lrs.stat().st_size
+
+    if not isinstance(position, int):
+        print(f"invalid-position:{position!r}")
+        raise SystemExit(1)
+
+    if position < 0 or position > size:
+        print(f"out-of-range:{position}:{size}")
+        raise SystemExit(1)
+
+    print(f"valid:{position}:{size}")
+except Exception as exc:
+    print(f"error:{exc}")
+    raise SystemExit(1)
 PY
-    )
-
-    echo "Summary status: $result"
-
-    if [ "$result" = "current" ]; then
-        summary_current=true
-        break
-    fi
-
-    sleep 15
-done
-
-if [ "$summary_current" != true ]; then
-    echo "Error: retained-window summary did not become current." >&2
+) || {
+    echo "Error: retained-window summary validation failed." >&2
+    echo "Summary status: ${retained_summary_status:-unknown}" >&2
     finish 1
-fi
+}
+
+echo "Retained summary status: $retained_summary_status"
 
 recovery_verification_failed() {
     local reason="$1"

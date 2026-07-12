@@ -23,9 +23,9 @@ function processLearningRecords( filename, position, loop, callback ) {
 				var kind = headerBuffer.readUInt8(0);		
 				var length = lengthBuffer.readUInt24LE(1);
 				var buffer = Buffer.alloc(length);
+				var nextPosition = position + 4 + length;
 				
 				fs.read( fd, buffer, 0, length, position + 4, function(err, bytesRead, buffer) {
-				    position = position + 4 + length;
 				    if (err) {
 					next(err);
 				    } else {
@@ -33,6 +33,7 @@ function processLearningRecords( filename, position, loop, callback ) {
 					    next('end of file');
 					} else {
 					    if (kind != 0) {
+						position = nextPosition;
 						next(null);
 					    } else {
 						snappy.uncompress(buffer.slice(4), { asBuffer: false }, function (err, original) {
@@ -45,9 +46,19 @@ function processLearningRecords( filename, position, loop, callback ) {
 							if (maskedChecksum != recordedChecksum) {
 							    next('incorrect checksum');
 							} else {
-							    // should also send file offset
-							    loop( JSON.parse(original),
-								  next );
+							    var entry;
+							    try {
+								entry = JSON.parse(original);
+							    } catch (parseError) {
+								next(parseError);
+								return;
+							    }
+							    loop(entry, function(loopError) {
+								if (!loopError) {
+								    position = nextPosition;
+								}
+								next(loopError);
+							    });
 							}
 						    }
 						});

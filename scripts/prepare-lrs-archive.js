@@ -418,6 +418,107 @@ async function recoverZeroGap(
     return null;
 }
 
+
+async function recoverCorruptRegion(
+    fd,
+    position,
+    fileLimit
+) {
+    var maximumSearchBytes = 64 * 1024 * 1024;
+    var searchBytes = Math.min(
+        maximumSearchBytes,
+        fileLimit - position
+    );
+
+    if (searchBytes < 9) {
+        return null;
+    }
+
+    var searchBuffer = Buffer.alloc(searchBytes);
+    var bytesRead = await readExactly(
+        fd,
+        searchBuffer,
+        0,
+        searchBytes,
+        position
+    );
+
+    if (bytesRead !== searchBytes) {
+        return null;
+    }
+
+    /*
+     * Begin at offset 1 so recovery cannot simply rediscover the
+     * malformed frame at the original position.
+     */
+    for (
+        var candidateOffset = 1;
+        candidateOffset + 4 <= searchBuffer.length;
+        candidateOffset += 1
+    ) {
+        if (searchBuffer[candidateOffset] !== 0x00) {
+            continue;
+        }
+
+        var length =
+            searchBuffer[candidateOffset + 1] |
+            (searchBuffer[candidateOffset + 2] << 8) |
+            (searchBuffer[candidateOffset + 3] << 16);
+
+        if (length < 5 || length > 1024 * 1024) {
+            continue;
+        }
+
+        var candidatePosition =
+            position + candidateOffset;
+
+        if (
+            candidatePosition + 4 + length >
+            fileLimit
+        ) {
+            continue;
+        }
+
+        /*
+         * Require three consecutive independently valid statements.
+         * This sharply reduces the chance that random bytes are
+         * mistaken for a legitimate Snappy frame boundary.
+         */
+        var validation =
+            await validateConsecutiveStatements(
+                fd,
+                candidatePosition,
+                fileLimit,
+                3
+            );
+
+        if (!validation) {
+            continue;
+        }
+
+        var corruptBytes = searchBuffer.slice(
+            0,
+            candidateOffset
+        );
+
+        return {
+            originalOffset: position,
+            resumePosition: candidatePosition,
+            length: corruptBytes.length,
+            sha256: sha256Buffer(corruptBytes),
+            validatedStatementCount:
+                validation.statements.length,
+            validatedThrough:
+                validation.validatedThrough,
+            followingStatements:
+                validation.statements,
+            rawBytes: corruptBytes
+        };
+    }
+
+    return null;
+}
+
 async function validateRetained(filename) {
     var fd = await openRead(filename);
     var stat = await statFile(filename);
@@ -604,6 +705,9 @@ async function prepare(options) {
         recoveredZeroGapBytes: 0,
         recoveredZeroGaps: [],
 
+        recoveredCorruptRegionBytes: 0,
+        recoveredCorruptRegions: [],
+
         allStoredRange: {
             oldest: null,
             newest: null
@@ -761,21 +865,118 @@ async function prepare(options) {
                 continue;
             }
 
-            var original = await uncompress(payload);
+            var original;
+            var statement;
+            var stored;
 
-            if (!verifyChecksum(payload, original)) {
-                throw new Error(
-                    "Checksum failure at source byte " + position
+            try {
+                original = await uncompress(payload);
+
+                if (!verifyChecksum(payload, original)) {
+                    throw new Error("checksum mismatch");
+                }
+
+                statement = JSON.parse(original);
+
+                if (
+                    !statement ||
+                    typeof statement !== "object" ||
+                    Array.isArray(statement)
+                ) {
+                    throw new Error(
+                        "decoded JSON is not a statement object"
+                    );
+                }
+
+                stored = new Date(statement.stored);
+
+                if (
+                    !statement.stored ||
+                    isNaN(stored.getTime())
+                ) {
+                    throw new Error("invalid stored date");
+                }
+            } catch (error) {
+                if (!options.recoverCorruptRegions) {
+                    throw new Error(
+                        "Malformed statement frame at source byte " +
+                        position +
+                        ": " +
+                        error.message
+                    );
+                }
+
+                var recoveredRegion =
+                    await recoverCorruptRegion(
+                        sourceFd,
+                        position,
+                        snapshotSize
+                    );
+
+                if (!recoveredRegion) {
+                    throw new Error(
+                        "Malformed statement frame at source byte " +
+                        position +
+                        " could not be safely resynchronized within " +
+                        "64 MiB: " +
+                        error.message
+                    );
+                }
+
+                /*
+                 * Preserve the malformed source bytes verbatim in the
+                 * historical archive. Deliberately omit them from the
+                 * clean retained operational LRS.
+                 */
+                await writeBuffer(
+                    gzip,
+                    recoveredRegion.rawBytes
                 );
-            }
 
-            var statement = JSON.parse(original);
-            var stored = new Date(statement.stored);
+                result.archiveNativeBytes +=
+                    recoveredRegion.length;
 
-            if (!statement.stored || isNaN(stored.getTime())) {
-                throw new Error(
-                    "Invalid stored date at source byte " + position
+                result.recoveredCorruptRegionBytes +=
+                    recoveredRegion.length;
+
+                result.recoveredCorruptRegions.push({
+                    originalOffset:
+                        recoveredRegion.originalOffset,
+                    resumePosition:
+                        recoveredRegion.resumePosition,
+                    length:
+                        recoveredRegion.length,
+                    sha256:
+                        recoveredRegion.sha256,
+                    validatedStatementCount:
+                        recoveredRegion.validatedStatementCount,
+                    validatedThrough:
+                        recoveredRegion.validatedThrough,
+                    followingStatements:
+                        recoveredRegion.followingStatements,
+                    originalError:
+                        error.message,
+                    disposition:
+                        "Preserved verbatim in historical archive; " +
+                        "omitted from retained active LRS."
+                });
+
+                console.log(
+                    "Recovered malformed LRS region at source byte " +
+                    recoveredRegion.originalOffset +
+                    "; length=" +
+                    recoveredRegion.length.toLocaleString() +
+                    "; resumed at=" +
+                    recoveredRegion.resumePosition +
+                    "; validated next " +
+                    recoveredRegion.validatedStatementCount +
+                    " statements."
                 );
+
+                position =
+                    recoveredRegion.resumePosition;
+
+                continue;
             }
 
             result.totalStatements += 1;
@@ -925,6 +1126,34 @@ async function prepare(options) {
             gap.sha256
         );
     });
+
+    console.log(
+        "Recovered malformed regions: " +
+        result.recoveredCorruptRegions.length.toLocaleString()
+    );
+    console.log(
+        "Recovered malformed bytes: " +
+        result.recoveredCorruptRegionBytes.toLocaleString()
+    );
+
+    result.recoveredCorruptRegions.forEach(
+        function(region, index) {
+            console.log(
+                "  Region " +
+                (index + 1) +
+                ": offset=" +
+                region.originalOffset +
+                ", length=" +
+                region.length +
+                ", resume=" +
+                region.resumePosition +
+                ", error=" +
+                region.originalError +
+                ", SHA-256=" +
+                region.sha256
+            );
+        }
+    );
 
     console.log("");
     console.log("NO ACTIVE LRS FILE WAS CHANGED.");

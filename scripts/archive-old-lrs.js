@@ -30,7 +30,9 @@ function usage() {
         "  --execute                 Perform archival and pruning.",
         "                            Currently safety-locked pending preparation review.",
         "  --recover-zero-gaps       Recover narrowly validated zero-filled gaps.",
-        "                            Dry-run support is enabled first for review.",
+        "  --recover-corrupt-regions Recover malformed statement-frame regions.",
+        "                            Searches at most 64 MiB and requires three",
+        "                            consecutive valid statements before resuming.",
         "  --help                    Show this help.",
         "",
         "Examples:",
@@ -88,6 +90,7 @@ function parseArguments(argv) {
         execute: false,
         prepare: false,
         recoverZeroGaps: false,
+        recoverCorruptRegions: false,
         archiveRoot: "/lrs-archives"
     };
 
@@ -140,6 +143,10 @@ function parseArguments(argv) {
             options.execute = true;
         } else if (argument === "--recover-zero-gaps") {
             options.recoverZeroGaps = true;
+        } else if (
+            argument === "--recover-corrupt-regions"
+        ) {
+            options.recoverCorruptRegions = true;
         } else if (argument === "--help" || argument === "-h") {
             usage();
             process.exit(0);
@@ -998,7 +1005,9 @@ async function main() {
             archiveRoot: options.archiveRoot,
             directory: repository.directory,
             lrsFilename: repository.lrsFilename,
-            recoverZeroGaps: options.recoverZeroGaps
+            recoverZeroGaps: options.recoverZeroGaps,
+            recoverCorruptRegions:
+                options.recoverCorruptRegions
         });
 
         return;

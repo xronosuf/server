@@ -1,0 +1,106 @@
+# Repository activity classifications for findDormantRepositories.sh
+#
+# Format:
+#   REPOSITORY LABEL
+#
+# Labels:
+#   A  Known or strongly presumed active course repository
+#   D  Known dormant/dead repository
+#   K  Keep regardless of ordinary student-activity evidence
+#   U  Unknown; evaluate manually using the generated census
+#
+# This file is administrative evidence, not an automatic deletion list.
+# The dormant-repository census is read-only and never moves or deletes repos.
+
+carmichaelsandbox A
+mac1105summer2019 D
+mac1140ufobackup K
+mac2233ufobackup K
+mac2312test K
+culinarypractice D
+mac1105summer2020 D
+mac1140ufoexamreview A
+mac2233ufo K
+mac2313alt1 A
+demoexamples K
+mac1105summerbaim D
+mac1140ufo K
+mac2234 A
+mac2313 A
+examples K
+mac1114examreview A
+mac1140universalproperties A
+mac2234test K
+mac2313huang A
+gittester D
+mac1114jacobs D
+mac1147 D
+mac2311chamberlainfall2019 D
+mac2313onlinehuang A
+learningsageforxronos D
+mac1114kriehn D
+mac1147test K
+mac2311fall2018keeran D
+mac2313testalt1 K
+maa4102 K
+mac1114ufo A
+mac2233applicationsofderivatives A
+mac2311 K
+mac2313test K
+surveyone D
+mac1105fall2018 D
+mac1140exerciselists K
+mac2233derivatives D
+mac2311keeran A
+mac2313ufo A
+surveyoneufo D
+mac1105fall2019aim D
+mac1140exploreone A
+mac2233examreviews A
+mac2311streese D
+map2302fall2018ufonline D
+testingrepo D
+mac1105fall2019 A
+mac1140exploretwo A
+mac2233fulltext K
+mac2311text D
+map2302 K
+ufmac1105 A
+mac1105fall2020 D
+mac1140fulltext K
+mac2233 K
+mac2311updated K
+masterxronosactivities D
+ufmac2311phpb D
+mac1105 D
+mac1140 K
+mac2233integration A
+mac2312adams A
+refcourse K
+validatorexamples K
+mac1105limitsspring2019 D
+mac1140michele D
+mac2233limits A
+mac2312alt D
+samplecourse K
+xronosseminar K
+mac1105modelingspring2019 D
+mac1140nowell K
+mac2233michele D
+mac2312fall2018 D
+settingupxourses D
+xronostext D
+mac1105spring2019 A
+mac1140practiceonly A
+mac2233optionalcontent K
+mac2312 A
+xronostutorial K
+mac1105spring2019modeling D
+mac1140test K
+mac2233test K
+mac2312manly A
+zacktestone D
+mac1105spring2020 D
+mac1140testjason D
+mac2233theoryofderivatives A
+mac2312summerc2018 D

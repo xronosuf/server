@@ -636,57 +636,59 @@ img.xourselogo {
  * base.css, so these layout constraints need to win against later legacy or
  * author-side rules.
  */
-html:has(.wrapper .main-inhoud > .toc),
-body:has(.wrapper .main-inhoud > .toc) {
-  height: 100% !important;
-  overflow: hidden !important;
-}
+@media all and (min-width: 1026px) {
+  html:has(.wrapper .main-inhoud > .toc),
+  body:has(.wrapper .main-inhoud > .toc) {
+    height: 100% !important;
+    overflow: hidden !important;
+  }
 
-.wrapper:has(.main-inhoud > .toc) {
-  height: 100vh !important;
-  min-height: 0 !important;
-  grid-template-rows: auto minmax(0, 1fr) !important;
-  overflow: hidden !important;
-}
+  .wrapper:has(.main-inhoud > .toc) {
+    height: 100vh !important;
+    min-height: 0 !important;
+    grid-template-rows: auto minmax(0, 1fr) !important;
+    overflow: hidden !important;
+  }
 
-.wrapper:has(.main-inhoud > .toc) .main-inhoud {
-  height: auto !important;
-  min-height: 0 !important;
-  overflow: hidden !important;
-  grid-template-rows: auto minmax(0, 1fr) !important;
-  grid-template-columns: 480px minmax(0, 1fr) !important;
-}
+  .wrapper:has(.main-inhoud > .toc) .main-inhoud {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+    grid-template-rows: auto minmax(0, 1fr) !important;
+    grid-template-columns: 480px minmax(0, 1fr) !important;
+  }
 
-.wrapper:has(.main-inhoud > .toc) .toc {
-  height: 100% !important;
-  min-height: 0 !important;
-  max-height: none !important;
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-  resize: none !important;
-}
+  .wrapper:has(.main-inhoud > .toc) .toc {
+    height: 100% !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    resize: none !important;
+  }
 
-.wrapper:has(.main-inhoud > .toc) .activity {
-  align-self: stretch !important;
-  justify-self: stretch !important;
-  width: 100% !important;
-  max-width: none !important;
-  height: 100% !important;
-  min-height: 0 !important;
-  max-height: none !important;
-  overflow-y: auto !important;
-  overflow-x: hidden !important;
-  box-sizing: border-box !important;
-}
+  .wrapper:has(.main-inhoud > .toc) .activity {
+    align-self: stretch !important;
+    justify-self: stretch !important;
+    width: 100% !important;
+    max-width: none !important;
+    height: 100% !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow-y: auto !important;
+    overflow-x: hidden !important;
+    box-sizing: border-box !important;
+  }
 
-.wrapper:has(.main-inhoud > .toc) .activity .main-activity {
-  width: 100% !important;
-  max-width: none !important;
-  height: auto !important;
-  min-height: 0 !important;
-  max-height: none !important;
-  overflow: visible !important;
-  box-sizing: border-box !important;
+  .wrapper:has(.main-inhoud > .toc) .activity .main-activity {
+    width: 100% !important;
+    max-width: none !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    box-sizing: border-box !important;
+  }
 }
 
 /*
@@ -1603,27 +1605,61 @@ span#prev-activity-label {
   max-width: 100% !important;
 }
 
-.main-title.xronos-contained-topbar-ready + .main-inhoud {
-  display: grid;
-  grid-template-columns: 480px minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr);
-  column-gap: 0;
-  row-gap: 0;
-  min-height: 0;
+@media all and (min-width: 1026px) {
+  .main-title.xronos-contained-topbar-ready + .main-inhoud {
+    display: grid;
+    grid-template-columns: 480px minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    column-gap: 0;
+    row-gap: 0;
+    min-height: 0;
+  }
+
+  .main-title.xronos-contained-topbar-ready + .main-inhoud > .toc {
+    grid-column: 1;
+    grid-row: 1;
+    align-self: stretch;
+    min-width: 0;
+  }
+
+  .main-title.xronos-contained-topbar-ready + .main-inhoud > .main-activity {
+    grid-column: 2;
+    grid-row: 1;
+    align-self: stretch;
+    min-width: 0;
+  }
 }
 
-.main-title.xronos-contained-topbar-ready + .main-inhoud > .toc {
-  grid-column: 1;
-  grid-row: 1;
-  align-self: stretch;
-  min-width: 0;
-}
+@media all and (max-width: 1025px) {
+  .main-title.xronos-contained-topbar-ready + .main-inhoud {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) !important;
+    grid-template-rows: auto auto !important;
+    column-gap: 0;
+    row-gap: 0;
+    min-height: 0;
+    height: auto !important;
+    overflow: visible !important;
+  }
 
-.main-title.xronos-contained-topbar-ready + .main-inhoud > .main-activity {
-  grid-column: 2;
-  grid-row: 1;
-  align-self: stretch;
-  min-width: 0;
+  .main-title.xronos-contained-topbar-ready + .main-inhoud > .main-activity {
+    grid-column: 1 !important;
+    grid-row: 1 !important;
+    align-self: stretch;
+    min-width: 0;
+    width: 100% !important;
+  }
+
+  .main-title.xronos-contained-topbar-ready + .main-inhoud > .toc {
+    grid-column: 1 !important;
+    grid-row: 2 !important;
+    align-self: stretch;
+    min-width: 0;
+    width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+  }
 }
 
 /* === /Xronos contained activity topbar layout === */

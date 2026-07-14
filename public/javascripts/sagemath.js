@@ -264,41 +264,55 @@ pieces.push(sageSilentCode);
     return pieces.join("\n\n");
 };
 
+var runVisibleSageOutput = function(output, code) {
+    output.empty();
+    output.addClass("sagecell-computing");
+
+    exports.sage(code).then(
+        function(result) {
+            output.removeClass("sagecell-computing");
+            output.text(result);
+            reprocessMathjax();
+        },
+        function(err) {
+            output.removeClass("sagecell-computing");
+            output.empty();
+            output.append(
+                buildSageErrorElement(
+                    err,
+                    function() {
+                        runVisibleSageOutput(output, code);
+                    }
+                )
+            );
+            console.log("sageOutput error=", err);
+        }
+    );
+};
+
 var processVisibleSageOutputs = function(force) {
     if (visibleSageOutputsStarted && !force) {
-return;
+        return;
     }
 
     visibleSageOutputsStarted = true;
 
     $(".sageOutput").each(function() {
-var output = $(this);
+        var output = $(this);
 
-var code = output.data("xronos-sage-code");
-if (code === undefined) {
-    code = output.text();
-    output.data("xronos-sage-code", code);
-}
+        var code = output.data("xronos-sage-code");
+        if (code === undefined) {
+            code = output.text();
+            output.data("xronos-sage-code", code);
+        }
 
-code = stripCDATA(code);
+        code = stripCDATA(code);
 
-if ($.trim(code).length == 0) {
-    return;
-}
+        if ($.trim(code).length == 0) {
+            return;
+        }
 
-output.addClass("sagecell-computing");
-
-exports.sage(code).then(
-    function(result) {
-output.removeClass("sagecell-computing");
-output.text(result);
-reprocessMathjax();
-    },
-    function(err) {
-output.removeClass("sagecell-computing");
-console.log("sageOutput error=", err);
-    }
-);
+        runVisibleSageOutput(output, code);
     });
 };
 
@@ -409,6 +423,154 @@ function isExpiredSageCellAuthorizationError(err) {
         parsed.evalue === "expired SageCell page authorization";
 }
 
+
+function sageErrorHttpStatus(err) {
+    var parsed = parseSageCellError(err);
+
+    if (err && typeof err.httpStatus === "number") {
+        return err.httpStatus;
+    }
+
+    if (parsed && typeof parsed.httpStatus === "number") {
+        return parsed.httpStatus;
+    }
+
+    return 0;
+}
+
+function describeSageError(err) {
+    var parsed = parseSageCellError(err) || err || {};
+    var ename = parsed.ename || (err && err.ename) || "";
+    var ajaxStatus =
+        err && typeof err.status === "string"
+            ? err.status
+            : "";
+    var httpStatus = sageErrorHttpStatus(err);
+    var transientHttpStatuses = {
+        408: true,
+        429: true,
+        500: true,
+        502: true,
+        503: true,
+        504: true
+    };
+
+    if (
+        ename === "XronosSageCellAuthorizationError" ||
+        ename === "XronosSageCellAuthorizationRefreshError" ||
+        httpStatus === 401 ||
+        httpStatus === 403
+    ) {
+        return {
+            category: "authorization",
+            retryable: true,
+            message:
+                "The computation session could not be refreshed. " +
+                "Reload the page or try the computation again."
+        };
+    }
+
+    if (
+        ajaxStatus === "timeout" ||
+        ajaxStatus === "abort" ||
+        (ajaxStatus === "error" && httpStatus === 0) ||
+        transientHttpStatuses[httpStatus]
+    ) {
+        return {
+            category: "transient",
+            retryable: true,
+            message:
+                "The computation service could not be reached. " +
+                "Check your connection and try again."
+        };
+    }
+
+    if (
+        ename === "SageBatchParseError" ||
+        ename === "SageBatchMissingResult" ||
+        ename === "XronosSageDisplayError"
+    ) {
+        return {
+            category: "display",
+            retryable: false,
+            message:
+                "The computation completed, but the page could not " +
+                "display the result. Reload the page or report this activity."
+        };
+    }
+
+    if (
+        ename === "SageBatchExpressionError" ||
+        parsed.success === false
+    ) {
+        return {
+            category: "code",
+            retryable: false,
+            message:
+                "This activity's computation encountered an error. " +
+                "Retrying is unlikely to fix it. Please report this page " +
+                "to your instructor."
+        };
+    }
+
+    return {
+        category: "unexpected",
+        retryable: false,
+        message:
+            "The computation could not be displayed. Reload the page " +
+            "or report this activity."
+    };
+}
+
+function buildSageErrorElement(err, retry) {
+    var info = describeSageError(err);
+    var wrapper = document.createElement("span");
+    var message = document.createElement("span");
+
+    wrapper.className =
+        "xronos-sage-error " +
+        "xronos-sage-error-" +
+        info.category;
+    wrapper.setAttribute("role", "alert");
+    wrapper.setAttribute("aria-live", "polite");
+
+    message.className = "xronos-sage-error-message";
+    message.appendChild(
+        document.createTextNode(info.message)
+    );
+    wrapper.appendChild(message);
+
+    if (
+        info.retryable &&
+        typeof retry === "function"
+    ) {
+        var button = document.createElement("button");
+
+        button.type = "button";
+        button.className =
+            "btn btn-sm btn-secondary xronos-sage-retry";
+        button.appendChild(
+            document.createTextNode("Retry computation")
+        );
+
+        button.addEventListener(
+            "click",
+            function(event) {
+                event.preventDefault();
+                button.disabled = true;
+                retry();
+            }
+        );
+
+        wrapper.appendChild(button);
+    }
+
+    return wrapper;
+}
+
+exports.describeSageError = describeSageError;
+exports.buildSageErrorElement = buildSageErrorElement;
+
 function refreshSageCellPageAuthorization() {
     var xronosSagecellAuth = window.xronosSagecellAuth || {};
 
@@ -450,6 +612,7 @@ function refreshSageCellPageAuthorization() {
                 ename: "XronosSageCellAuthorizationRefreshError",
                 evalue: error || status,
                 status: status,
+                httpStatus: xhr.status,
                 responseText: xhr.responseText
             });
         });
@@ -495,6 +658,7 @@ function postSageRawOnce(requestCode) {
                 ename: "SageCellRequestError",
                 evalue: error || status,
                 status: status,
+                httpStatus: xhr.status,
                 responseText: xhr.responseText
             });
         });

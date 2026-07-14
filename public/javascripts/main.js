@@ -175,64 +175,563 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
 	    return this.sagestr(name, true);
 	},
 	
-	sagestr: function(name, latexify) {
-	    var code = this.GetArgument(name);
-	    
-	    if (latexify)
-		code = "latex(" + code + ")";
+    sagestr: function(name, latexify) {
+        var code = this.GetArgument(name);
 
-	    var spinner = HTML.Element("i", {className:"fa fa-spinner fa-spin"});
-	    var spinnerMml = MML["annotation-xml"](MML.xml(spinner)).With({encoding:"application/xhtml+xml",isToken:true});
-	    var placeholder = MML.none( MML.semantics(spinnerMml) );
-	    this.Push(placeholder);
+        if (latexify)
+            code = "latex(" + code + ")";
 
-	    var env = this.stack.env;
-	    var that = this;
+        var env = this.stack.env;
+        var placeholderId =
+            "xronos-sage-placeholder-" +
+            Date.now().toString(36) +
+            "-" +
+            Math.random().toString(36).slice(2);
 
-	    sagemath.sage(code).then( function(result) {
-		// The sagecell server returns quoted strings?  Let's
-		// unquote them in this unsafe way.
-		if (latexify != true)
-		    result = eval(result);
-		
-		MathJax.Hub.Queue( [function () {
-		    // We act as if we are "Translate"ing the TeX into
-		    // MML, so most of this is copied from MathJax's
-		    // input/TeX/jax.js
-		    var mml = TEX.Parse(result, env).mml();
+        var controller = {
+            groupState: null,
+            mathContainer: null,
+            originalDisplay: null
+        };
 
-		    // I have no idea what this does, but MathJax's
-		    // Translate command does it, and it doesn't work
-		    // without it.
-		    if (mml.inferred)
-			mml = MML.apply(MathJax.ElementJax,mml.data);
-		    else
-			mml = MML(mml);
+        var createSpinner = function() {
+            return HTML.Element(
+                "i",
+                {
+                    className: "fa fa-spinner fa-spin",
+                    title: "Computing"
+                }
+            );
+        };
 
-		    // Copy the newly Translate'd TeX over to the
-		    // placeholder "mnone" MathML element
-		    placeholder.data = mml.root.data;
+        var createPlaceholderElement = function() {
+            var element = HTML.Element(
+                "span",
+                {
+                    id: placeholderId,
+                    className: "xronos-sage-inline-placeholder"
+                }
+            );
 
-		    // We need to figure out our MathJax ID so we can
-		    // request a Rerender
-		    var parent = placeholder;
-		    while( parent.parent != undefined )
-			parent = parent.parent;
-		    
-		    if (parent.inputID)
-			MathJax.Hub.Queue(["Rerender", MathJax.Hub, parent.inputID]);
+            element.appendChild(createSpinner());
+            return element;
+        };
 
-		    return;
-		}]);
+        var placeholderElement = createPlaceholderElement();
+        var placeholderMml = MML["annotation-xml"](
+            MML.xml(placeholderElement)
+        ).With({
+            encoding: "application/xhtml+xml",
+            isToken: true
+        });
 
-	    }, function(err) {
-		console.log(err);
-		// BADBAD: Display the error
-	    });
-	    
-	    return;
-	},
-	
+        var placeholder = MML.none(
+            MML.semantics(placeholderMml)
+        );
+
+        this.Push(placeholder);
+
+        var rerenderPlaceholder = function() {
+            var parent = placeholder;
+
+            while (parent.parent != undefined)
+                parent = parent.parent;
+
+            if (parent.inputID) {
+                MathJax.Hub.Queue([
+                    "Rerender",
+                    MathJax.Hub,
+                    parent.inputID
+                ]);
+            }
+        };
+
+        var findPlaceholderElements = function() {
+            var nodes = document.querySelectorAll(
+                '[id="' + placeholderId + '"]'
+            );
+
+            return Array.prototype.slice.call(nodes);
+        };
+
+        var findVisiblePlaceholderElement = function() {
+            var elements = findPlaceholderElements();
+            var index;
+
+            for (index = 0; index < elements.length; index += 1) {
+                if (
+                    $(elements[index]).closest(
+                        ".MJX_Assistive_MathML"
+                    ).length === 0
+                ) {
+                    return elements[index];
+                }
+            }
+
+            return elements.length ? elements[0] : null;
+        };
+
+        var clearElement = function(element) {
+            while (element.firstChild)
+                element.removeChild(element.firstChild);
+        };
+
+        var findMathContainer = function(anchor) {
+            return (
+                $(anchor).closest(
+                    "span.MathJax, div.MathJax_Display"
+                )[0] ||
+                anchor.parentNode ||
+                anchor
+            );
+        };
+
+        var findProblemContainer = function(mathContainer) {
+            return (
+                $(mathContainer).closest(
+                    ".problem-environment"
+                )[0] ||
+                mathContainer.parentNode ||
+                document.body
+            );
+        };
+
+        var removeGroupPanel = function(state) {
+            if (
+                state.panel &&
+                state.panel.parentNode
+            ) {
+                state.panel.parentNode.removeChild(
+                    state.panel
+                );
+            }
+
+            state.panel = null;
+        };
+
+        var getGroupState = function(problemContainer) {
+            if (!problemContainer.xronosSageFailureGroup) {
+                problemContainer.xronosSageFailureGroup = {
+                    problemContainer: problemContainer,
+                    failures: {},
+                    panel: null
+                };
+            }
+
+            return problemContainer.xronosSageFailureGroup;
+        };
+
+        var groupFailureEntries = function(state) {
+            return Object.keys(state.failures).map(
+                function(key) {
+                    return state.failures[key];
+                }
+            );
+        };
+
+        var getPageFailureRegistry = function() {
+            if (
+                !window.xronosSageFailurePageRegistry
+            ) {
+                window.xronosSageFailurePageRegistry = [];
+            }
+
+            return window.xronosSageFailurePageRegistry;
+        };
+
+        var registerGroupState = function(state) {
+            var registry = getPageFailureRegistry();
+
+            if (registry.indexOf(state) === -1)
+                registry.push(state);
+        };
+
+        var unregisterGroupState = function(state) {
+            var registry = getPageFailureRegistry();
+            var index;
+
+            if (
+                Object.keys(state.failures).length !== 0
+            ) {
+                return;
+            }
+
+            index = registry.indexOf(state);
+
+            if (index !== -1)
+                registry.splice(index, 1);
+        };
+
+        var retryAllPageFailures = function() {
+            var registry =
+                getPageFailureRegistry().slice();
+            var retryItems = [];
+            var affectedStates = [];
+
+            registry.forEach(function(state) {
+                groupFailureEntries(state).forEach(
+                    function(entry) {
+                        if (!entry.info.retryable)
+                            return;
+
+                        retryItems.push({
+                            state: state,
+                            entry: entry
+                        });
+
+                        if (
+                            affectedStates.indexOf(state) === -1
+                        ) {
+                            affectedStates.push(state);
+                        }
+                    }
+                );
+            });
+
+            if (!retryItems.length)
+                return;
+
+            $(
+                ".xronos-sage-page-retry"
+            ).prop("disabled", true);
+
+            /*
+             * Remove the retryable failures from the current
+             * panels before starting the requests. Deterministic
+             * failures, if any, remain registered and visible.
+             */
+            retryItems.forEach(function(item) {
+                delete item.state.failures[
+                    item.entry.id
+                ];
+            });
+
+            affectedStates.forEach(function(state) {
+                if (
+                    Object.keys(
+                        state.failures
+                    ).length === 0
+                ) {
+                    removeGroupPanel(state);
+                    unregisterGroupState(state);
+                } else {
+                    renderGroupPanel(state);
+                }
+            });
+
+            /*
+             * Restore every affected expression and show its
+             * spinner before launching the page-wide retry pass.
+             */
+            retryItems.forEach(function(item) {
+                item.entry.showSpinner();
+            });
+
+            retryItems.forEach(function(item) {
+                item.entry.retry();
+            });
+        };
+
+        var renderGroupPanel = function(state) {
+            var entries = groupFailureEntries(state);
+            var allRetryable;
+            var hasAuthorization;
+            var hasCode;
+            var hasDisplay;
+            var category;
+            var messageText;
+            var message;
+            var button;
+
+            if (!entries.length) {
+                removeGroupPanel(state);
+                unregisterGroupState(state);
+                return;
+            }
+
+            allRetryable = entries.every(
+                function(entry) {
+                    return entry.info.retryable;
+                }
+            );
+
+            hasAuthorization = entries.some(
+                function(entry) {
+                    return (
+                        entry.info.category ===
+                        "authorization"
+                    );
+                }
+            );
+
+            hasCode = entries.some(
+                function(entry) {
+                    return entry.info.category === "code";
+                }
+            );
+
+            hasDisplay = entries.some(
+                function(entry) {
+                    return (
+                        entry.info.category === "display" ||
+                        entry.info.category === "unexpected"
+                    );
+                }
+            );
+
+            if (hasCode) {
+                category = "code";
+                messageText =
+                    "This problem's computations encountered an error. " +
+                    "Retrying is unlikely to fix it. Please report this " +
+                    "page to your instructor.";
+            } else if (hasDisplay || !allRetryable) {
+                category = "display";
+                messageText =
+                    "The computations for this problem could not be " +
+                    "displayed. Reload the page or report this activity.";
+            } else if (hasAuthorization) {
+                category = "authorization";
+                messageText =
+                    "The computation session for this problem could not " +
+                    "be refreshed. Reload the page or try again.";
+            } else {
+                category = "transient";
+                messageText =
+                    "The computations for this problem could not be " +
+                    "loaded. Check your connection and try again.";
+            }
+
+            if (!state.panel) {
+                state.panel = document.createElement("div");
+
+                state.panel.setAttribute(
+                    "role",
+                    "alert"
+                );
+
+                state.panel.setAttribute(
+                    "aria-live",
+                    "polite"
+                );
+
+                state.problemContainer.appendChild(
+                    state.panel
+                );
+            }
+
+            state.panel.className =
+                "xronos-sage-error " +
+                "xronos-sage-problem-error " +
+                "xronos-sage-error-" +
+                category;
+
+            clearElement(state.panel);
+
+            message = document.createElement("div");
+
+            message.className =
+                "xronos-sage-error-message";
+
+            message.appendChild(
+                document.createTextNode(messageText)
+            );
+
+            state.panel.appendChild(message);
+
+            if (allRetryable) {
+                button = document.createElement("button");
+
+                button.type = "button";
+                button.className =
+                    "btn btn-sm btn-secondary " +
+                    "xronos-sage-retry " +
+                    "xronos-sage-page-retry";
+
+                button.appendChild(
+                    document.createTextNode(
+                        "Retry all computations on this page"
+                    )
+                );
+
+                button.addEventListener(
+                    "click",
+                    function(event) {
+                        event.preventDefault();
+                        retryAllPageFailures();
+                    }
+                );
+
+                state.panel.appendChild(button);
+            }
+        };
+
+        var hideMathContainer = function(mathContainer) {
+            if (
+                controller.originalDisplay === null
+            ) {
+                controller.originalDisplay =
+                    mathContainer.style.display;
+            }
+
+            controller.mathContainer = mathContainer;
+            mathContainer.style.display = "none";
+        };
+
+        var restoreMathContainer = function() {
+            if (!controller.mathContainer)
+                return;
+
+            controller.mathContainer.style.display =
+                controller.originalDisplay || "";
+        };
+
+        var showSpinner = function() {
+            var elements = findPlaceholderElements();
+
+            restoreMathContainer();
+
+            elements.forEach(function(element) {
+                clearElement(element);
+                element.style.display = "";
+                element.appendChild(createSpinner());
+            });
+
+            return elements.length > 0;
+        };
+
+        var clearRegisteredFailure = function() {
+            var state = controller.groupState;
+
+            if (!state)
+                return;
+
+            delete state.failures[placeholderId];
+
+            if (
+                Object.keys(state.failures).length === 0
+            ) {
+                removeGroupPanel(state);
+                unregisterGroupState(state);
+            } else {
+                renderGroupPanel(state);
+            }
+
+            controller.groupState = null;
+        };
+
+        var runSage;
+
+        var showError = function(err) {
+            console.log("Inline Sage error=", err);
+
+            MathJax.Hub.Queue([
+                function() {
+                    var anchor =
+                        findVisiblePlaceholderElement();
+                    var mathContainer;
+                    var problemContainer;
+                    var state;
+                    var info;
+
+                    if (!anchor) {
+                        console.log(
+                            "Could not locate inline Sage placeholder:",
+                            placeholderId
+                        );
+                        return;
+                    }
+
+                    mathContainer =
+                        findMathContainer(anchor);
+
+                    problemContainer =
+                        findProblemContainer(
+                            mathContainer
+                        );
+
+                    state =
+                        getGroupState(
+                            problemContainer
+                        );
+
+                    registerGroupState(state);
+
+                    info =
+                        sagemath.describeSageError(err);
+
+                    hideMathContainer(mathContainer);
+
+                    controller.groupState = state;
+
+                    state.failures[placeholderId] = {
+                        id: placeholderId,
+                        info: info,
+                        error: err,
+                        retry: runSage,
+                        showSpinner: showSpinner,
+                        mathContainer: mathContainer
+                    };
+
+                    renderGroupPanel(state);
+
+                    return;
+                }
+            ]);
+        };
+
+        var renderResult = function(result) {
+            MathJax.Hub.Queue([
+                function() {
+                    try {
+                        clearRegisteredFailure();
+                        restoreMathContainer();
+
+                        // The SageCell server returns quoted strings.
+                        if (latexify != true)
+                            result = eval(result);
+
+                        var mml = TEX.Parse(result, env).mml();
+
+                        if (mml.inferred) {
+                            mml = MML.apply(
+                                MathJax.ElementJax,
+                                mml.data
+                            );
+                        } else {
+                            mml = MML(mml);
+                        }
+
+                        placeholder.data = mml.root.data;
+                        rerenderPlaceholder();
+                    } catch (displayError) {
+                        showError({
+                            ename: "XronosSageDisplayError",
+                            evalue:
+                                displayError &&
+                                displayError.message
+                                    ? displayError.message
+                                    : String(displayError)
+                        });
+                    }
+
+                    return;
+                }
+            ]);
+        };
+
+        runSage = function() {
+            sagemath.sage(code).then(
+                renderResult,
+                showError
+            );
+        };
+
+        runSage();
+
+        return;
+    },
+
 	/* Implements \graph{y=x^2, r = theta} and the like */
 	graph: function(name) {
 	    // Load Desmos asynchronously

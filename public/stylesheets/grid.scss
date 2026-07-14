@@ -1663,3 +1663,74 @@ span#prev-activity-label {
 }
 
 /* === /Xronos contained activity topbar layout === */
+
+/* === Xronos Sage failure UI ===
+ *
+ * Sage/code errors are deliberately distinct from transient network,
+ * service, and authorization failures. Only recoverable failures receive
+ * a retry button.
+ */
+.xronos-sage-inline-placeholder {
+  display: inline-block;
+  max-width: 100%;
+  vertical-align: middle;
+}
+
+
+.xronos-sage-error.xronos-sage-problem-error {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  margin: 0.75rem 0;
+  padding: 0.75rem;
+  text-align: center;
+}
+
+.xronos-sage-error.xronos-sage-problem-error .xronos-sage-retry {
+  margin: 0.6rem 0 0;
+}
+
+.xronos-sage-error {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  max-width: 100%;
+  padding: 0.3rem 0.45rem;
+  border: 1px solid transparent;
+  border-radius: 0.2rem;
+  font-family: sans-serif;
+  font-size: 0.9rem;
+  line-height: 1.35;
+  white-space: normal;
+  box-sizing: border-box;
+}
+
+.xronos-sage-error-transient,
+.xronos-sage-error-authorization {
+  color: #856404;
+  background-color: #fff3cd;
+  border-color: #ffeeba;
+}
+
+.xronos-sage-error-code,
+.xronos-sage-error-display,
+.xronos-sage-error-unexpected {
+  color: #721c24;
+  background-color: #f8d7da;
+  border-color: #f5c6cb;
+}
+
+.xronos-sage-retry {
+  margin-left: 0.5rem;
+  white-space: nowrap;
+}
+
+.sageOutput .xronos-sage-error {
+  display: flex;
+  width: 100%;
+  margin: 0.5rem 0;
+}
+
+/* === /Xronos Sage failure UI === */

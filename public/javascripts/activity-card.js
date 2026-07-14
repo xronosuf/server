@@ -21,12 +21,12 @@ var createActivityCard = function() {
     if (activityCard.hasClass('part')) itself = 1;
     activityCard.attr('data-part-counter', activityCard.prevAll('.activity-card.part').length + itself);
     itself = 0;
-    var label = activityCard.attr('data-part-counter');
+    var label = "";
 
     if (!(activityCard.hasClass('part'))) {
         if (activityCard.hasClass('chapter')) itself = 1;
         activityCard.attr('data-chapter-counter', activityCard.prevUntil('.activity-card.part', '.activity-card.chapter').length + itself);
-        label = label + "." + activityCard.attr( 'data-chapter-counter' );
+        label = activityCard.attr('data-chapter-counter');
     }
     
     if (!(activityCard.hasClass('chapter'))) {

@@ -561,7 +561,12 @@ function addLmsAccount(req, identifier, profile, done) {
               });
             });
           }
-          mdb.User.findOneAndUpdate({ _id: bridge.user }, updates, callback);
+          mdb.User.findOneAndUpdate(
+            { _id: bridge.user },
+            updates,
+            { new: true },
+            callback
+          );
         });
       },
     ],

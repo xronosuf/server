@@ -983,15 +983,10 @@ app.get('/sw.js', function(req, res) {
         app.post('/:repository/:path(*)/lti',
                  passport.authenticate('lms', { failureRedirect: '/' }),
                  function(req, res, next) {
-                     var destination;
+                     var destination = '/' + req.params.repository;
 
-                     if (req.user && req.user.course) {
-                         destination = req.user.course;
-                     } else {
-                         destination = '/' + req.params.repository;
-                         if (req.params.path) {
-                             destination += '/' + req.params.path;
-                         }
+                     if (req.params.path) {
+                         destination += '/' + req.params.path;
                      }
 
                      destination = config.toValidPath(destination);

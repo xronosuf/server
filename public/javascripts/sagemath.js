@@ -64,6 +64,335 @@ var canonicalPageSageRuntime = {
     lastError: null
 };
 
+
+var canonicalPageSageNextGenerationId = 1;
+
+var canonicalPageSageActiveGeneration = null;
+
+var canonicalPageSagePendingAnotherSeed = null;
+
+var canonicalPageSageAnotherBusy = false;
+
+var canonicalPageSageIgnoredAnotherClicks = 0;
+
+var canonicalPageSageAnotherClaimDataKey =
+    "xronosCanonicalAnotherClaimed";
+
+
+function setCanonicalPageSageAnotherBusy(
+    busy
+) {
+    canonicalPageSageAnotherBusy =
+        busy === true;
+
+    var button =
+        $("#show-me-another-button");
+
+    if (button.length === 0) {
+        return;
+    }
+
+    if (!canonicalPageSageAnotherBusy) {
+        button.removeData(
+            canonicalPageSageAnotherClaimDataKey
+        );
+    }
+
+    button.prop(
+        "disabled",
+        canonicalPageSageAnotherBusy
+    );
+
+    button.attr(
+        "aria-disabled",
+        canonicalPageSageAnotherBusy
+            ? "true"
+            : "false"
+    );
+
+    button.attr(
+        "aria-busy",
+        canonicalPageSageAnotherBusy
+            ? "true"
+            : "false"
+    );
+
+    var icon =
+        $("i", button);
+
+    if (canonicalPageSageAnotherBusy) {
+        icon.addClass("fa-spin");
+
+        icon.css(
+            "animation-play-state",
+            "running"
+        );
+    } else {
+        icon.removeClass("fa-spin");
+
+        icon.css(
+            "animation-play-state",
+            "paused"
+        );
+    }
+}
+
+
+function maybeReleaseCanonicalPageSageAnother(
+    generation
+) {
+    if (
+        !generation ||
+        generation !==
+            canonicalPageSageActiveGeneration ||
+        generation.released ||
+        generation.releaseScheduled ||
+        !generation.mathJaxPassComplete ||
+        !generation.fullPassComplete ||
+        !generation.requestSettled ||
+        generation.pendingCallPromises !== 0
+    ) {
+        return;
+    }
+
+    generation.releaseScheduled =
+        true;
+
+    /*
+     * Resolver promises settle before main.js queues each final placeholder
+     * render. Defer one event-loop turn, then place the unlock behind those
+     * queued render operations.
+     */
+    window.setTimeout(
+        function() {
+            generation.releaseScheduled =
+                false;
+
+            if (
+                generation !==
+                    canonicalPageSageActiveGeneration ||
+                generation.released ||
+                !generation.mathJaxPassComplete ||
+                !generation.fullPassComplete ||
+                !generation.requestSettled ||
+                generation.pendingCallPromises !== 0
+            ) {
+                return;
+            }
+
+            MathJax.Hub.Queue(
+                function() {
+                    if (
+                        generation !==
+                            canonicalPageSageActiveGeneration ||
+                        generation.released
+                    ) {
+                        return;
+                    }
+
+                    generation.released =
+                        true;
+
+                    setCanonicalPageSageAnotherBusy(
+                        false
+                    );
+                }
+            );
+        },
+        0
+    );
+}
+
+
+function canonicalPageSageTrackGenerationPromise(
+    generation,
+    promise
+) {
+    generation.pendingCallPromises += 1;
+
+    return Promise.resolve(
+        promise
+    ).then(
+        function(value) {
+            generation.pendingCallPromises -= 1;
+            generation.settledCallPromises += 1;
+
+            maybeReleaseCanonicalPageSageAnother(
+                generation
+            );
+
+            return value;
+        },
+        function(err) {
+            generation.pendingCallPromises -= 1;
+            generation.settledCallPromises += 1;
+
+            maybeReleaseCanonicalPageSageAnother(
+                generation
+            );
+
+            throw err;
+        }
+    );
+}
+
+
+function canonicalPageSageSeedsEqual(
+    left,
+    right
+) {
+    if (
+        left === undefined &&
+        right === undefined
+    ) {
+        return true;
+    }
+
+    return String(left) ===
+        String(right);
+}
+
+
+function canonicalPageSageNewGeneration(
+    newSeed
+) {
+    var generation = {
+        id:
+            canonicalPageSageNextGenerationId,
+
+        seed:
+            newSeed,
+
+        startCallIndex:
+            typeof sageMathJaxCallTrace !==
+                "undefined"
+                ? sageMathJaxCallTrace.length
+                : 0,
+
+        status:
+            "prepared",
+
+        mathJaxPassComplete:
+            false,
+
+        requestSettled:
+            false,
+
+        pendingCallPromises:
+            0,
+
+        settledCallPromises:
+            0,
+
+        releaseScheduled:
+            false,
+
+        released:
+            false,
+
+        requestPromise:
+            null,
+
+        permanentFallbackReason:
+            null,
+
+        callMappings:
+            {},
+
+        /*
+         * This cursor tracks the longest currently observed prefix of the
+         * immutable page manifest. Preliminary restored-answer calls may
+         * occur before that complete sequence begins.
+         */
+        fullPassCursor:
+            0,
+
+        fullPassComplete:
+            false,
+
+        prefixRestartCount:
+            0,
+
+        preliminaryMappedCalls:
+            0,
+
+        requestCount:
+            0,
+
+        mappedCalls:
+            0,
+
+        canonicalResolutions:
+            0,
+
+        canonicalRejections:
+            0,
+
+        legacyFallbacks:
+            0,
+
+        compiledCharacters:
+            0,
+
+        compiledUtf8Bytes:
+            0,
+
+        compiledDebugHash:
+            null,
+
+        requestStartedAtMilliseconds:
+            null,
+
+        requestCompletedAtMilliseconds:
+            null,
+
+        requestDurationMilliseconds:
+            null,
+
+        resultCount:
+            0,
+
+        expressionFailureCount:
+            0,
+
+        lastFallback:
+            null,
+
+        lastError:
+            null
+    };
+
+    canonicalPageSageNextGenerationId += 1;
+
+    return generation;
+}
+
+
+function prepareCanonicalPageSageGeneration(
+    newSeed
+) {
+    if (
+        !canonicalPageSageFeatureEnabled()
+    ) {
+        canonicalPageSageActiveGeneration =
+            null;
+
+        return null;
+    }
+
+    setCanonicalPageSageAnotherBusy(
+        true
+    );
+
+    canonicalPageSageActiveGeneration =
+        canonicalPageSageNewGeneration(
+            newSeed
+        );
+
+    return canonicalPageSageActiveGeneration;
+}
+
+
 /*
  * Read one balanced TeX argument beginning at an opening brace.
  *
@@ -1733,6 +2062,780 @@ function executeInitialCanonicalPageSage() {
 }
 
 
+
+function canonicalPageSageGenerationFallback(
+    generation,
+    legacyCode,
+    reason
+) {
+    if (generation) {
+        generation.legacyFallbacks += 1;
+        generation.lastFallback = reason;
+    }
+
+    return canonicalPageSageFallback(
+        legacyCode,
+        reason
+    );
+}
+
+
+function canonicalPageSageCallMatchesEntry(
+    traceEntry,
+    entry
+) {
+    return !!(
+        traceEntry &&
+        entry &&
+        traceEntry.expression ===
+            entry.expression &&
+        traceEntry.latexify ===
+            entry.latexify
+    );
+}
+
+
+function canonicalPageSageEntryByStableId(
+    expressionEntries,
+    stableId
+) {
+    var matches =
+        expressionEntries.filter(
+            function(entry) {
+                return (
+                    entry.stableId ===
+                    stableId
+                );
+            }
+        );
+
+    return matches.length === 1
+        ? matches[0]
+        : null;
+}
+
+
+function canonicalPageSageUniqueMatchingEntry(
+    expressionEntries,
+    traceEntry
+) {
+    var matches =
+        expressionEntries.filter(
+            function(entry) {
+                return (
+                    canonicalPageSageCallMatchesEntry(
+                        traceEntry,
+                        entry
+                    )
+                );
+            }
+        );
+
+    if (matches.length === 1) {
+        return matches[0];
+    }
+
+    /*
+     * Restoring a completed answer normally invokes its answer-key Sage
+     * expression before the full page pass. When otherwise duplicated source
+     * exists, prefer a uniquely identifiable answer-key entry.
+     */
+    var answerKeyMatches =
+        matches.filter(
+            function(entry) {
+                return (
+                    entry.consumer ===
+                    "answer-key"
+                );
+            }
+        );
+
+    return answerKeyMatches.length === 1
+        ? answerKeyMatches[0]
+        : null;
+}
+
+
+function canonicalPageSageMapGenerationCall(
+    generation,
+    expressionEntries,
+    traceEntry
+) {
+    var mappingKey =
+        String(
+            traceEntry.callIndex
+        );
+
+    var existingStableId =
+        generation.callMappings[
+            mappingKey
+        ];
+
+    if (existingStableId) {
+        return {
+            entry:
+                canonicalPageSageEntryByStableId(
+                    expressionEntries,
+                    existingStableId
+                ),
+
+            reused:
+                true,
+
+            preliminary:
+                false
+        };
+    }
+
+    if (
+        generation.fullPassComplete
+    ) {
+        return {
+            entry:
+                null,
+
+            reason: {
+                code:
+                    "generation-after-full-pass",
+
+                generationId:
+                    generation.id,
+
+                callIndex:
+                    traceEntry.callIndex
+            }
+        };
+    }
+
+    var firstEntry =
+        expressionEntries[0];
+
+    var expectedEntry =
+        generation.fullPassCursor <
+            expressionEntries.length
+            ? expressionEntries[
+                generation.fullPassCursor
+            ]
+            : null;
+
+    var entry = null;
+    var preliminary = false;
+
+    /*
+     * Continue a currently matching full-manifest prefix.
+     */
+    if (
+        expectedEntry &&
+        canonicalPageSageCallMatchesEntry(
+            traceEntry,
+            expectedEntry
+        )
+    ) {
+        entry = expectedEntry;
+
+        generation.fullPassCursor += 1;
+    } else if (
+        firstEntry &&
+        canonicalPageSageCallMatchesEntry(
+            traceEntry,
+            firstEntry
+        )
+    ) {
+        /*
+         * A restored completed equation can itself contain the first manifest
+         * expression. When the actual complete page pass begins, another
+         * occurrence of expression zero restarts the prefix safely.
+         */
+        if (
+            generation.fullPassCursor > 0
+        ) {
+            generation.prefixRestartCount += 1;
+        }
+
+        entry = firstEntry;
+
+        generation.fullPassCursor = 1;
+    } else {
+        /*
+         * This is a preliminary restored-answer call or other isolated call
+         * before the complete page sequence begins. Resolve it canonically
+         * only when it identifies exactly one manifest result.
+         */
+        entry =
+            canonicalPageSageUniqueMatchingEntry(
+                expressionEntries,
+                traceEntry
+            );
+
+        preliminary = true;
+
+        generation.fullPassCursor = 0;
+
+        if (entry) {
+            generation
+                .preliminaryMappedCalls += 1;
+        }
+    }
+
+    if (!entry) {
+        return {
+            entry:
+                null,
+
+            reason: {
+                code:
+                    "generation-unmapped-call",
+
+                generationId:
+                    generation.id,
+
+                callIndex:
+                    traceEntry.callIndex,
+
+                expression:
+                    traceEntry.expression,
+
+                latexify:
+                    traceEntry.latexify,
+
+                currentFullPassCursor:
+                    generation.fullPassCursor
+            }
+        };
+    }
+
+    generation.callMappings[
+        mappingKey
+    ] = entry.stableId;
+
+    if (
+        generation.fullPassCursor ===
+        expressionEntries.length
+    ) {
+        generation.fullPassComplete =
+            true;
+    }
+
+    return {
+        entry:
+            entry,
+
+        reused:
+            false,
+
+        preliminary:
+            preliminary
+    };
+}
+
+
+function canonicalPageSageResolveExecutionEntry(
+    entry,
+    execution,
+    generation
+) {
+    var result =
+        execution.results[
+            entry.stableId
+        ];
+
+    if (!result) {
+        canonicalPageSageRuntime
+            .canonicalRejections += 1;
+
+        if (generation) {
+            generation
+                .canonicalRejections += 1;
+        }
+
+        throw {
+            ename:
+                "XronosSageMissingCanonicalResult",
+
+            evalue:
+                "The canonical page response did not contain the expected expression result.",
+
+            xronosSage: {
+                stableId:
+                    entry.stableId,
+
+                expression:
+                    entry.expression,
+
+                consumer:
+                    entry.consumer,
+
+                problemId:
+                    entry.problemId,
+
+                compiledDebugHash:
+                    execution
+                        .compiledDebugHash,
+
+                generationId:
+                    generation
+                        ? generation.id
+                        : null,
+
+                generationSeed:
+                    generation
+                        ? generation.seed
+                        : null
+            }
+        };
+    }
+
+    if (!result.ok) {
+        canonicalPageSageRuntime
+            .canonicalRejections += 1;
+
+        if (generation) {
+            generation
+                .canonicalRejections += 1;
+        }
+
+        throw canonicalPageSageEntryError(
+            entry,
+            result,
+            execution
+        );
+    }
+
+    canonicalPageSageRuntime
+        .canonicalResolutions += 1;
+
+    if (generation) {
+        generation
+            .canonicalResolutions += 1;
+    }
+
+    return String(
+        result.result
+    );
+}
+
+
+function executeCanonicalPageSageGeneration(
+    generation
+) {
+    var manifest =
+        initialSagePageManifestSnapshot;
+
+    if (
+        !generation ||
+        generation !==
+            canonicalPageSageActiveGeneration
+    ) {
+        return Promise.reject(
+            canonicalPageSageFallbackError(
+                "stale-generation",
+                "The requested canonical Sage generation is no longer active."
+            )
+        );
+    }
+
+    if (
+        generation
+            .permanentFallbackReason
+    ) {
+        return Promise.reject(
+            generation
+                .permanentFallbackReason
+        );
+    }
+
+    if (
+        generation.requestPromise
+    ) {
+        return generation
+            .requestPromise;
+    }
+
+    if (!manifest) {
+        generation.permanentFallbackReason =
+            canonicalPageSageFallbackError(
+                "missing-snapshot",
+                "The pre-MathJax Sage manifest was not captured."
+            );
+
+        return Promise.reject(
+            generation
+                .permanentFallbackReason
+        );
+    }
+
+    var expressionEntries =
+        canonicalPageSageExpressionEntries(
+            manifest
+        );
+
+    if (
+        expressionEntries.length === 0
+    ) {
+        generation.permanentFallbackReason =
+            canonicalPageSageFallbackError(
+                "empty-manifest",
+                "The Sage page manifest contains no expressions."
+            );
+
+        return Promise.reject(
+            generation
+                .permanentFallbackReason
+        );
+    }
+
+    var parseErrors =
+        expressionEntries.filter(
+            function(entry) {
+                return !!entry.parseError;
+            }
+        );
+
+    if (parseErrors.length > 0) {
+        generation.permanentFallbackReason =
+            canonicalPageSageFallbackError(
+                "manifest-parse-error",
+                "The Sage page manifest contains an expression parse error.",
+                {
+                    entries:
+                        parseErrors
+                }
+            );
+
+        return Promise.reject(
+            generation
+                .permanentFallbackReason
+        );
+    }
+
+    var compiledCode =
+        compileSagePageManifest(
+            manifest
+        );
+
+    var compiledUtf8Bytes =
+        sageUtf8ByteLength(
+            compiledCode
+        );
+
+    generation.compiledCharacters =
+        compiledCode.length;
+
+    generation.compiledUtf8Bytes =
+        compiledUtf8Bytes;
+
+    generation.compiledDebugHash =
+        sageManifestDebugHash(
+            compiledCode
+        );
+
+    canonicalPageSageRuntime
+        .compiledCharacters =
+            generation
+                .compiledCharacters;
+
+    canonicalPageSageRuntime
+        .compiledUtf8Bytes =
+            generation
+                .compiledUtf8Bytes;
+
+    canonicalPageSageRuntime
+        .compiledDebugHash =
+            generation
+                .compiledDebugHash;
+
+    if (
+        compiledUtf8Bytes >
+        canonicalPageSageMaxCompiledUtf8Bytes
+    ) {
+        generation.permanentFallbackReason =
+            canonicalPageSageFallbackError(
+                "compiled-size-limit",
+                "The canonical Sage page program exceeds the temporary live-integration size limit.",
+                {
+                    compiledUtf8Bytes:
+                        compiledUtf8Bytes,
+
+                    maximumUtf8Bytes:
+                        canonicalPageSageMaxCompiledUtf8Bytes,
+
+                    generationId:
+                        generation.id,
+
+                    generationSeed:
+                        generation.seed
+                }
+            );
+
+        return Promise.reject(
+            generation
+                .permanentFallbackReason
+        );
+    }
+
+    generation.status =
+        "requesting";
+
+    canonicalPageSageRuntime.status =
+        "requesting";
+
+    generation.requestCount += 1;
+
+    canonicalPageSageRuntime
+        .requestCount += 1;
+
+    generation
+        .requestStartedAtMilliseconds =
+            Date.now();
+
+    generation
+        .requestCompletedAtMilliseconds =
+            null;
+
+    generation
+        .requestDurationMilliseconds =
+            null;
+
+    canonicalPageSageRuntime
+        .requestStartedAtMilliseconds =
+            generation
+                .requestStartedAtMilliseconds;
+
+    canonicalPageSageRuntime
+        .requestCompletedAtMilliseconds =
+            null;
+
+    canonicalPageSageRuntime
+        .requestDurationMilliseconds =
+            null;
+
+    var pending =
+        postSageRaw(
+            compiledCode
+        ).then(
+            function(response) {
+                var results;
+
+                generation
+                    .requestCompletedAtMilliseconds =
+                        Date.now();
+
+                generation
+                    .requestDurationMilliseconds =
+                        generation
+                            .requestCompletedAtMilliseconds -
+                        generation
+                            .requestStartedAtMilliseconds;
+
+                canonicalPageSageRuntime
+                    .requestCompletedAtMilliseconds =
+                        generation
+                            .requestCompletedAtMilliseconds;
+
+                canonicalPageSageRuntime
+                    .requestDurationMilliseconds =
+                        generation
+                            .requestDurationMilliseconds;
+
+                results =
+                    parseSagePageManifestResponse(
+                        response
+                    );
+
+                var resultKeys =
+                    Object.keys(
+                        results
+                    );
+
+                generation.resultCount =
+                    resultKeys.length;
+
+                generation
+                    .expressionFailureCount =
+                        resultKeys.filter(
+                            function(key) {
+                                return !(
+                                    results[key] &&
+                                    results[key].ok
+                                );
+                            }
+                        ).length;
+
+                canonicalPageSageRuntime
+                    .resultCount =
+                        generation
+                            .resultCount;
+
+                canonicalPageSageRuntime
+                    .expressionFailureCount =
+                        generation
+                            .expressionFailureCount;
+
+                return {
+                    manifest:
+                        manifest,
+
+                    generationId:
+                        generation.id,
+
+                    generationSeed:
+                        generation.seed,
+
+                    compiledCharacters:
+                        compiledCode.length,
+
+                    compiledUtf8Bytes:
+                        compiledUtf8Bytes,
+
+                    compiledDebugHash:
+                        generation
+                            .compiledDebugHash,
+
+                    results:
+                        results
+                };
+            },
+            function(err) {
+                generation
+                    .requestCompletedAtMilliseconds =
+                        Date.now();
+
+                generation
+                    .requestDurationMilliseconds =
+                        generation
+                            .requestCompletedAtMilliseconds -
+                        generation
+                            .requestStartedAtMilliseconds;
+
+                canonicalPageSageRuntime
+                    .requestCompletedAtMilliseconds =
+                        generation
+                            .requestCompletedAtMilliseconds;
+
+                canonicalPageSageRuntime
+                    .requestDurationMilliseconds =
+                        generation
+                            .requestDurationMilliseconds;
+
+                throw err;
+            }
+        );
+
+    generation.requestPromise =
+        pending.then(
+            function(execution) {
+                generation.requestSettled =
+                    true;
+
+                generation.status =
+                    "success";
+
+                generation.lastError =
+                    null;
+
+                maybeReleaseCanonicalPageSageAnother(
+                    generation
+                );
+
+                canonicalPageSageRuntime.status =
+                    "success";
+
+                canonicalPageSageRuntime
+                    .lastError =
+                        null;
+
+                return execution;
+            },
+            function(err) {
+                generation.requestSettled =
+                    true;
+
+                maybeReleaseCanonicalPageSageAnother(
+                    generation
+                );
+
+                if (
+                    err &&
+                    err.xronosCanonicalFallback
+                ) {
+                    generation.status =
+                        "fallback";
+
+                    canonicalPageSageRuntime.status =
+                        "fallback";
+                } else {
+                    generation.status =
+                        "error";
+
+                    generation.lastError =
+                        canonicalPageSageSimpleError(
+                            err
+                        );
+
+                    canonicalPageSageRuntime.status =
+                        "error";
+
+                    canonicalPageSageRuntime
+                        .lastError =
+                            generation
+                                .lastError;
+                }
+
+                /*
+                 * Network, authorization and response parsing errors remain
+                 * retryable through the existing grouped Sage retry control.
+                 */
+                generation.requestPromise =
+                    null;
+
+                throw err;
+            }
+        );
+
+    return generation.requestPromise;
+}
+
+
+function activateCanonicalPageSageGeneration(
+    newSeed
+) {
+    var generation =
+        canonicalPageSageActiveGeneration;
+
+    if (
+        !generation ||
+        !canonicalPageSageSeedsEqual(
+            generation.seed,
+            newSeed
+        )
+    ) {
+        return null;
+    }
+
+    generation.status =
+        "waiting-for-calls";
+
+    /*
+     * Start immediately so restored answer keys and the complete reprocess
+     * share the same in-flight page request.
+     */
+    executeCanonicalPageSageGeneration(
+        generation
+    ).catch(
+        function() {
+            /*
+             * Individual Sage placeholders attach their own handlers. This
+             * prevents a proactive request failure from becoming an unhandled
+             * browser rejection before the first placeholder attaches.
+             */
+            return null;
+        }
+    );
+
+    return generation;
+}
+
+
 /*
  * Resolve one MathJax Sage macro call.
  *
@@ -1778,162 +2881,201 @@ exports.resolveMathJaxSageCall =
         }
 
         /*
-         * This is the deliberate safety boundary for the first live phase.
-         * Reprocessing and dynamic calls occur after the initial manifest
-         * count and therefore remain on the legacy path.
+         * Initial immutable page pass.
          */
         if (
-            traceEntry.callIndex < 0 ||
-            traceEntry.callIndex >=
+            traceEntry.callIndex >= 0 &&
+            traceEntry.callIndex <
                 expressionEntries.length
         ) {
-            return canonicalPageSageFallback(
-                legacyCode,
-                {
-                    code:
-                        "outside-initial-pass",
+            var initialEntry =
+                expressionEntries[
+                    traceEntry.callIndex
+                ];
 
-                    callIndex:
-                        traceEntry.callIndex,
+            if (
+                !canonicalPageSageCallMatchesEntry(
+                    traceEntry,
+                    initialEntry
+                )
+            ) {
+                return canonicalPageSageFallback(
+                    legacyCode,
+                    {
+                        code:
+                            "manifest-call-mismatch",
 
-                    manifestExpressions:
-                        expressionEntries.length
-                }
-            );
+                        callIndex:
+                            traceEntry.callIndex,
+
+                        expected:
+                            initialEntry
+                                ? {
+                                    stableId:
+                                        initialEntry.stableId,
+
+                                    expression:
+                                        initialEntry.expression,
+
+                                    latexify:
+                                        initialEntry.latexify
+                                }
+                                : null,
+
+                        actual: {
+                            expression:
+                                traceEntry.expression,
+
+                            latexify:
+                                traceEntry.latexify
+                        }
+                    }
+                );
+            }
+
+            canonicalPageSageRuntime
+                .mappedCalls += 1;
+
+            return executeInitialCanonicalPageSage()
+                .then(
+                    function(execution) {
+                        return canonicalPageSageResolveExecutionEntry(
+                            initialEntry,
+                            execution,
+                            null
+                        );
+                    },
+                    function(err) {
+                        if (
+                            err &&
+                            err.xronosCanonicalFallback
+                        ) {
+                            return canonicalPageSageFallback(
+                                legacyCode,
+                                {
+                                    code:
+                                        err.fallbackCode,
+
+                                    message:
+                                        err.evalue,
+
+                                    details:
+                                        err.details || null
+                                }
+                            );
+                        }
+
+                        canonicalPageSageRuntime
+                            .canonicalRejections += 1;
+
+                        throw err;
+                    }
+                );
         }
 
-        var entry =
-            expressionEntries[
-                traceEntry.callIndex
-            ];
+        /*
+         * Explicit Another generation. Calls before the complete manifest
+         * pass—normally restored completed-answer keys—share the same
+         * generation result bundle.
+         */
+        var generation =
+            canonicalPageSageActiveGeneration;
 
         if (
-            !entry ||
-            entry.expression !==
-                traceEntry.expression ||
-            entry.latexify !==
-                traceEntry.latexify
+            generation &&
+            traceEntry.callIndex >=
+                generation.startCallIndex
         ) {
-            return canonicalPageSageFallback(
-                legacyCode,
-                {
-                    code:
-                        "manifest-call-mismatch",
+            var mapping =
+                canonicalPageSageMapGenerationCall(
+                    generation,
+                    expressionEntries,
+                    traceEntry
+                );
 
-                    callIndex:
-                        traceEntry.callIndex,
+            if (!mapping.entry) {
+                return canonicalPageSageTrackGenerationPromise(
+                    generation,
+                    canonicalPageSageGenerationFallback(
+                        generation,
+                        legacyCode,
+                        mapping.reason
+                    )
+                );
+            }
 
-                    expected:
-                        entry
-                            ? {
-                                stableId:
-                                    entry.stableId,
+            generation.mappedCalls += 1;
 
-                                expression:
-                                    entry.expression,
+            canonicalPageSageRuntime
+                .mappedCalls += 1;
 
-                                latexify:
-                                    entry.latexify
-                            }
-                            : null,
+            var generationResolution =
+                executeCanonicalPageSageGeneration(
+                    generation
+                ).then(
+                    function(execution) {
+                        return canonicalPageSageResolveExecutionEntry(
+                            mapping.entry,
+                            execution,
+                            generation
+                        );
+                    },
+                    function(err) {
+                        if (
+                            err &&
+                            err.xronosCanonicalFallback
+                        ) {
+                            return canonicalPageSageGenerationFallback(
+                                generation,
+                                legacyCode,
+                                {
+                                    code:
+                                        err.fallbackCode,
 
-                    actual: {
-                        expression:
-                            traceEntry.expression,
+                                    message:
+                                        err.evalue,
 
-                        latexify:
-                            traceEntry.latexify
+                                    details:
+                                        err.details || null,
+
+                                    generationId:
+                                        generation.id,
+
+                                    generationSeed:
+                                        generation.seed
+                                }
+                            );
+                        }
+
+                        canonicalPageSageRuntime
+                            .canonicalRejections += 1;
+
+                        generation
+                            .canonicalRejections += 1;
+
+                        throw err;
                     }
-                }
+                );
+
+            return canonicalPageSageTrackGenerationPromise(
+                generation,
+                generationResolution
             );
         }
 
-        canonicalPageSageRuntime
-            .mappedCalls += 1;
+        return canonicalPageSageFallback(
+            legacyCode,
+            {
+                code:
+                    "outside-canonical-generation",
 
-        return executeInitialCanonicalPageSage()
-            .then(
-                function(execution) {
-                    var result =
-                        execution.results[
-                            entry.stableId
-                        ];
+                callIndex:
+                    traceEntry.callIndex,
 
-                    if (!result) {
-                        canonicalPageSageRuntime
-                            .canonicalRejections += 1;
-
-                        throw {
-                            ename:
-                                "XronosSageMissingCanonicalResult",
-
-                            evalue:
-                                "The canonical page response did not contain the expected expression result.",
-
-                            xronosSage: {
-                                stableId:
-                                    entry.stableId,
-
-                                expression:
-                                    entry.expression,
-
-                                consumer:
-                                    entry.consumer,
-
-                                problemId:
-                                    entry.problemId,
-
-                                compiledDebugHash:
-                                    execution
-                                        .compiledDebugHash
-                            }
-                        };
-                    }
-
-                    if (!result.ok) {
-                        canonicalPageSageRuntime
-                            .canonicalRejections += 1;
-
-                        throw canonicalPageSageEntryError(
-                            entry,
-                            result,
-                            execution
-                        );
-                    }
-
-                    canonicalPageSageRuntime
-                        .canonicalResolutions += 1;
-
-                    return String(
-                        result.result
-                    );
-                },
-                function(err) {
-                    if (
-                        err &&
-                        err.xronosCanonicalFallback
-                    ) {
-                        return canonicalPageSageFallback(
-                            legacyCode,
-                            {
-                                code:
-                                    err.fallbackCode,
-
-                                message:
-                                    err.evalue,
-
-                                details:
-                                    err.details || null
-                            }
-                        );
-                    }
-
-                    canonicalPageSageRuntime
-                        .canonicalRejections += 1;
-
-                    throw err;
-                }
-            );
+                manifestExpressions:
+                    expressionEntries.length
+            }
+        );
     };
 
 
@@ -1998,7 +3140,13 @@ window.xronosInspectCanonicalPageSageRuntime =
                 canonicalPageSageFeatureEnabled(),
 
             scope:
-                "initial-mathjax-pass-only",
+                "initial-and-explicit-another-generations",
+
+            anotherBusy:
+                canonicalPageSageAnotherBusy,
+
+            ignoredAnotherClicks:
+                canonicalPageSageIgnoredAnotherClicks,
 
             maximumCompiledUtf8Bytes:
                 canonicalPageSageMaxCompiledUtf8Bytes,
@@ -2087,6 +3235,137 @@ window.xronosInspectCanonicalPageSageRuntime =
             lastFallback:
                 canonicalPageSageRuntime
                     .lastFallback,
+
+            activeGeneration:
+                canonicalPageSageActiveGeneration
+                    ? {
+                        id:
+                            canonicalPageSageActiveGeneration.id,
+
+                        seed:
+                            canonicalPageSageActiveGeneration.seed,
+
+                        startCallIndex:
+                            canonicalPageSageActiveGeneration
+                                .startCallIndex,
+
+                        status:
+                            canonicalPageSageActiveGeneration.status,
+
+                        mathJaxPassComplete:
+                            canonicalPageSageActiveGeneration
+                                .mathJaxPassComplete,
+
+                        requestSettled:
+                            canonicalPageSageActiveGeneration
+                                .requestSettled,
+
+                        pendingCallPromises:
+                            canonicalPageSageActiveGeneration
+                                .pendingCallPromises,
+
+                        settledCallPromises:
+                            canonicalPageSageActiveGeneration
+                                .settledCallPromises,
+
+                        releaseScheduled:
+                            canonicalPageSageActiveGeneration
+                                .releaseScheduled,
+
+                        released:
+                            canonicalPageSageActiveGeneration
+                                .released,
+
+                        requestCount:
+                            canonicalPageSageActiveGeneration
+                                .requestCount,
+
+                        mappedCalls:
+                            canonicalPageSageActiveGeneration
+                                .mappedCalls,
+
+                        canonicalResolutions:
+                            canonicalPageSageActiveGeneration
+                                .canonicalResolutions,
+
+                        canonicalRejections:
+                            canonicalPageSageActiveGeneration
+                                .canonicalRejections,
+
+                        legacyFallbacks:
+                            canonicalPageSageActiveGeneration
+                                .legacyFallbacks,
+
+                        fullPassCursor:
+                            canonicalPageSageActiveGeneration
+                                .fullPassCursor,
+
+                        fullPassComplete:
+                            canonicalPageSageActiveGeneration
+                                .fullPassComplete,
+
+                        prefixRestartCount:
+                            canonicalPageSageActiveGeneration
+                                .prefixRestartCount,
+
+                        preliminaryMappedCalls:
+                            canonicalPageSageActiveGeneration
+                                .preliminaryMappedCalls,
+
+                        compiledCharacters:
+                            canonicalPageSageActiveGeneration
+                                .compiledCharacters,
+
+                        compiledUtf8Bytes:
+                            canonicalPageSageActiveGeneration
+                                .compiledUtf8Bytes,
+
+                        compiledDebugHash:
+                            canonicalPageSageActiveGeneration
+                                .compiledDebugHash,
+
+                        requestDurationMilliseconds:
+                            canonicalPageSageActiveGeneration
+                                .requestDurationMilliseconds,
+
+                        resultCount:
+                            canonicalPageSageActiveGeneration
+                                .resultCount,
+
+                        expressionFailureCount:
+                            canonicalPageSageActiveGeneration
+                                .expressionFailureCount,
+
+                        permanentFallback:
+                            canonicalPageSageActiveGeneration
+                                .permanentFallbackReason
+                                ? {
+                                    code:
+                                        canonicalPageSageActiveGeneration
+                                            .permanentFallbackReason
+                                            .fallbackCode,
+
+                                    message:
+                                        canonicalPageSageActiveGeneration
+                                            .permanentFallbackReason
+                                            .evalue,
+
+                                    details:
+                                        canonicalPageSageActiveGeneration
+                                            .permanentFallbackReason
+                                            .details || null
+                                }
+                                : null,
+
+                        lastFallback:
+                            canonicalPageSageActiveGeneration
+                                .lastFallback,
+
+                        lastError:
+                            canonicalPageSageActiveGeneration
+                                .lastError
+                    }
+                    : null,
 
             lastError:
                 canonicalPageSageRuntime
@@ -4081,15 +5360,59 @@ seedDiv.persistentData(function() {
 return;
     }
 
+    var isPendingAnother =
+        canonicalPageSagePendingAnotherSeed !==
+            null &&
+        canonicalPageSageSeedsEqual(
+            canonicalPageSagePendingAnotherSeed,
+            newSeed
+        );
+
     sendSeed(newSeed);
+
+    var activatedCanonicalGeneration =
+        null;
+
+    if (isPendingAnother) {
+        activatedCanonicalGeneration =
+            activateCanonicalPageSageGeneration(
+                newSeed
+            );
+    }
 
     executedSageSilents = false;
     executeSageSilents();
+
+    /*
+     * Queue restoration only after the new canonical generation has started.
+     * These MathJax Text operations therefore consume the same result bundle
+     * as the complete page reprocess queued below.
+     */
+    if (isPendingAnother) {
+        restoreCompletedAnswerMathJax();
+
+        canonicalPageSagePendingAnotherSeed =
+            null;
+    }
 
     // Recompute any visible autoevaluated Sage output when the seed changes.
     processVisibleSageOutputs(true);
 
     reprocessMathjax();
+
+    if (activatedCanonicalGeneration) {
+        MathJax.Hub.Queue(
+            function() {
+                activatedCanonicalGeneration
+                    .mathJaxPassComplete =
+                        true;
+
+                maybeReleaseCanonicalPageSageAnother(
+                    activatedCanonicalGeneration
+                );
+            }
+        );
+    }
 });
 
 seedCallbacks.forEach(function(callback) {
@@ -4144,9 +5467,60 @@ $(function() {
     $(document)
 .off("click.xronosAnother", "#show-me-another-button")
 .on("click.xronosAnother", "#show-me-another-button", function() {
-    $("i", this).addClass("fa-spin");
-    $("#show-me-another-button i").css('animation-play-state', 'running');
-    xronosShowMeAnotherSage();
+    var button =
+        $(this);
+
+    if (
+        canonicalPageSageFeatureEnabled()
+    ) {
+        if (
+            canonicalPageSageAnotherBusy ||
+            button.data(
+                canonicalPageSageAnotherClaimDataKey
+            ) === true
+        ) {
+            canonicalPageSageIgnoredAnotherClicks += 1;
+            return;
+        }
+
+        /*
+         * Claim the UI action synchronously. Two native click events can
+         * already be queued before the first handler disables the button.
+         */
+        button.data(
+            canonicalPageSageAnotherClaimDataKey,
+            true
+        );
+
+        button.prop(
+            "disabled",
+            true
+        );
+    } else {
+        $("i", this).addClass(
+            "fa-spin"
+        );
+
+        $("#show-me-another-button i").css(
+            "animation-play-state",
+            "running"
+        );
+    }
+
+    try {
+        xronosShowMeAnotherSage();
+    } catch (err) {
+        button.removeData(
+            canonicalPageSageAnotherClaimDataKey
+        );
+
+        button.prop(
+            "disabled",
+            false
+        );
+
+        throw err;
+    }
 });
 });
 
@@ -4789,9 +6163,27 @@ function restoreCompletedAnswerMathJax() {
 }
 
 function xronosShowMeAnotherSage() {
+    if (
+        canonicalPageSageFeatureEnabled() &&
+        canonicalPageSageAnotherBusy
+    ) {
+        canonicalPageSageIgnoredAnotherClicks += 1;
+
+        return $("#seed").persistentData(
+            'seed'
+        );
+    }
+
     var oldSeed = $("#seed").persistentData('seed');
     var numericOldSeed = parseInt(oldSeed, 10);
     var newSeed = oldSeed !== undefined && !isNaN(numericOldSeed) ? numericOldSeed + 1 : 0;
+
+    canonicalPageSagePendingAnotherSeed =
+        newSeed;
+
+    prepareCanonicalPageSageGeneration(
+        newSeed
+    );
 
     seed = undefined;
     clearSageClientCaches();
@@ -4813,12 +6205,10 @@ function xronosShowMeAnotherSage() {
     }
 
     /*
-     * resetWork clears stored answer state, but completed answers may
-     * already have replaced their MathJax source with blue submitted-answer
-     * TeX. Restore those live MathJax items so Try Another shows answer
-     * boxes immediately, without requiring a manual page refresh.
+     * Completed-answer MathJax restoration now occurs inside the observed
+     * seed-change transaction, after the canonical generation request starts
+     * and before the complete page reprocess is queued.
      */
-    restoreCompletedAnswerMathJax();
 
     return $("#seed").persistentData('seed');
 }

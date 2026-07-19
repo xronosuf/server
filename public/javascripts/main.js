@@ -176,7 +176,23 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
 	},
 	
     sagestr: function(name, latexify) {
-        var code = this.GetArgument(name);
+        var rawSageCode =
+            this.GetArgument(name);
+
+        var sageCallTrace = null;
+
+        if (
+            sagemath.traceMathJaxSageCall
+        ) {
+            sageCallTrace =
+                sagemath.traceMathJaxSageCall(
+                    rawSageCode,
+                    latexify,
+                    this
+                );
+        }
+
+        var code = rawSageCode;
 
         if (latexify)
             code = "latex(" + code + ")";
@@ -721,7 +737,10 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
         };
 
         runSage = function() {
-            sagemath.sage(code).then(
+            sagemath.resolveMathJaxSageCall(
+                sageCallTrace,
+                code
+            ).then(
                 renderResult,
                 showError
             );
@@ -988,6 +1007,12 @@ $(document).ready(function() {
 	$('a.reference').reference();
 	
 	// This could go in "init" above, but it needs to be after the end process hook
+    /*
+     * Capture the complete author-delivered activity source before MathJax
+     * parsing and saved-answer restoration modify or replace source nodes.
+     */
+    sagemath.captureInitialSagePageManifestSnapshot();
+
 	MathJax.Hub.Startup.onload();
     
     // BADBAD: This seems like the wrong thing---why is default here?

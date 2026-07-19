@@ -33,6 +33,3938 @@ var sageBatchMaxItems = 8;
 var sageBatchMaxEstimatedChars = 65000;
 var sageBatchNextId = 0;
 
+var sagePageManifestCompilerVersion = 4;
+
+var initialSagePageManifestSnapshot = null;
+
+var canonicalPageSageStorageKey =
+    "xronos-canonical-page-sage";
+
+var canonicalPageSageMaxCompiledUtf8Bytes =
+    60000;
+
+var canonicalPageSageRuntime = {
+    initialPromise: null,
+    permanentFallbackReason: null,
+    status: "idle",
+    requestCount: 0,
+    mappedCalls: 0,
+    canonicalResolutions: 0,
+    canonicalRejections: 0,
+    legacyFallbacks: 0,
+    compiledCharacters: 0,
+    compiledUtf8Bytes: 0,
+    compiledDebugHash: null,
+    requestStartedAtMilliseconds: null,
+    requestCompletedAtMilliseconds: null,
+    requestDurationMilliseconds: null,
+    resultCount: 0,
+    expressionFailureCount: 0,
+    lastFallback: null,
+    lastError: null
+};
+
+/*
+ * Read one balanced TeX argument beginning at an opening brace.
+ *
+ * This is currently used only by the ordered-page manifest instrumentation.
+ * It intentionally preserves the author expression exactly as written.
+ */
+function readBalancedTexArgument(source, openBraceIndex) {
+    var depth = 0;
+    var escaped = false;
+    var index;
+    var character;
+
+    if (
+        openBraceIndex < 0 ||
+        source.charAt(openBraceIndex) !== "{"
+    ) {
+        return null;
+    }
+
+    for (
+        index = openBraceIndex;
+        index < source.length;
+        index += 1
+    ) {
+        character = source.charAt(index);
+
+        if (escaped) {
+            escaped = false;
+            continue;
+        }
+
+        if (character === "\\") {
+            escaped = true;
+            continue;
+        }
+
+        if (character === "{") {
+            depth += 1;
+            continue;
+        }
+
+        if (character === "}") {
+            depth -= 1;
+
+            if (depth === 0) {
+                return {
+                    value: source.slice(
+                        openBraceIndex + 1,
+                        index
+                    ),
+                    endIndex: index
+                };
+            }
+        }
+    }
+
+    return null;
+}
+
+
+
+function readBalancedTexOptionalArgument(
+    source,
+    openBracketIndex
+) {
+    var depth = 0;
+    var escaped = false;
+    var index;
+    var character;
+
+    if (
+        openBracketIndex < 0 ||
+        source.charAt(openBracketIndex) !== "["
+    ) {
+        return null;
+    }
+
+    for (
+        index = openBracketIndex;
+        index < source.length;
+        index += 1
+    ) {
+        character = source.charAt(index);
+
+        if (escaped) {
+            escaped = false;
+            continue;
+        }
+
+        if (character === "\\") {
+            escaped = true;
+            continue;
+        }
+
+        if (character === "[") {
+            depth += 1;
+            continue;
+        }
+
+        if (character === "]") {
+            depth -= 1;
+
+            if (depth === 0) {
+                return {
+                    value: source.slice(
+                        openBracketIndex + 1,
+                        index
+                    ),
+                    endIndex: index
+                };
+            }
+        }
+    }
+
+    return null;
+}
+
+
+/*
+ * Determine whether a Sage expression is inside an \answer{...} argument.
+ *
+ * This lets the instrumentation distinguish ordinary display values from
+ * Sage-generated answer keys without changing MathJax behavior yet.
+ */
+function sageExpressionConsumer(
+    source,
+    expressionStartIndex
+) {
+    var answerPattern = /\\answer\b/g;
+    var match;
+    var cursor;
+    var optionalArgument;
+    var argument;
+
+    while (
+        (
+            match =
+                answerPattern.exec(source)
+        ) !== null
+    ) {
+        cursor =
+            answerPattern.lastIndex;
+
+        while (
+            cursor < source.length &&
+            /\s/.test(
+                source.charAt(cursor)
+            )
+        ) {
+            cursor += 1;
+        }
+
+        /*
+         * Ximera answers may contain one or more optional argument groups:
+         *
+         * \answer[id=foo,validator=bar]{\sage{answerValue}}
+         */
+        while (
+            source.charAt(cursor) === "["
+        ) {
+            optionalArgument =
+                readBalancedTexOptionalArgument(
+                    source,
+                    cursor
+                );
+
+            if (!optionalArgument) {
+                break;
+            }
+
+            cursor =
+                optionalArgument.endIndex + 1;
+
+            while (
+                cursor < source.length &&
+                /\s/.test(
+                    source.charAt(cursor)
+                )
+            ) {
+                cursor += 1;
+            }
+        }
+
+        if (
+            source.charAt(cursor) !== "{"
+        ) {
+            continue;
+        }
+
+        argument =
+            readBalancedTexArgument(
+                source,
+                cursor
+            );
+
+        if (!argument) {
+            break;
+        }
+
+        if (
+            expressionStartIndex > cursor &&
+            expressionStartIndex <
+                argument.endIndex
+        ) {
+            return "answer-key";
+        }
+
+        answerPattern.lastIndex =
+            argument.endIndex + 1;
+    }
+
+    return "display";
+}
+
+
+/*
+ * Extract ordered \sage{...} and \sagestr{...} calls from one MathJax
+ * source script. Balanced-brace parsing supports nested function calls,
+ * substitutions, lists, and legacy compound expressions.
+ */
+function extractSageExpressionsFromTex(source) {
+    var sagePattern =
+        /\\(sage|sagestr)\s*\{/g;
+
+    var expressions = [];
+    var match;
+    var openBraceIndex;
+    var argument;
+
+    while (
+        (
+            match =
+                sagePattern.exec(source)
+        ) !== null
+    ) {
+        openBraceIndex =
+            match.index +
+            match[0].lastIndexOf("{");
+
+        argument = readBalancedTexArgument(
+            source,
+            openBraceIndex
+        );
+
+        if (!argument) {
+            expressions.push({
+                macro: match[1],
+                expression: null,
+                parseError:
+                    "Unbalanced Sage TeX argument",
+                sourceStartIndex: match.index
+            });
+
+            break;
+        }
+
+        expressions.push({
+            macro: match[1],
+            expression: argument.value,
+            latexify: match[1] === "sage",
+            consumer: sageExpressionConsumer(
+                source,
+                match.index
+            ),
+            sourceStartIndex: match.index,
+            sourceEndIndex: argument.endIndex
+        });
+
+        sagePattern.lastIndex =
+            argument.endIndex + 1;
+    }
+
+    return expressions;
+}
+
+
+function padSageManifestNumber(value, width) {
+    var result = String(value);
+
+    while (result.length < width) {
+        result = "0" + result;
+    }
+
+    return result;
+}
+
+
+function sageProblemNestingDepth(problem) {
+    var depth = 0;
+    var current;
+
+    if (!problem) {
+        return null;
+    }
+
+    current = problem.parentNode;
+
+    while (current) {
+        if (
+            current.nodeType === 1 &&
+            (
+                " " +
+                (current.className || "") +
+                " "
+            ).indexOf(
+                " problem-environment "
+            ) !== -1
+        ) {
+            depth += 1;
+        }
+
+        current = current.parentNode;
+    }
+
+    return depth;
+}
+
+
+function findSageProblemContainer(element) {
+    var current = element;
+
+    while (current) {
+        if (
+            current.nodeType === 1 &&
+            (
+                " " +
+                (current.className || "") +
+                " "
+            ).indexOf(
+                " problem-environment "
+            ) !== -1
+        ) {
+            return current;
+        }
+
+        current = current.parentNode;
+    }
+
+    return null;
+}
+
+
+/*
+ * Build an ordered description of all initial Sage content currently present
+ * in the activity DOM.
+ *
+ * This is instrumentation only. The existing batching and request behavior
+ * remain unchanged until the collected ordering and sizes are validated.
+ */
+function buildSagePageManifestProbe(
+    root,
+    options
+) {
+    options = options || {};
+
+    var preMathJax =
+        options.preMathJax === true;
+
+    var activity =
+        root ||
+        document.querySelector(
+            "main.activity"
+        ) ||
+        document.body;
+
+    /*
+     * Before MathJax startup, TeX is still stored in the author-delivered
+     * .mathjax-inline and .mathjax-block wrappers. MathJax later converts
+     * those sources into script[type^="math/tex"] nodes.
+     *
+     * Keep the two modes separate so settled-DOM inspection does not count
+     * both a wrapper and its generated script.
+     */
+    var selector = (
+        preMathJax
+            ? [
+                'script[type="text/sagemath"]',
+                '.mathjax-inline',
+                '.mathjax-block',
+                'script[type^="math/tex"]'
+            ]
+            : [
+                'script[type="text/sagemath"]',
+                'script[type^="math/tex"]'
+            ]
+    ).join(",");
+
+    var scripts =
+        Array.prototype.filter.call(
+            activity.querySelectorAll(
+                selector
+            ),
+            function(sourceNode) {
+                var type =
+                    sourceNode.getAttribute(
+                        "type"
+                    ) || "";
+
+                /*
+                 * Some transitional HTML may contain a generated math/tex
+                 * script inside one of the raw MathJax wrapper elements.
+                 * In that case the wrapper already contains the same TeX
+                 * source, so retain the wrapper and omit the nested script.
+                 */
+                if (
+                    preMathJax &&
+                    type.indexOf(
+                        "math/tex"
+                    ) === 0 &&
+                    $(sourceNode).closest(
+                        ".mathjax-inline, " +
+                        ".mathjax-block"
+                    ).length > 0
+                ) {
+                    return false;
+                }
+
+                return true;
+            }
+        );
+
+    var entries = [];
+    var silentBlockCount = 0;
+    var expressionCount = 0;
+    var answerKeyCount = 0;
+    var silentCharacters = 0;
+    var expressionCharacters = 0;
+
+    Array.prototype.forEach.call(
+        scripts,
+        function(script, scriptIndex) {
+            var type =
+                script.getAttribute("type") ||
+                "";
+
+            var source =
+                script.textContent || "";
+
+            var problem;
+            var expressions;
+
+            if (type === "text/sagemath") {
+                source = stripCDATA(source);
+
+                silentBlockCount += 1;
+                silentCharacters +=
+                    source.length;
+
+                entries.push({
+                    order: entries.length,
+                    kind: "sagesilent",
+                    scriptIndex: scriptIndex,
+                    characters: source.length,
+                    code: source
+                });
+
+                return;
+            }
+
+            expressions =
+                extractSageExpressionsFromTex(
+                    source
+                );
+
+            if (expressions.length === 0) {
+                return;
+            }
+
+            problem =
+                findSageProblemContainer(
+                    script
+                );
+
+            expressions.forEach(
+                function(
+                    expression,
+                    scriptExpressionIndex
+                ) {
+                    var stableId =
+                        "sage-expression-" +
+                        padSageManifestNumber(
+                            expressionCount + 1,
+                            4
+                        );
+
+                    expressionCount += 1;
+
+                    if (
+                        expression.consumer ===
+                        "answer-key"
+                    ) {
+                        answerKeyCount += 1;
+                    }
+
+                    if (
+                        expression.expression !==
+                        null
+                    ) {
+                        expressionCharacters +=
+                            expression.expression.length;
+                    }
+
+                    entries.push({
+                        order: entries.length,
+                        kind: "expression",
+                        stableId: stableId,
+                        scriptIndex: scriptIndex,
+                        scriptId:
+                            script.id || "",
+                        scriptExpressionIndex:
+                            scriptExpressionIndex,
+                        problemId:
+                            problem
+                                ? problem.id || null
+                                : null,
+                        problemDepth:
+                            sageProblemNestingDepth(
+                                problem
+                            ),
+                        macro:
+                            expression.macro,
+                        latexify:
+                            expression.latexify,
+                        consumer:
+                            expression.consumer ||
+                            "unknown",
+                        expression:
+                            expression.expression,
+                        parseError:
+                            expression.parseError ||
+                            null,
+                        sourceStartIndex:
+                            expression.sourceStartIndex,
+                        sourceEndIndex:
+                            expression.sourceEndIndex
+                    });
+                }
+            );
+        }
+    );
+
+    var estimatedCompiledCharacters =
+        currentSeedCode.length +
+        silentCharacters +
+        expressionCharacters +
+        expressionCount * 180 +
+        6000;
+
+    return {
+        compilerVersion:
+            sagePageManifestCompilerVersion,
+
+        page: {
+            url:
+                window.location.href,
+            repository:
+                activity.getAttribute(
+                    "data-repository-name"
+                ),
+            path:
+                activity.getAttribute(
+                    "data-path"
+                ),
+            commit:
+                activity.getAttribute(
+                    "data-commit"
+                ),
+            hash:
+                activity.getAttribute(
+                    "data-hash"
+                )
+        },
+
+        summary: {
+            silentBlocks:
+                silentBlockCount,
+            expressions:
+                expressionCount,
+            answerKeys:
+                answerKeyCount,
+            manifestEntries:
+                entries.length,
+            seedCharacters:
+                currentSeedCode.length,
+            silentCharacters:
+                silentCharacters,
+            expressionCharacters:
+                expressionCharacters,
+            estimatedCompiledCharacters:
+                estimatedCompiledCharacters
+        },
+
+        entries: entries
+    };
+}
+
+
+
+/*
+ * Return a deterministic debugging hash for comparing compiled page programs.
+ *
+ * The production proxy will continue using SHA-256 over the exact submitted
+ * code. This smaller browser-side hash exists only for instrumentation.
+ */
+function sageManifestDebugHash(value) {
+    var hash = 2166136261;
+    var index;
+
+    for (
+        index = 0;
+        index < value.length;
+        index += 1
+    ) {
+        hash ^= value.charCodeAt(index);
+
+        hash +=
+            (hash << 1) +
+            (hash << 4) +
+            (hash << 7) +
+            (hash << 8) +
+            (hash << 24);
+    }
+
+    return (
+        "00000000" +
+        (hash >>> 0).toString(16)
+    ).slice(-8);
+}
+
+
+function sageUtf8ByteLength(value) {
+    var length = 0;
+    var index;
+    var code;
+    var next;
+
+    for (
+        index = 0;
+        index < value.length;
+        index += 1
+    ) {
+        code = value.charCodeAt(index);
+
+        if (code <= 0x7f) {
+            length += 1;
+        } else if (code <= 0x7ff) {
+            length += 2;
+        } else if (
+            code >= 0xd800 &&
+            code <= 0xdbff &&
+            index + 1 < value.length
+        ) {
+            next =
+                value.charCodeAt(index + 1);
+
+            if (
+                next >= 0xdc00 &&
+                next <= 0xdfff
+            ) {
+                length += 4;
+                index += 1;
+            } else {
+                length += 3;
+            }
+        } else {
+            length += 3;
+        }
+    }
+
+    return length;
+}
+
+
+/*
+ * Compile the ordered DOM manifest into one deterministic Sage program.
+ *
+ * Important:
+ * - The page seed runs once.
+ * - Silent blocks run in document order.
+ * - Expressions are captured immediately at their document positions.
+ * - A later silent block can therefore change values only for later outputs.
+ * - Individual expression errors are returned without discarding other
+ *   successfully captured outputs.
+ * - Sage's preparse step is applied when executing silent block strings so
+ *   author syntax such as ^ retains normal Sage semantics.
+ *
+ * The compiler is used by diagnostics and by the browser-local,
+ * feature-gated initial-page integration. The deployed default remains the
+ * existing browser batching path.
+ */
+function compileSagePageManifest(manifest) {
+    var lines = [];
+    var silentBlockNumber = 0;
+
+    lines.push(
+        "# XRONOS_PAGE_SAGE_COMPILER_VERSION=" +
+        sagePageManifestCompilerVersion
+    );
+
+    lines.push(
+        "import json as _xronos_json"
+    );
+
+    lines.push(
+        "import traceback as _xronos_traceback"
+    );
+
+    lines.push(
+        "try:"
+    );
+
+    lines.push(
+        "    from sage.misc.sage_eval import " +
+        "sage_eval as _xronos_sage_eval"
+    );
+
+    lines.push(
+        "except Exception:"
+    );
+
+    lines.push(
+        "    _xronos_sage_eval = sage_eval"
+    );
+
+    lines.push(
+        "from sage.repl.preparse import " +
+        "preparse as _xronos_preparse"
+    );
+
+    if (
+        $.trim(currentSeedCode).length > 0
+    ) {
+        lines.push("");
+        lines.push(currentSeedCode);
+    }
+
+    lines.push("");
+    lines.push("_xronos_results = {}");
+    lines.push("_xronos_setup_error = None");
+
+    manifest.entries.forEach(
+        function(entry) {
+            var filename;
+            var evaluationCode;
+
+            if (entry.kind === "sagesilent") {
+                silentBlockNumber += 1;
+
+                filename =
+                    "<xronos-sagesilent-" +
+                    padSageManifestNumber(
+                        silentBlockNumber,
+                        4
+                    ) +
+                    ">";
+
+                lines.push("");
+                lines.push(
+                    "if _xronos_setup_error is None:"
+                );
+
+                lines.push(
+                    "    try:"
+                );
+
+                lines.push(
+                    "        exec(" +
+                    "compile(" +
+                    "_xronos_preparse(" +
+                    JSON.stringify(entry.code) +
+                    "), " +
+                    JSON.stringify(filename) +
+                    ", 'exec'), globals())"
+                );
+
+                lines.push(
+                    "    except Exception as _xronos_e:"
+                );
+
+                lines.push(
+                    "        _xronos_setup_error = {"
+                );
+
+                lines.push(
+                    "            'type': " +
+                    "'sagesilent',"
+                );
+
+                /*
+                 * Store compiler metadata as ordinary strings. SageCell
+                 * preparses the entire submitted program, so a bare numeric
+                 * literal here would become a Sage Integer rather than a
+                 * Python int and would not be directly JSON serializable.
+                 */
+                lines.push(
+                    "            'block': " +
+                    JSON.stringify(
+                        String(
+                            silentBlockNumber
+                        )
+                    ) +
+                    ","
+                );
+
+                lines.push(
+                    "            'error': " +
+                    "repr(_xronos_e),"
+                );
+
+                lines.push(
+                    "            'traceback': " +
+                    "_xronos_traceback.format_exc()"
+                );
+
+                lines.push(
+                    "        }"
+                );
+
+                return;
+            }
+
+            if (entry.kind !== "expression") {
+                return;
+            }
+
+            evaluationCode =
+                entry.latexify
+                    ? "latex(" +
+                      entry.expression +
+                      ")"
+                    : entry.expression;
+
+            lines.push("");
+
+            lines.push(
+                "if _xronos_setup_error is not None:"
+            );
+
+            lines.push(
+                "    _xronos_results[" +
+                JSON.stringify(entry.stableId) +
+                "] = {"
+            );
+
+            lines.push(
+                "        'ok': False,"
+            );
+
+            lines.push(
+                "        'errorType': " +
+                "'setup',"
+            );
+
+            lines.push(
+                "        'error': " +
+                "_xronos_setup_error"
+            );
+
+            lines.push(
+                "    }"
+            );
+
+            lines.push(
+                "else:"
+            );
+
+            lines.push(
+                "    try:"
+            );
+
+            lines.push(
+                "        _xronos_value = " +
+                "_xronos_sage_eval(" +
+                JSON.stringify(evaluationCode) +
+                ", locals=globals())"
+            );
+
+            lines.push(
+                "        _xronos_results[" +
+                JSON.stringify(entry.stableId) +
+                "] = {"
+            );
+
+            lines.push(
+                "            'ok': True,"
+            );
+
+            lines.push(
+                "            'result': " +
+                "str(_xronos_value)"
+            );
+
+            lines.push(
+                "        }"
+            );
+
+            lines.push(
+                "    except Exception as _xronos_e:"
+            );
+
+            lines.push(
+                "        _xronos_results[" +
+                JSON.stringify(entry.stableId) +
+                "] = {"
+            );
+
+            lines.push(
+                "            'ok': False,"
+            );
+
+            lines.push(
+                "            'errorType': " +
+                "'expression',"
+            );
+
+            lines.push(
+                "            'expression': " +
+                JSON.stringify(
+                    entry.expression
+                ) +
+                ","
+            );
+
+            lines.push(
+                "            'error': " +
+                "repr(_xronos_e),"
+            );
+
+            lines.push(
+                "            'traceback': " +
+                "_xronos_traceback.format_exc()"
+            );
+
+            lines.push(
+                "        }"
+            );
+        }
+    );
+
+    lines.push("");
+
+    lines.push(
+        "print(" +
+        JSON.stringify(
+            "__XRONOS_PAGE_RESULTS__"
+        ) +
+        " + _xronos_json.dumps(" +
+        "_xronos_results, " +
+        "sort_keys=True, default=str))"
+    );
+
+    return lines.join("\n");
+}
+
+
+exports.compilePageSageManifest =
+    compileSagePageManifest;
+
+
+window.xronosCompileSagePageManifestPreview =
+    function() {
+        var manifest =
+            preferredSagePageManifestProbe();
+
+        var compiledCode =
+            compileSagePageManifest(
+                manifest
+            );
+
+        var result = {
+            compilerVersion:
+                sagePageManifestCompilerVersion,
+
+            page:
+                manifest.page,
+
+            summary: {
+                silentBlocks:
+                    manifest.summary.silentBlocks,
+                expressions:
+                    manifest.summary.expressions,
+                answerKeys:
+                    manifest.summary.answerKeys,
+                manifestEntries:
+                    manifest.summary.manifestEntries,
+                compiledCharacters:
+                    compiledCode.length,
+                compiledUtf8Bytes:
+                    sageUtf8ByteLength(
+                        compiledCode
+                    ),
+                compiledDebugHash:
+                    sageManifestDebugHash(
+                        compiledCode
+                    )
+            },
+
+            compiledCode:
+                compiledCode
+        };
+
+        /*
+         * Emit exactly one object for Chrome's "Copy object" workflow.
+         */
+        console.log(result);
+
+        return result;
+    };
+
+
+window.xronosCheckSagePageManifestDeterminism =
+    function() {
+        var preview =
+            window
+                .xronosCompileSagePageManifestPreview();
+
+        var storageKey =
+            "xronos-sage-manifest-probe:" +
+            preview.page.repository +
+            ":" +
+            preview.page.path;
+
+        var previousText =
+            window.sessionStorage.getItem(
+                storageKey
+            );
+
+        var previous =
+            previousText
+                ? JSON.parse(previousText)
+                : null;
+
+        var current = {
+            compilerVersion:
+                preview.compilerVersion,
+            commit:
+                preview.page.commit,
+            hash:
+                preview.page.hash,
+            compiledCharacters:
+                preview.summary
+                    .compiledCharacters,
+            compiledUtf8Bytes:
+                preview.summary
+                    .compiledUtf8Bytes,
+            compiledDebugHash:
+                preview.summary
+                    .compiledDebugHash
+        };
+
+        window.sessionStorage.setItem(
+            storageKey,
+            JSON.stringify(current)
+        );
+
+        var result = {
+            page:
+                preview.page,
+            previous:
+                previous,
+            current:
+                current,
+            matchesPrevious:
+                previous !== null &&
+                previous.compilerVersion ===
+                    current.compilerVersion &&
+                previous.commit ===
+                    current.commit &&
+                previous.hash ===
+                    current.hash &&
+                previous.compiledCharacters ===
+                    current.compiledCharacters &&
+                previous.compiledUtf8Bytes ===
+                    current.compiledUtf8Bytes &&
+                previous.compiledDebugHash ===
+                    current.compiledDebugHash
+        };
+
+        /*
+         * Emit one final object after the larger compiler preview object.
+         * This final object is the one to copy.
+         */
+        console.log(result);
+
+        return result;
+    };
+
+
+
+var sagePageResultMarker =
+    "__XRONOS_PAGE_RESULTS__";
+
+
+function parseSagePageManifestResponse(response) {
+    var rawResult =
+        responseToResult(response);
+
+    var markerIndex;
+    var jsonText;
+
+    if (
+        rawResult === undefined ||
+        rawResult === null
+    ) {
+        rawResult = "";
+    }
+
+    rawResult = String(rawResult);
+
+    markerIndex =
+        rawResult.lastIndexOf(
+            sagePageResultMarker
+        );
+
+    if (markerIndex === -1) {
+        throw {
+            ename:
+                "XronosSagePageResultError",
+            evalue:
+                "Canonical Sage page result marker was not found",
+            responseText:
+                rawResult
+        };
+    }
+
+    jsonText = $.trim(
+        rawResult.slice(
+            markerIndex +
+            sagePageResultMarker.length
+        )
+    );
+
+    try {
+        return JSON.parse(jsonText);
+    } catch (err) {
+        throw {
+            ename:
+                "XronosSagePageResultError",
+            evalue:
+                "Canonical Sage page result JSON could not be parsed",
+            parseError:
+                String(err),
+            responseText:
+                rawResult
+        };
+    }
+}
+
+
+function executeSagePageManifestPreview(
+    manifest
+) {
+    var compiledCode =
+        compileSagePageManifest(
+            manifest
+        );
+
+    return postSageRaw(
+        compiledCode
+    ).then(
+        function(response) {
+            return {
+                compiledCode:
+                    compiledCode,
+                compiledCharacters:
+                    compiledCode.length,
+                compiledUtf8Bytes:
+                    sageUtf8ByteLength(
+                        compiledCode
+                    ),
+                compiledDebugHash:
+                    sageManifestDebugHash(
+                        compiledCode
+                    ),
+                results:
+                    parseSagePageManifestResponse(
+                        response
+                    )
+            };
+        }
+    );
+}
+
+
+function canonicalPageSageFeatureEnabled() {
+    if (
+        typeof window.xronosCanonicalPageSage ===
+        "boolean"
+    ) {
+        return window.xronosCanonicalPageSage;
+    }
+
+    try {
+        return (
+            window.localStorage.getItem(
+                canonicalPageSageStorageKey
+            ) === "true"
+        );
+    } catch (err) {
+        return false;
+    }
+}
+
+
+function canonicalPageSageExpressionEntries(
+    manifest
+) {
+    if (!manifest || !manifest.entries) {
+        return [];
+    }
+
+    return manifest.entries.filter(
+        function(entry) {
+            return (
+                entry.kind ===
+                "expression"
+            );
+        }
+    );
+}
+
+
+function canonicalPageSageSimpleError(err) {
+    if (!err) {
+        return null;
+    }
+
+    return {
+        ename:
+            err.ename ||
+            err.name ||
+            "",
+
+        evalue:
+            err.evalue ||
+            err.message ||
+            String(err),
+
+        status:
+            err.status ||
+            "",
+
+        httpStatus:
+            err.httpStatus ||
+            0
+    };
+}
+
+
+function canonicalPageSageFallback(
+    legacyCode,
+    reason
+) {
+    canonicalPageSageRuntime
+        .legacyFallbacks += 1;
+
+    canonicalPageSageRuntime
+        .lastFallback = reason;
+
+    return exports.sage(
+        legacyCode
+    );
+}
+
+
+function canonicalPageSageFallbackError(
+    code,
+    message,
+    details
+) {
+    return {
+        ename:
+            "XronosCanonicalPageSageFallback",
+
+        evalue:
+            message,
+
+        xronosCanonicalFallback:
+            true,
+
+        fallbackCode:
+            code,
+
+        details:
+            details || null
+    };
+}
+
+
+function canonicalPageSageEntryError(
+    entry,
+    result,
+    execution
+) {
+    var rawError =
+        result &&
+        result.error !== undefined
+            ? result.error
+            : null;
+
+    var message;
+
+    if (
+        rawError &&
+        typeof rawError === "object"
+    ) {
+        try {
+            message =
+                JSON.stringify(rawError);
+        } catch (err) {
+            message =
+                String(rawError);
+        }
+    } else {
+        message =
+            rawError !== null
+                ? String(rawError)
+                : "Canonical Sage expression failed.";
+    }
+
+    return {
+        ename:
+            result &&
+            result.errorType === "setup"
+                ? "XronosSageSetupError"
+                : "XronosSageExpressionError",
+
+        evalue:
+            message,
+
+        traceback:
+            result &&
+            result.traceback
+                ? result.traceback
+                : (
+                    result &&
+                    result.error &&
+                    result.error.traceback
+                        ? result.error.traceback
+                        : null
+                ),
+
+        xronosSage: {
+            pageUrl:
+                window.location.href,
+
+            compilerVersion:
+                sagePageManifestCompilerVersion,
+
+            compiledDebugHash:
+                execution.compiledDebugHash,
+
+            stableId:
+                entry.stableId,
+
+            order:
+                entry.order,
+
+            expression:
+                entry.expression,
+
+            consumer:
+                entry.consumer,
+
+            problemId:
+                entry.problemId,
+
+            problemDepth:
+                entry.problemDepth,
+
+            errorType:
+                result
+                    ? result.errorType || null
+                    : null,
+
+            result:
+                result || null
+        }
+    };
+}
+
+
+function executeInitialCanonicalPageSage() {
+    var manifest =
+        initialSagePageManifestSnapshot;
+
+    if (
+        canonicalPageSageRuntime
+            .permanentFallbackReason
+    ) {
+        return Promise.reject(
+            canonicalPageSageRuntime
+                .permanentFallbackReason
+        );
+    }
+
+    if (!manifest) {
+        canonicalPageSageRuntime
+            .permanentFallbackReason =
+                canonicalPageSageFallbackError(
+                    "missing-snapshot",
+                    "The pre-MathJax Sage manifest was not captured."
+                );
+
+        return Promise.reject(
+            canonicalPageSageRuntime
+                .permanentFallbackReason
+        );
+    }
+
+    if (
+        canonicalPageSageRuntime
+            .initialPromise
+    ) {
+        return canonicalPageSageRuntime
+            .initialPromise;
+    }
+
+    var expressionEntries =
+        canonicalPageSageExpressionEntries(
+            manifest
+        );
+
+    if (expressionEntries.length === 0) {
+        canonicalPageSageRuntime
+            .permanentFallbackReason =
+                canonicalPageSageFallbackError(
+                    "empty-manifest",
+                    "The initial Sage manifest contains no expressions."
+                );
+
+        return Promise.reject(
+            canonicalPageSageRuntime
+                .permanentFallbackReason
+        );
+    }
+
+    var parseErrors =
+        expressionEntries.filter(
+            function(entry) {
+                return !!entry.parseError;
+            }
+        );
+
+    if (parseErrors.length > 0) {
+        canonicalPageSageRuntime
+            .permanentFallbackReason =
+                canonicalPageSageFallbackError(
+                    "manifest-parse-error",
+                    "The initial Sage manifest contains an expression parse error.",
+                    {
+                        entries:
+                            parseErrors
+                    }
+                );
+
+        return Promise.reject(
+            canonicalPageSageRuntime
+                .permanentFallbackReason
+        );
+    }
+
+    canonicalPageSageRuntime.status =
+        "waiting-for-seed";
+
+    var pending =
+        new Promise(
+            function(resolve, reject) {
+                setSeed(
+                    function() {
+                        var compiledCode =
+                            compileSagePageManifest(
+                                manifest
+                            );
+
+                        var compiledUtf8Bytes =
+                            sageUtf8ByteLength(
+                                compiledCode
+                            );
+
+                        canonicalPageSageRuntime
+                            .compiledCharacters =
+                                compiledCode.length;
+
+                        canonicalPageSageRuntime
+                            .compiledUtf8Bytes =
+                                compiledUtf8Bytes;
+
+                        canonicalPageSageRuntime
+                            .compiledDebugHash =
+                                sageManifestDebugHash(
+                                    compiledCode
+                                );
+
+                        if (
+                            compiledUtf8Bytes >
+                            canonicalPageSageMaxCompiledUtf8Bytes
+                        ) {
+                            canonicalPageSageRuntime
+                                .permanentFallbackReason =
+                                    canonicalPageSageFallbackError(
+                                        "compiled-size-limit",
+                                        "The canonical Sage page program exceeds the temporary live-integration size limit.",
+                                        {
+                                            compiledUtf8Bytes:
+                                                compiledUtf8Bytes,
+
+                                            maximumUtf8Bytes:
+                                                canonicalPageSageMaxCompiledUtf8Bytes
+                                        }
+                                    );
+
+                            reject(
+                                canonicalPageSageRuntime
+                                    .permanentFallbackReason
+                            );
+
+                            return;
+                        }
+
+                        canonicalPageSageRuntime
+                            .status =
+                                "requesting";
+
+                        canonicalPageSageRuntime
+                            .requestCount += 1;
+
+                        canonicalPageSageRuntime
+                            .requestStartedAtMilliseconds =
+                                Date.now();
+
+                        canonicalPageSageRuntime
+                            .requestCompletedAtMilliseconds =
+                                null;
+
+                        canonicalPageSageRuntime
+                            .requestDurationMilliseconds =
+                                null;
+
+                        postSageRaw(
+                            compiledCode
+                        ).then(
+                            function(response) {
+                                var results;
+
+                                canonicalPageSageRuntime
+                                    .requestCompletedAtMilliseconds =
+                                        Date.now();
+
+                                canonicalPageSageRuntime
+                                    .requestDurationMilliseconds =
+                                        canonicalPageSageRuntime
+                                            .requestCompletedAtMilliseconds -
+                                        canonicalPageSageRuntime
+                                            .requestStartedAtMilliseconds;
+
+                                try {
+                                    results =
+                                        parseSagePageManifestResponse(
+                                            response
+                                        );
+                                } catch (err) {
+                                    reject(err);
+                                    return;
+                                }
+
+                                var resultKeys =
+                                    Object.keys(
+                                        results
+                                    );
+
+                                canonicalPageSageRuntime
+                                    .resultCount =
+                                        resultKeys.length;
+
+                                canonicalPageSageRuntime
+                                    .expressionFailureCount =
+                                        resultKeys.filter(
+                                            function(key) {
+                                                return !(
+                                                    results[key] &&
+                                                    results[key].ok
+                                                );
+                                            }
+                                        ).length;
+
+                                resolve({
+                                    manifest:
+                                        manifest,
+
+                                    compiledCharacters:
+                                        compiledCode.length,
+
+                                    compiledUtf8Bytes:
+                                        compiledUtf8Bytes,
+
+                                    compiledDebugHash:
+                                        canonicalPageSageRuntime
+                                            .compiledDebugHash,
+
+                                    results:
+                                        results
+                                });
+                            },
+                            function(err) {
+                                canonicalPageSageRuntime
+                                    .requestCompletedAtMilliseconds =
+                                        Date.now();
+
+                                canonicalPageSageRuntime
+                                    .requestDurationMilliseconds =
+                                        canonicalPageSageRuntime
+                                            .requestCompletedAtMilliseconds -
+                                        canonicalPageSageRuntime
+                                            .requestStartedAtMilliseconds;
+
+                                reject(err);
+                            }
+                        );
+                    }
+                );
+            }
+        );
+
+    canonicalPageSageRuntime.initialPromise =
+        pending.then(
+            function(execution) {
+                canonicalPageSageRuntime.status =
+                    "success";
+
+                canonicalPageSageRuntime.lastError =
+                    null;
+
+                return execution;
+            },
+            function(err) {
+                if (
+                    err &&
+                    err.xronosCanonicalFallback
+                ) {
+                    canonicalPageSageRuntime.status =
+                        "fallback";
+                } else {
+                    canonicalPageSageRuntime.status =
+                        "error";
+
+                    canonicalPageSageRuntime.lastError =
+                        canonicalPageSageSimpleError(
+                            err
+                        );
+                }
+
+                /*
+                 * Network, authorization, and response parsing errors may be
+                 * retried through the existing grouped Sage retry controls.
+                 * Permanent eligibility fallbacks remain cached separately.
+                 */
+                canonicalPageSageRuntime.initialPromise =
+                    null;
+
+                throw err;
+            }
+        );
+
+    return canonicalPageSageRuntime
+        .initialPromise;
+}
+
+
+/*
+ * Resolve one MathJax Sage macro call.
+ *
+ * The initial full MathJax pass has a proven exact ordered mapping to the
+ * immutable pre-MathJax manifest. Only those first manifest-sized calls use
+ * the canonical page request. Later calls intentionally retain the deployed
+ * legacy behavior until deterministic dynamic generations are implemented.
+ */
+exports.resolveMathJaxSageCall =
+    function(traceEntry, legacyCode) {
+        if (
+            !canonicalPageSageFeatureEnabled()
+        ) {
+            return canonicalPageSageFallback(
+                legacyCode,
+                {
+                    code:
+                        "feature-disabled"
+                }
+            );
+        }
+
+        var manifest =
+            initialSagePageManifestSnapshot;
+
+        var expressionEntries =
+            canonicalPageSageExpressionEntries(
+                manifest
+            );
+
+        if (
+            !traceEntry ||
+            typeof traceEntry.callIndex !==
+                "number"
+        ) {
+            return canonicalPageSageFallback(
+                legacyCode,
+                {
+                    code:
+                        "missing-trace-entry"
+                }
+            );
+        }
+
+        /*
+         * This is the deliberate safety boundary for the first live phase.
+         * Reprocessing and dynamic calls occur after the initial manifest
+         * count and therefore remain on the legacy path.
+         */
+        if (
+            traceEntry.callIndex < 0 ||
+            traceEntry.callIndex >=
+                expressionEntries.length
+        ) {
+            return canonicalPageSageFallback(
+                legacyCode,
+                {
+                    code:
+                        "outside-initial-pass",
+
+                    callIndex:
+                        traceEntry.callIndex,
+
+                    manifestExpressions:
+                        expressionEntries.length
+                }
+            );
+        }
+
+        var entry =
+            expressionEntries[
+                traceEntry.callIndex
+            ];
+
+        if (
+            !entry ||
+            entry.expression !==
+                traceEntry.expression ||
+            entry.latexify !==
+                traceEntry.latexify
+        ) {
+            return canonicalPageSageFallback(
+                legacyCode,
+                {
+                    code:
+                        "manifest-call-mismatch",
+
+                    callIndex:
+                        traceEntry.callIndex,
+
+                    expected:
+                        entry
+                            ? {
+                                stableId:
+                                    entry.stableId,
+
+                                expression:
+                                    entry.expression,
+
+                                latexify:
+                                    entry.latexify
+                            }
+                            : null,
+
+                    actual: {
+                        expression:
+                            traceEntry.expression,
+
+                        latexify:
+                            traceEntry.latexify
+                    }
+                }
+            );
+        }
+
+        canonicalPageSageRuntime
+            .mappedCalls += 1;
+
+        return executeInitialCanonicalPageSage()
+            .then(
+                function(execution) {
+                    var result =
+                        execution.results[
+                            entry.stableId
+                        ];
+
+                    if (!result) {
+                        canonicalPageSageRuntime
+                            .canonicalRejections += 1;
+
+                        throw {
+                            ename:
+                                "XronosSageMissingCanonicalResult",
+
+                            evalue:
+                                "The canonical page response did not contain the expected expression result.",
+
+                            xronosSage: {
+                                stableId:
+                                    entry.stableId,
+
+                                expression:
+                                    entry.expression,
+
+                                consumer:
+                                    entry.consumer,
+
+                                problemId:
+                                    entry.problemId,
+
+                                compiledDebugHash:
+                                    execution
+                                        .compiledDebugHash
+                            }
+                        };
+                    }
+
+                    if (!result.ok) {
+                        canonicalPageSageRuntime
+                            .canonicalRejections += 1;
+
+                        throw canonicalPageSageEntryError(
+                            entry,
+                            result,
+                            execution
+                        );
+                    }
+
+                    canonicalPageSageRuntime
+                        .canonicalResolutions += 1;
+
+                    return String(
+                        result.result
+                    );
+                },
+                function(err) {
+                    if (
+                        err &&
+                        err.xronosCanonicalFallback
+                    ) {
+                        return canonicalPageSageFallback(
+                            legacyCode,
+                            {
+                                code:
+                                    err.fallbackCode,
+
+                                message:
+                                    err.evalue,
+
+                                details:
+                                    err.details || null
+                            }
+                        );
+                    }
+
+                    canonicalPageSageRuntime
+                        .canonicalRejections += 1;
+
+                    throw err;
+                }
+            );
+    };
+
+
+window.xronosSetCanonicalPageSageEnabled =
+    function(enabled) {
+        var value =
+            enabled === true;
+
+        try {
+            window.localStorage.setItem(
+                canonicalPageSageStorageKey,
+                value
+                    ? "true"
+                    : "false"
+            );
+        } catch (err) {
+            var storageError = {
+                enabled:
+                    false,
+
+                reloadRequired:
+                    false,
+
+                error:
+                    String(err)
+            };
+
+            console.log(storageError);
+
+            return storageError;
+        }
+
+        var result = {
+            enabled:
+                value,
+
+            storageKey:
+                canonicalPageSageStorageKey,
+
+            reloadRequired:
+                true
+        };
+
+        console.log(result);
+
+        return result;
+    };
+
+
+window.xronosInspectCanonicalPageSageRuntime =
+    function() {
+        var manifest =
+            initialSagePageManifestSnapshot;
+
+        var expressionEntries =
+            canonicalPageSageExpressionEntries(
+                manifest
+            );
+
+        var result = {
+            enabled:
+                canonicalPageSageFeatureEnabled(),
+
+            scope:
+                "initial-mathjax-pass-only",
+
+            maximumCompiledUtf8Bytes:
+                canonicalPageSageMaxCompiledUtf8Bytes,
+
+            manifestExpressions:
+                expressionEntries.length,
+
+            answerKeys:
+                expressionEntries.filter(
+                    function(entry) {
+                        return (
+                            entry.consumer ===
+                            "answer-key"
+                        );
+                    }
+                ).length,
+
+            status:
+                canonicalPageSageRuntime.status,
+
+            requestCount:
+                canonicalPageSageRuntime
+                    .requestCount,
+
+            mappedCalls:
+                canonicalPageSageRuntime
+                    .mappedCalls,
+
+            canonicalResolutions:
+                canonicalPageSageRuntime
+                    .canonicalResolutions,
+
+            canonicalRejections:
+                canonicalPageSageRuntime
+                    .canonicalRejections,
+
+            legacyFallbacks:
+                canonicalPageSageRuntime
+                    .legacyFallbacks,
+
+            compiledCharacters:
+                canonicalPageSageRuntime
+                    .compiledCharacters,
+
+            compiledUtf8Bytes:
+                canonicalPageSageRuntime
+                    .compiledUtf8Bytes,
+
+            compiledDebugHash:
+                canonicalPageSageRuntime
+                    .compiledDebugHash,
+
+            requestDurationMilliseconds:
+                canonicalPageSageRuntime
+                    .requestDurationMilliseconds,
+
+            resultCount:
+                canonicalPageSageRuntime
+                    .resultCount,
+
+            expressionFailureCount:
+                canonicalPageSageRuntime
+                    .expressionFailureCount,
+
+            permanentFallback:
+                canonicalPageSageRuntime
+                    .permanentFallbackReason
+                    ? {
+                        code:
+                            canonicalPageSageRuntime
+                                .permanentFallbackReason
+                                .fallbackCode,
+
+                        message:
+                            canonicalPageSageRuntime
+                                .permanentFallbackReason
+                                .evalue,
+
+                        details:
+                            canonicalPageSageRuntime
+                                .permanentFallbackReason
+                                .details || null
+                    }
+                    : null,
+
+            lastFallback:
+                canonicalPageSageRuntime
+                    .lastFallback,
+
+            lastError:
+                canonicalPageSageRuntime
+                    .lastError
+        };
+
+        console.log(result);
+
+        return result;
+    };
+
+
+
+function externalSageManifestSeedCode(manifest) {
+    var page =
+        manifest && manifest.page
+            ? manifest.page
+            : {};
+
+    var activityPath =
+        page.path || "";
+
+    var repositoryName =
+        page.repository || "";
+
+    var scoped =
+        String(
+            page.scopedSageBaseSeeds ||
+            ""
+        ) === "true";
+
+    if (scoped) {
+        var randomizationScope =
+            page.randomizationScope ||
+            (
+                "public:" +
+                repositoryName
+            );
+
+        var xoursePath =
+            page.xoursePath || "";
+
+        var seedKey = [
+            randomizationScope,
+            repositoryName,
+            xoursePath,
+            activityPath,
+            "base"
+        ].join("/");
+
+        return {
+            mode:
+                "scoped-base",
+
+            code:
+                "xronos_seed_key=" +
+                JSON.stringify(seedKey) +
+                "\n" +
+                "import hashlib\n" +
+                "set_random_seed(int(" +
+                "hashlib.sha256(" +
+                "xronos_seed_key.encode('utf-8')" +
+                ").hexdigest(), 16))"
+        };
+    }
+
+    var currentFileBase =
+        activityPath
+            .split("/")
+            .slice(-1)[0];
+
+    return {
+        mode:
+            "legacy-base",
+
+        code:
+            "jobname=" +
+            JSON.stringify(
+                currentFileBase
+            ) +
+            "\n" +
+            "import hashlib\n" +
+            "set_random_seed(int(" +
+            "hashlib.sha256(" +
+            "jobname.encode('utf-8')" +
+            ").hexdigest(), 16))"
+    };
+}
+
+
+function measureExternalSageManifest(
+    manifest
+) {
+    if (
+        !manifest ||
+        !Array.isArray(
+            manifest.entries
+        )
+    ) {
+        throw new Error(
+            "The selected JSON does not contain a Sage manifest entries array."
+        );
+    }
+
+    var seedInfo =
+        externalSageManifestSeedCode(
+            manifest
+        );
+
+    var previousSeedCode =
+        currentSeedCode;
+
+    var compiledCode;
+
+    try {
+        /*
+         * Compilation is synchronous. Temporarily substitute the captured
+         * page's seed source, then restore the active development page state.
+         */
+        currentSeedCode =
+            seedInfo.code;
+
+        compiledCode =
+            compileSagePageManifest(
+                manifest
+            );
+    } finally {
+        currentSeedCode =
+            previousSeedCode;
+    }
+
+    var compiledUtf8Bytes =
+        sageUtf8ByteLength(
+            compiledCode
+        );
+
+    var expressionEntries =
+        manifest.entries.filter(
+            function(entry) {
+                return (
+                    entry.kind ===
+                    "expression"
+                );
+            }
+        );
+
+    return {
+        page:
+            manifest.page ||
+            null,
+
+        capturedSummary:
+            manifest.summary ||
+            null,
+
+        compilerVersion:
+            sagePageManifestCompilerVersion,
+
+        seedMode:
+            seedInfo.mode,
+
+        seedCharacters:
+            seedInfo.code.length,
+
+        expressions:
+            expressionEntries.length,
+
+        answerKeys:
+            expressionEntries.filter(
+                function(entry) {
+                    return (
+                        entry.consumer ===
+                        "answer-key"
+                    );
+                }
+            ).length,
+
+        compiledCharacters:
+            compiledCode.length,
+
+        compiledUtf8Bytes:
+            compiledUtf8Bytes,
+
+        compiledDebugHash:
+            sageManifestDebugHash(
+                compiledCode
+            ),
+
+        temporaryLiveLimitUtf8Bytes:
+            canonicalPageSageMaxCompiledUtf8Bytes,
+
+        exceedsTemporaryLiveLimit:
+            compiledUtf8Bytes >
+            canonicalPageSageMaxCompiledUtf8Bytes,
+
+        /*
+         * No request is submitted. This inspector only compiles and measures.
+         */
+        executed:
+            false
+    };
+}
+
+
+window.xronosMeasureExternalSageManifest =
+    function(manifest) {
+        var result =
+            measureExternalSageManifest(
+                manifest
+            );
+
+        console.log(result);
+
+        return result;
+    };
+
+
+window.xronosMeasureExternalSageManifestFile =
+    function() {
+        return new Promise(
+            function(resolve, reject) {
+                var input =
+                    document.createElement(
+                        "input"
+                    );
+
+                input.type =
+                    "file";
+
+                input.accept =
+                    "application/json,.json";
+
+                input.style.display =
+                    "none";
+
+                input.addEventListener(
+                    "change",
+                    function() {
+                        var file =
+                            input.files &&
+                            input.files[0];
+
+                        if (!file) {
+                            input.remove();
+
+                            reject(
+                                new Error(
+                                    "No manifest file was selected."
+                                )
+                            );
+
+                            return;
+                        }
+
+                        var reader =
+                            new FileReader();
+
+                        reader.addEventListener(
+                            "load",
+                            function() {
+                                try {
+                                    var manifest =
+                                        JSON.parse(
+                                            reader.result
+                                        );
+
+                                    var result =
+                                        measureExternalSageManifest(
+                                            manifest
+                                        );
+
+                                    result.fileName =
+                                        file.name;
+
+                                    console.log(
+                                        result
+                                    );
+
+                                    resolve(
+                                        result
+                                    );
+                                } catch (err) {
+                                    reject(err);
+                                } finally {
+                                    input.remove();
+                                }
+                            }
+                        );
+
+                        reader.addEventListener(
+                            "error",
+                            function() {
+                                input.remove();
+
+                                reject(
+                                    reader.error ||
+                                    new Error(
+                                        "The manifest file could not be read."
+                                    )
+                                );
+                            }
+                        );
+
+                        reader.readAsText(
+                            file
+                        );
+                    }
+                );
+
+                document.body.appendChild(
+                    input
+                );
+
+                input.click();
+            }
+        );
+    };
+
+
+
+function sagePreviewErrorSummary(err) {
+    var wrapper = err || {};
+    var cause =
+        wrapper.xronosFixtureCause ||
+        wrapper;
+
+    var parsed =
+        parseSageCellError(cause) ||
+        cause ||
+        {};
+
+    var responseText =
+        cause &&
+        cause.responseText !== undefined
+            ? String(cause.responseText)
+            : "";
+
+    return {
+        fixturePhase:
+            wrapper.xronosFixturePhase ||
+            null,
+
+        ename:
+            parsed.ename ||
+            (cause && cause.ename) ||
+            (cause && cause.name) ||
+            "",
+
+        evalue:
+            parsed.evalue ||
+            (cause && cause.evalue) ||
+            (cause && cause.message) ||
+            responseText ||
+            String(cause),
+
+        status:
+            cause && cause.status
+                ? String(cause.status)
+                : "",
+
+        httpStatus:
+            sageErrorHttpStatus(cause),
+
+        success:
+            cause &&
+            cause.success !== undefined
+                ? cause.success
+                : null,
+
+        executeReply:
+            cause &&
+            cause.execute_reply !== undefined
+                ? cause.execute_reply
+                : null,
+
+        stdout:
+            cause &&
+            cause.stdout !== undefined
+                ? cause.stdout
+                : null,
+
+        stderr:
+            cause &&
+            cause.stderr !== undefined
+                ? cause.stderr
+                : null,
+
+        responseText:
+            responseText,
+
+        parseError:
+            cause && cause.parseError
+                ? String(cause.parseError)
+                : null,
+
+        objectKeys:
+            cause &&
+            typeof cause === "object"
+                ? Object.keys(cause)
+                : [],
+
+        compiledDebugHash:
+            wrapper.xronosCompiledCode
+                ? sageManifestDebugHash(
+                    wrapper.xronosCompiledCode
+                )
+                : null,
+
+        compiledCode:
+            wrapper.xronosCompiledCode ||
+            null
+    };
+}
+
+
+/*
+ * Compare the canonical page program with the currently deployed legacy
+ * expression path. Normal page execution remains unchanged.
+ */
+window.xronosCompareSagePageManifestPreview =
+    function() {
+        var manifest =
+            preferredSagePageManifestProbe();
+
+        var expressionEntries =
+            manifest.entries.filter(
+                function(entry) {
+                    return (
+                        entry.kind ===
+                        "expression"
+                    );
+                }
+            );
+
+        return executeSagePageManifestPreview(
+            manifest
+        ).then(
+            function(canonicalExecution) {
+                var canonicalResults =
+                    canonicalExecution.results;
+
+                var comparisons =
+                    expressionEntries.map(
+                        function(entry) {
+                            var legacyCode =
+                                entry.latexify
+                                    ? "latex(" +
+                                      entry.expression +
+                                      ")"
+                                    : entry.expression;
+
+                            return exports.sage(
+                                legacyCode
+                            ).then(
+                                function(result) {
+                                    var canonical =
+                                        canonicalResults[
+                                            entry.stableId
+                                        ];
+
+                                    var canonicalOk =
+                                        !!(
+                                            canonical &&
+                                            canonical.ok
+                                        );
+
+                                    var canonicalValue =
+                                        canonicalOk
+                                            ? String(
+                                                canonical.result
+                                            )
+                                            : null;
+
+                                    var legacyValue =
+                                        String(result);
+
+                                    return {
+                                        stableId:
+                                            entry.stableId,
+                                        expression:
+                                            entry.expression,
+                                        consumer:
+                                            entry.consumer,
+                                        canonicalOk:
+                                            canonicalOk,
+                                        legacyOk:
+                                            true,
+                                        canonicalValue:
+                                            canonicalValue,
+                                        legacyValue:
+                                            legacyValue,
+                                        matches:
+                                            canonicalOk &&
+                                            canonicalValue ===
+                                                legacyValue,
+                                        canonicalError:
+                                            canonicalOk
+                                                ? null
+                                                : canonical ||
+                                                  null,
+                                        legacyError:
+                                            null
+                                    };
+                                },
+                                function(err) {
+                                    var canonical =
+                                        canonicalResults[
+                                            entry.stableId
+                                        ];
+
+                                    var canonicalOk =
+                                        !!(
+                                            canonical &&
+                                            canonical.ok
+                                        );
+
+                                    return {
+                                        stableId:
+                                            entry.stableId,
+                                        expression:
+                                            entry.expression,
+                                        consumer:
+                                            entry.consumer,
+                                        canonicalOk:
+                                            canonicalOk,
+                                        legacyOk:
+                                            false,
+                                        canonicalValue:
+                                            canonicalOk
+                                                ? String(
+                                                    canonical.result
+                                                )
+                                                : null,
+                                        legacyValue:
+                                            null,
+                                        matches:
+                                            false,
+                                        canonicalError:
+                                            canonicalOk
+                                                ? null
+                                                : canonical ||
+                                                  null,
+                                        legacyError:
+                                            sagePreviewErrorSummary(
+                                                err
+                                            )
+                                    };
+                                }
+                            );
+                        }
+                    );
+
+                return Promise.all(
+                    comparisons
+                ).then(
+                    function(results) {
+                        var mismatches =
+                            results.filter(
+                                function(result) {
+                                    return !result.matches;
+                                }
+                            );
+
+                        var canonicalSuccesses =
+                            results.filter(
+                                function(result) {
+                                    return result.canonicalOk;
+                                }
+                            ).length;
+
+                        var legacySuccesses =
+                            results.filter(
+                                function(result) {
+                                    return result.legacyOk;
+                                }
+                            ).length;
+
+                        var answerKeys =
+                            results.filter(
+                                function(result) {
+                                    return (
+                                        result.consumer ===
+                                        "answer-key"
+                                    );
+                                }
+                            );
+
+                        var finalResult = {
+                            page:
+                                manifest.page,
+
+                            summary: {
+                                expressions:
+                                    results.length,
+                                canonicalSuccesses:
+                                    canonicalSuccesses,
+                                legacySuccesses:
+                                    legacySuccesses,
+                                mismatches:
+                                    mismatches.length,
+                                allValuesMatch:
+                                    mismatches.length === 0,
+                                compiledCharacters:
+                                    canonicalExecution
+                                        .compiledCharacters,
+                                compiledUtf8Bytes:
+                                    canonicalExecution
+                                        .compiledUtf8Bytes,
+                                compiledDebugHash:
+                                    canonicalExecution
+                                        .compiledDebugHash
+                            },
+
+                            answerKeys:
+                                answerKeys,
+
+                            mismatches:
+                                mismatches
+                        };
+
+                        /*
+                         * Emit one copyable final object.
+                         */
+                        console.log(finalResult);
+
+                        return finalResult;
+                    }
+                );
+            },
+            function(err) {
+                var failure = {
+                    page:
+                        manifest.page,
+                    executionError:
+                        sagePreviewErrorSummary(
+                            err
+                        )
+                };
+
+                console.log(failure);
+
+                return failure;
+            }
+        );
+    };
+
+
+/*
+ * Validate ordered execution and error isolation using small synthetic
+ * manifests submitted through the real authenticated SageCell proxy.
+ */
+window.xronosTestSagePageCompilerFixtures =
+    function() {
+        var orderedManifest = {
+            entries: [
+                {
+                    kind: "sagesilent",
+                    code: "x = 1"
+                },
+                {
+                    kind: "expression",
+                    stableId:
+                        "ordered-0001",
+                    expression: "x",
+                    latexify: false
+                },
+                {
+                    kind: "sagesilent",
+                    code: "x = 2"
+                },
+                {
+                    kind: "expression",
+                    stableId:
+                        "ordered-0002",
+                    expression: "x",
+                    latexify: false
+                }
+            ]
+        };
+
+        var errorManifest = {
+            entries: [
+                {
+                    kind: "sagesilent",
+                    code: "fixture_value = 5"
+                },
+                {
+                    kind: "expression",
+                    stableId:
+                        "error-0001",
+                    expression:
+                        "__xronos_missing_fixture_value__",
+                    latexify: false
+                },
+                {
+                    kind: "expression",
+                    stableId:
+                        "error-0002",
+                    expression:
+                        "fixture_value",
+                    latexify: false
+                },
+                {
+                    kind: "sagesilent",
+                    code:
+                        "raise ValueError(" +
+                        "'intentional fixture setup failure'" +
+                        ")"
+                },
+                {
+                    kind: "expression",
+                    stableId:
+                        "error-0003",
+                    expression:
+                        "fixture_value",
+                    latexify: false
+                }
+            ]
+        };
+
+        /*
+         * Run these sequentially. Besides making the fixture easier to
+         * diagnose, this avoids allowing two synthetic requests to race
+         * through an expired page-authorization refresh.
+         */
+        return executeSagePageManifestPreview(
+            orderedManifest
+        ).then(
+            function(orderedExecution) {
+                return executeSagePageManifestPreview(
+                    errorManifest
+                ).then(
+                    function(errorExecution) {
+                        return [
+                            orderedExecution,
+                            errorExecution
+                        ];
+                    },
+                    function(err) {
+                        throw {
+                            xronosFixturePhase:
+                                "error-isolation",
+                            xronosCompiledCode:
+                                compileSagePageManifest(
+                                    errorManifest
+                                ),
+                            xronosFixtureCause:
+                                err
+                        };
+                    }
+                );
+            },
+            function(err) {
+                throw {
+                    xronosFixturePhase:
+                        "ordered-execution",
+                    xronosCompiledCode:
+                        compileSagePageManifest(
+                            orderedManifest
+                        ),
+                    xronosFixtureCause:
+                        err
+                };
+            }
+        ).then(
+            function(executions) {
+                var ordered =
+                    executions[0].results;
+
+                var errors =
+                    executions[1].results;
+
+                var orderedPassed =
+                    ordered["ordered-0001"] &&
+                    ordered["ordered-0001"].ok &&
+                    String(
+                        ordered["ordered-0001"]
+                            .result
+                    ) === "1" &&
+                    ordered["ordered-0002"] &&
+                    ordered["ordered-0002"].ok &&
+                    String(
+                        ordered["ordered-0002"]
+                            .result
+                    ) === "2";
+
+                var expressionFailureIsolated =
+                    errors["error-0001"] &&
+                    !errors["error-0001"].ok &&
+                    errors["error-0001"]
+                        .errorType ===
+                        "expression" &&
+                    errors["error-0002"] &&
+                    errors["error-0002"].ok &&
+                    String(
+                        errors["error-0002"]
+                            .result
+                    ) === "5";
+
+                var setupFailurePropagated =
+                    errors["error-0003"] &&
+                    !errors["error-0003"].ok &&
+                    errors["error-0003"]
+                        .errorType ===
+                        "setup";
+
+                var result = {
+                    summary: {
+                        orderedExecution:
+                            orderedPassed,
+                        expressionFailureIsolated:
+                            expressionFailureIsolated,
+                        setupFailurePropagated:
+                            setupFailurePropagated,
+                        allPassed:
+                            orderedPassed &&
+                            expressionFailureIsolated &&
+                            setupFailurePropagated
+                    },
+
+                    orderedResults:
+                        ordered,
+
+                    errorResults:
+                        errors,
+
+                    compiled: {
+                        orderedCharacters:
+                            executions[0]
+                                .compiledCharacters,
+                        orderedDebugHash:
+                            executions[0]
+                                .compiledDebugHash,
+                        errorCharacters:
+                            executions[1]
+                                .compiledCharacters,
+                        errorDebugHash:
+                            executions[1]
+                                .compiledDebugHash
+                    }
+                };
+
+                /*
+                 * Emit one copyable final object.
+                 */
+                console.log(result);
+
+                return result;
+            },
+            function(err) {
+                var failure = {
+                    executionError:
+                        sagePreviewErrorSummary(
+                            err
+                        )
+                };
+
+                console.log(failure);
+
+                return failure;
+            }
+        );
+    };
+
+
+
+var sageMathJaxCallTrace = [];
+
+
+function sageTraceObjectKeys(value) {
+    if (
+        !value ||
+        (
+            typeof value !== "object" &&
+            typeof value !== "function"
+        )
+    ) {
+        return [];
+    }
+
+    try {
+        return Object.keys(value).sort();
+    } catch (err) {
+        return [];
+    }
+}
+
+
+function sageTraceNodeSummary(value) {
+    if (!value) {
+        return null;
+    }
+
+    if (value.nodeType === 1) {
+        return {
+            nodeName:
+                value.nodeName || "",
+            id:
+                value.id || "",
+            type:
+                value.getAttribute
+                    ? value.getAttribute("type") || ""
+                    : "",
+            className:
+                typeof value.className === "string"
+                    ? value.className
+                    : ""
+        };
+    }
+
+    return null;
+}
+
+
+/*
+ * Called by the MathJax TeX macro handler whenever it encounters a live
+ * \sage or \sagestr expression.
+ *
+ * The returned trace entry also provides the verified initial-pass index
+ * used by the browser-local canonical page feature gate.
+ */
+exports.traceMathJaxSageCall =
+    function(rawExpression, latexify, parser) {
+        var stack =
+            parser && parser.stack
+                ? parser.stack
+                : null;
+
+        var env =
+            stack && stack.env
+                ? stack.env
+                : null;
+
+        var globalState =
+            stack && stack.global
+                ? stack.global
+                : null;
+
+        var script =
+            env && env.script
+                ? env.script
+                : null;
+
+        var traceEntry = {
+            callIndex:
+                sageMathJaxCallTrace.length,
+
+            expression:
+                rawExpression,
+
+            latexify:
+                !!latexify,
+
+            requestedCode:
+                latexify
+                    ? "latex(" +
+                      rawExpression +
+                      ")"
+                    : rawExpression,
+
+            parserSource:
+                parser &&
+                typeof parser.string ===
+                    "string"
+                    ? parser.string
+                    : null,
+
+            parserIndex:
+                parser &&
+                typeof parser.i ===
+                    "number"
+                    ? parser.i
+                    : null,
+
+            script:
+                sageTraceNodeSummary(
+                    script
+                ),
+
+            scriptId:
+                script && script.id
+                    ? script.id
+                    : null,
+
+            parserKeys:
+                sageTraceObjectKeys(
+                    parser
+                ),
+
+            stackKeys:
+                sageTraceObjectKeys(
+                    stack
+                ),
+
+            environmentKeys:
+                sageTraceObjectKeys(
+                    env
+                ),
+
+            globalKeys:
+                sageTraceObjectKeys(
+                    globalState
+                ),
+
+            environmentDisplay:
+                env &&
+                env.display !== undefined
+                    ? env.display
+                    : null
+        };
+
+        sageMathJaxCallTrace.push(
+            traceEntry
+        );
+
+        return traceEntry;
+    };
+
+
+window.xronosClearSageMathJaxCallTrace =
+    function() {
+        sageMathJaxCallTrace = [];
+
+        var result = {
+            cleared: true,
+            calls: 0
+        };
+
+        console.log(result);
+
+        return result;
+    };
+
+
+
+window.xronosInspectSageMathJaxParserSources =
+    function() {
+        var activity =
+            document.querySelector(
+                "main.activity"
+            ) ||
+            document.body;
+
+        var currentMathScripts =
+            Array.prototype.slice.call(
+                activity.querySelectorAll(
+                    'script[type^="math/tex"]'
+                )
+            );
+
+        var calls =
+            sageMathJaxCallTrace.map(
+                function(entry) {
+                    var matchingScripts =
+                        currentMathScripts.filter(
+                            function(script) {
+                                return (
+                                    (
+                                        script.textContent ||
+                                        ""
+                                    ) ===
+                                    entry.parserSource
+                                );
+                            }
+                        );
+
+                    return {
+                        callIndex:
+                            entry.callIndex,
+
+                        expression:
+                            entry.expression,
+
+                        latexify:
+                            entry.latexify,
+
+                        parserIndex:
+                            entry.parserIndex,
+
+                        parserSource:
+                            entry.parserSource,
+
+                        parserSourceCharacters:
+                            entry.parserSource
+                                ? entry.parserSource.length
+                                : 0,
+
+                        extractedExpressions:
+                            entry.parserSource
+                                ? extractSageExpressionsFromTex(
+                                    entry.parserSource
+                                ).map(
+                                    function(expression) {
+                                        return {
+                                            expression:
+                                                expression.expression,
+                                            latexify:
+                                                expression.latexify,
+                                            consumer:
+                                                expression.consumer,
+                                            sourceStartIndex:
+                                                expression
+                                                    .sourceStartIndex,
+                                            sourceEndIndex:
+                                                expression
+                                                    .sourceEndIndex
+                                        };
+                                    }
+                                )
+                                : [],
+
+                        currentDomMatches:
+                            matchingScripts.map(
+                                function(script) {
+                                    return {
+                                        id:
+                                            script.id || "",
+                                        type:
+                                            script.getAttribute(
+                                                "type"
+                                            ) || ""
+                                    };
+                                }
+                            )
+                    };
+                }
+            );
+
+        var callsWithParserSource =
+            calls.filter(
+                function(call) {
+                    return (
+                        typeof call.parserSource ===
+                        "string"
+                    );
+                }
+            ).length;
+
+        var callsStillInCurrentDom =
+            calls.filter(
+                function(call) {
+                    return (
+                        call.currentDomMatches
+                            .length > 0
+                    );
+                }
+            ).length;
+
+        var missingFromCurrentDom =
+            calls.filter(
+                function(call) {
+                    return (
+                        call.currentDomMatches
+                            .length === 0
+                    );
+                }
+            );
+
+        var distinctSources = {};
+
+        calls.forEach(
+            function(call) {
+                if (
+                    typeof call.parserSource ===
+                    "string"
+                ) {
+                    distinctSources[
+                        call.parserSource
+                    ] = true;
+                }
+            }
+        );
+
+        var result = {
+            page: {
+                url:
+                    window.location.href,
+                repository:
+                    activity.getAttribute(
+                        "data-repository-name"
+                    ),
+                path:
+                    activity.getAttribute(
+                        "data-path"
+                    ),
+                commit:
+                    activity.getAttribute(
+                        "data-commit"
+                    ),
+                hash:
+                    activity.getAttribute(
+                        "data-hash"
+                    )
+            },
+
+            summary: {
+                tracedCalls:
+                    calls.length,
+
+                callsWithParserSource:
+                    callsWithParserSource,
+
+                allCallsHaveParserSource:
+                    calls.length > 0 &&
+                    callsWithParserSource ===
+                        calls.length,
+
+                distinctParserSources:
+                    Object.keys(
+                        distinctSources
+                    ).length,
+
+                callsStillInCurrentDom:
+                    callsStillInCurrentDom,
+
+                callsMissingFromCurrentDom:
+                    missingFromCurrentDom.length
+            },
+
+            missingFromCurrentDom:
+                missingFromCurrentDom,
+
+            calls:
+                calls
+        };
+
+        /*
+         * Emit one copyable object.
+         */
+        console.log(result);
+
+        return result;
+    };
+
+
+window.xronosInspectSageMathJaxCallTrace =
+    function() {
+        var manifest =
+            buildSagePageManifestProbe();
+
+        var expected =
+            manifest.entries.filter(
+                function(entry) {
+                    return (
+                        entry.kind ===
+                        "expression"
+                    );
+                }
+            );
+
+        var actual =
+            sageMathJaxCallTrace.slice();
+
+        var comparisonCount =
+            Math.max(
+                expected.length,
+                actual.length
+            );
+
+        var comparisons = [];
+        var firstMismatch = null;
+        var index;
+
+        for (
+            index = 0;
+            index < comparisonCount;
+            index += 1
+        ) {
+            var expectedEntry =
+                expected[index] || null;
+
+            var actualEntry =
+                actual[index] || null;
+
+            var expressionMatches =
+                !!expectedEntry &&
+                !!actualEntry &&
+                expectedEntry.expression ===
+                    actualEntry.expression;
+
+            var latexifyMatches =
+                !!expectedEntry &&
+                !!actualEntry &&
+                expectedEntry.latexify ===
+                    actualEntry.latexify;
+
+            var scriptIdMatches =
+                !!expectedEntry &&
+                !!actualEntry &&
+                expectedEntry.scriptId ===
+                    actualEntry.scriptId;
+
+            var matches =
+                expressionMatches &&
+                latexifyMatches &&
+                scriptIdMatches;
+
+            var comparison = {
+                index:
+                    index,
+
+                expected:
+                    expectedEntry
+                        ? {
+                            stableId:
+                                expectedEntry.stableId,
+                            expression:
+                                expectedEntry.expression,
+                            latexify:
+                                expectedEntry.latexify,
+                            scriptId:
+                                expectedEntry.scriptId,
+                            scriptExpressionIndex:
+                                expectedEntry
+                                    .scriptExpressionIndex
+                        }
+                        : null,
+
+                actual:
+                    actualEntry
+                        ? {
+                            expression:
+                                actualEntry.expression,
+                            latexify:
+                                actualEntry.latexify,
+                            scriptId:
+                                actualEntry.scriptId
+                        }
+                        : null,
+
+                expressionMatches:
+                    expressionMatches,
+
+                latexifyMatches:
+                    latexifyMatches,
+
+                scriptIdMatches:
+                    scriptIdMatches,
+
+                matches:
+                    matches
+            };
+
+            comparisons.push(
+                comparison
+            );
+
+            if (
+                !matches &&
+                firstMismatch === null
+            ) {
+                firstMismatch =
+                    comparison;
+            }
+        }
+
+        var callsWithScriptId =
+            actual.filter(
+                function(entry) {
+                    return !!entry.scriptId;
+                }
+            ).length;
+
+        var result = {
+            page:
+                manifest.page,
+
+            summary: {
+                manifestExpressions:
+                    expected.length,
+
+                tracedCalls:
+                    actual.length,
+
+                callsWithScriptId:
+                    callsWithScriptId,
+
+                allCallsHaveScriptId:
+                    actual.length > 0 &&
+                    callsWithScriptId ===
+                        actual.length,
+
+                exactOrderedMapping:
+                    expected.length ===
+                        actual.length &&
+                    firstMismatch === null
+            },
+
+            firstMismatch:
+                firstMismatch,
+
+            firstCallContext:
+                actual.length > 0
+                    ? actual[0]
+                    : null,
+
+            comparisons:
+                comparisons,
+
+            calls:
+                actual
+        };
+
+        console.log(result);
+
+        return result;
+    };
+
+
+
+function freezeSageManifestSnapshot(value) {
+    var key;
+
+    if (
+        !value ||
+        typeof value !== "object"
+    ) {
+        return value;
+    }
+
+    if (Object.freeze) {
+        Object.freeze(value);
+    }
+
+    Object.keys(value).forEach(
+        function(key) {
+            freezeSageManifestSnapshot(
+                value[key]
+            );
+        }
+    );
+
+    return value;
+}
+
+
+function captureInitialSagePageManifestSnapshot() {
+    var manifest;
+    var snapshot;
+
+    if (
+        initialSagePageManifestSnapshot !==
+        null
+    ) {
+        return initialSagePageManifestSnapshot;
+    }
+
+    manifest =
+        buildSagePageManifestProbe(
+            null,
+            {
+                preMathJax: true
+            }
+        );
+
+    /*
+     * Clone the manifest so no later DOM work or debugging mutation can
+     * alter the canonical pre-MathJax source snapshot.
+     */
+    snapshot =
+        JSON.parse(
+            JSON.stringify(manifest)
+        );
+
+    snapshot.snapshotPhase =
+        "pre-mathjax";
+
+    snapshot.sourceMode =
+        "pre-mathjax-source-nodes";
+
+    initialSagePageManifestSnapshot =
+        freezeSageManifestSnapshot(
+            snapshot
+        );
+
+    return initialSagePageManifestSnapshot;
+}
+
+
+function preferredSagePageManifestProbe() {
+    return (
+        initialSagePageManifestSnapshot ||
+        buildSagePageManifestProbe()
+    );
+}
+
+
+exports.captureInitialSagePageManifestSnapshot =
+    captureInitialSagePageManifestSnapshot;
+
+
+exports.getInitialSagePageManifestSnapshot =
+    function() {
+        return initialSagePageManifestSnapshot;
+    };
+
+
+window.xronosInspectInitialSagePageManifest =
+    function() {
+        var result =
+            initialSagePageManifestSnapshot;
+
+        if (!result) {
+            result = {
+                error:
+                    "Initial Sage manifest snapshot was not captured."
+            };
+        }
+
+        console.log(result);
+
+        return result;
+    };
+
+
+window.xronosCompareInitialSageSnapshotToMathJaxTrace =
+    function() {
+        var manifest =
+            initialSagePageManifestSnapshot;
+
+        if (!manifest) {
+            var missing = {
+                error:
+                    "Initial Sage manifest snapshot was not captured."
+            };
+
+            console.log(missing);
+
+            return missing;
+        }
+
+        var expected =
+            manifest.entries.filter(
+                function(entry) {
+                    return (
+                        entry.kind ===
+                        "expression"
+                    );
+                }
+            );
+
+        var actual =
+            sageMathJaxCallTrace.slice();
+
+        var comparisonCount =
+            Math.max(
+                expected.length,
+                actual.length
+            );
+
+        var firstMismatch = null;
+        var comparisons = [];
+        var index;
+
+        for (
+            index = 0;
+            index < comparisonCount;
+            index += 1
+        ) {
+            var expectedEntry =
+                expected[index] || null;
+
+            var actualEntry =
+                actual[index] || null;
+
+            var expressionMatches =
+                !!expectedEntry &&
+                !!actualEntry &&
+                expectedEntry.expression ===
+                    actualEntry.expression;
+
+            var latexifyMatches =
+                !!expectedEntry &&
+                !!actualEntry &&
+                expectedEntry.latexify ===
+                    actualEntry.latexify;
+
+            var matches =
+                expressionMatches &&
+                latexifyMatches;
+
+            var comparison = {
+                index:
+                    index,
+
+                expected:
+                    expectedEntry
+                        ? {
+                            stableId:
+                                expectedEntry.stableId,
+                            expression:
+                                expectedEntry.expression,
+                            latexify:
+                                expectedEntry.latexify,
+                            consumer:
+                                expectedEntry.consumer,
+                            problemId:
+                                expectedEntry.problemId,
+                            problemDepth:
+                                expectedEntry.problemDepth
+                        }
+                        : null,
+
+                actual:
+                    actualEntry
+                        ? {
+                            expression:
+                                actualEntry.expression,
+                            latexify:
+                                actualEntry.latexify,
+                            parserSource:
+                                actualEntry.parserSource,
+                            parserIndex:
+                                actualEntry.parserIndex
+                        }
+                        : null,
+
+                expressionMatches:
+                    expressionMatches,
+
+                latexifyMatches:
+                    latexifyMatches,
+
+                matches:
+                    matches
+            };
+
+            comparisons.push(
+                comparison
+            );
+
+            if (
+                !matches &&
+                firstMismatch === null
+            ) {
+                firstMismatch =
+                    comparison;
+            }
+        }
+
+        var answerKeyCount =
+            expected.filter(
+                function(entry) {
+                    return (
+                        entry.consumer ===
+                        "answer-key"
+                    );
+                }
+            ).length;
+
+        var nestedExpressionCount =
+            expected.filter(
+                function(entry) {
+                    return (
+                        entry.problemDepth !== null &&
+                        entry.problemDepth > 0
+                    );
+                }
+            ).length;
+
+        var result = {
+            page:
+                manifest.page,
+
+            summary: {
+                snapshotPhase:
+                    manifest.snapshotPhase,
+
+                manifestExpressions:
+                    expected.length,
+
+                tracedCalls:
+                    actual.length,
+
+                answerKeys:
+                    answerKeyCount,
+
+                nestedExpressions:
+                    nestedExpressionCount,
+
+                exactOrderedMapping:
+                    expected.length ===
+                        actual.length &&
+                    firstMismatch === null
+            },
+
+            firstMismatch:
+                firstMismatch,
+
+            answerKeys:
+                expected.filter(
+                    function(entry) {
+                        return (
+                            entry.consumer ===
+                            "answer-key"
+                        );
+                    }
+                ),
+
+            comparisons:
+                comparisons
+        };
+
+        console.log(result);
+
+        return result;
+    };
+
+
+window.xronosTestLegacyMathTexManifestCapture =
+    function() {
+        var root =
+            document.createElement(
+                "main"
+            );
+
+        root.className =
+            "activity";
+
+        root.setAttribute(
+            "data-repository-name",
+            "fixture-repository"
+        );
+
+        root.setAttribute(
+            "data-path",
+            "fixture/legacy-math-tex"
+        );
+
+        root.setAttribute(
+            "data-commit",
+            "fixture-commit"
+        );
+
+        root.setAttribute(
+            "data-hash",
+            "fixture-hash"
+        );
+
+        root.innerHTML =
+            '<script type="text/sagemath">' +
+            'a = 2' +
+            '<\/script>' +
+
+            '<div class="problem-environment" ' +
+            'id="legacy-problem">' +
+            '<script type="math/tex; mode=display">' +
+            '\\sage {a} = ' +
+            '\\answer [validator=factorCheck]' +
+            '{\\sage {a+1}}' +
+            '<\/script>' +
+            '</div>' +
+
+            '<div class="mathjax-inline">' +
+            '\\sage {a+2}' +
+            '</div>' +
+
+            /*
+             * The nested script must not be counted separately from its
+             * containing raw wrapper.
+             */
+            '<div class="mathjax-block">' +
+            '<script type="math/tex; mode=display">' +
+            '\\sage {a+3}' +
+            '<\/script>' +
+            '</div>';
+
+        var manifest =
+            buildSagePageManifestProbe(
+                root,
+                {
+                    preMathJax:
+                        true
+                }
+            );
+
+        var expressions =
+            manifest.entries.filter(
+                function(entry) {
+                    return (
+                        entry.kind ===
+                        "expression"
+                    );
+                }
+            );
+
+        var expressionValues =
+            expressions.map(
+                function(entry) {
+                    return entry.expression;
+                }
+            );
+
+        var answerKeys =
+            expressions.filter(
+                function(entry) {
+                    return (
+                        entry.consumer ===
+                        "answer-key"
+                    );
+                }
+            );
+
+        var expectedExpressions = [
+            "a",
+            "a+1",
+            "a+2",
+            "a+3"
+        ];
+
+        var exactExpressionSequence =
+            JSON.stringify(
+                expressionValues
+            ) ===
+            JSON.stringify(
+                expectedExpressions
+            );
+
+        var result = {
+            compilerVersion:
+                sagePageManifestCompilerVersion,
+
+            silentBlocks:
+                manifest.summary
+                    .silentBlocks,
+
+            expressions:
+                manifest.summary
+                    .expressions,
+
+            answerKeys:
+                manifest.summary
+                    .answerKeys,
+
+            expressionValues:
+                expressionValues,
+
+            exactExpressionSequence:
+                exactExpressionSequence,
+
+            passed:
+                manifest.summary
+                    .silentBlocks === 1 &&
+                manifest.summary
+                    .expressions === 4 &&
+                manifest.summary
+                    .answerKeys === 1 &&
+                exactExpressionSequence &&
+                answerKeys.length === 1 &&
+                answerKeys[0].expression ===
+                    "a+1"
+        };
+
+        console.log(result);
+
+        return result;
+    };
+
+
+
+exports.inspectPageSageManifest =
+    buildSagePageManifestProbe;
+
+window.xronosInspectSagePageManifest =
+    function() {
+        var result =
+            buildSagePageManifestProbe();
+
+        /*
+         * Deliberately emit one object so it can be copied from Chrome with
+         * the console's "Copy object" command.
+         */
+        console.log(result);
+
+        return result;
+    };
+
+
 
 
 var reprocessMathjax = _.debounce(function() {

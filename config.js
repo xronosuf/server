@@ -8,6 +8,7 @@ var pkg               = require('./package.json');
 var dbm               = require('./dbm.json')
 var dotenv            = require('dotenv');  // https://www.npmjs.com/package/dotenv
 var path              = require('path');
+var childProcess      = require('child_process');
 
 // *For Development Purposes*
 // Read in environment vars from .env file
@@ -28,9 +29,41 @@ dotenv.load();
 
 var config            = {};
 
+
+function gitApplicationVersion() {
+    try {
+        var output = childProcess.execFileSync(
+            'git',
+            [
+                'rev-parse',
+                '--short=12',
+                'HEAD'
+            ],
+            {
+                cwd: __dirname,
+                stdio: [
+                    'ignore',
+                    'pipe',
+                    'ignore'
+                ]
+            }
+        );
+
+        var version = String(output).trim();
+
+        return version || null;
+    } catch (err) {
+        return null;
+    }
+}
+
+
 // From package.json
 config.name           = pkg.name;
-config.version        = dbm.version;
+config.version        =
+    process.env.XRONOS_APPLICATION_VERSION ||
+    gitApplicationVersion() ||
+    dbm.version;
 config.description    = pkg.description;
 config.company        = pkg.company;
 config.author         = pkg.author;

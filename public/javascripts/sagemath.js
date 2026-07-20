@@ -49,6 +49,7 @@ var canonicalPageSageRuntime = {
     status: "idle",
     requestCount: 0,
     mappedCalls: 0,
+    postInitialReplayMappedCalls: 0,
     canonicalResolutions: 0,
     canonicalRejections: 0,
     legacyFallbacks: 0,
@@ -2974,6 +2975,88 @@ exports.resolveMathJaxSageCall =
         }
 
         /*
+         * Completed-answer restoration and other MathJax replays can revisit
+         * an expression after the immutable initial manifest pass has ended.
+         *
+         * Reuse the original page result bundle only when:
+         *
+         *   1. the initial canonical request already exists,
+         *   2. no explicit Another generation is active, and
+         *   3. expression plus latexify identifies exactly one immutable
+         *      manifest entry.
+         *
+         * Ambiguous, unknown, and genuinely dynamic calls retain the legacy
+         * path below.
+         */
+        if (
+            traceEntry.callIndex >=
+                expressionEntries.length &&
+            canonicalPageSageRuntime
+                .initialPromise &&
+            !canonicalPageSageRuntime
+                .permanentFallbackReason &&
+            !canonicalPageSageActiveGeneration
+        ) {
+            var replayEntry =
+                canonicalPageSageUniqueMatchingEntry(
+                    expressionEntries,
+                    traceEntry
+                );
+
+            if (replayEntry) {
+                canonicalPageSageRuntime
+                    .mappedCalls += 1;
+
+                canonicalPageSageRuntime
+                    .postInitialReplayMappedCalls += 1;
+
+                return executeInitialCanonicalPageSage()
+                    .then(
+                        function(execution) {
+                            return canonicalPageSageResolveExecutionEntry(
+                                replayEntry,
+                                execution,
+                                null
+                            );
+                        },
+                        function(err) {
+                            if (
+                                err &&
+                                err.xronosCanonicalFallback
+                            ) {
+                                return canonicalPageSageFallback(
+                                    legacyCode,
+                                    {
+                                        code:
+                                            err.fallbackCode,
+
+                                        message:
+                                            err.evalue,
+
+                                        details:
+                                            err.details ||
+                                            null,
+
+                                        replay:
+                                            true,
+
+                                        callIndex:
+                                            traceEntry.callIndex
+                                    }
+                                );
+                            }
+
+                            canonicalPageSageRuntime
+                                .canonicalRejections += 1;
+
+                            throw err;
+                        }
+                    );
+            }
+        }
+
+
+        /*
          * Explicit Another generation. Calls before the complete manifest
          * pass—normally restored completed-answer keys—share the same
          * generation result bundle.
@@ -3140,7 +3223,7 @@ window.xronosInspectCanonicalPageSageRuntime =
                 canonicalPageSageFeatureEnabled(),
 
             scope:
-                "initial-and-explicit-another-generations",
+                "initial-pass-replays-and-explicit-another-generations",
 
             anotherBusy:
                 canonicalPageSageAnotherBusy,
@@ -3174,6 +3257,10 @@ window.xronosInspectCanonicalPageSageRuntime =
             mappedCalls:
                 canonicalPageSageRuntime
                     .mappedCalls,
+
+            postInitialReplayMappedCalls:
+                canonicalPageSageRuntime
+                    .postInitialReplayMappedCalls,
 
             canonicalResolutions:
                 canonicalPageSageRuntime

@@ -231,6 +231,7 @@ req.canonicalPageSageEnabled =
     canonicalPageSageEnabled();
 
 var etag = 'sha:' + activity.hash +
+    ':application-version:' + config.version +
     ':randomization-scope:' + randomizationScope +
     ':scoped-sage-base-seeds:' + req.scopedSageBaseSeeds +
     ':canonical-page-sage:' + req.canonicalPageSageEnabled;

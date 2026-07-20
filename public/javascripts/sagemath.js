@@ -1578,12 +1578,36 @@ function executeSagePageManifestPreview(
 }
 
 
+function canonicalPageSageServerEnabled() {
+    return (
+        $("main.activity")
+            .first()
+            .attr(
+                "data-canonical-page-sage-enabled"
+            ) === "true"
+    );
+}
+
+
 function canonicalPageSageFeatureEnabled() {
+    /*
+     * A live JavaScript boolean remains the strongest diagnostic override.
+     * It can explicitly enable or disable the feature for the current page.
+     */
     if (
         typeof window.xronosCanonicalPageSage ===
         "boolean"
     ) {
         return window.xronosCanonicalPageSage;
+    }
+
+    /*
+     * The server-controlled rollout takes precedence over browser storage.
+     * A historical localStorage value of "false" therefore cannot block a
+     * global rollout.
+     */
+    if (canonicalPageSageServerEnabled()) {
+        return true;
     }
 
     try {
@@ -3221,6 +3245,9 @@ window.xronosInspectCanonicalPageSageRuntime =
         var result = {
             enabled:
                 canonicalPageSageFeatureEnabled(),
+
+            serverEnabled:
+                canonicalPageSageServerEnabled(),
 
             scope:
                 "initial-pass-replays-and-explicit-another-generations",

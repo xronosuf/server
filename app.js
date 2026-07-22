@@ -182,7 +182,7 @@ passport.deserializeUser(function(id, done) {
 	    if (req.user && req.user._id) {
 		if (req.params.masqueradingUserId == req.user._id) {
 		    var cleanUrl = req.url.replace('users/' + req.params.masqueradingUserId + '/', '' );
-		    res.redirect( 301, cleanUrl );
+		    return res.redirect( 301, cleanUrl );
 		}
 	    }
 	}

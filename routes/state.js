@@ -382,7 +382,34 @@ exports.connection = function( socket ) {
     };
     
     socket.on('message', function(data) {
-	var payload = JSON.parse( data );
+	var payload;
+
+	try {
+	    payload = JSON.parse( data );
+	} catch (err) {
+	    var messageLength =
+		data && typeof data.length === 'number'
+		    ? data.length
+		    : 0;
+
+	    winston.error(
+		"Rejected malformed WebSocket message (" +
+		messageLength +
+		" bytes)."
+	    );
+
+	    if (socket.readyState == 1) {
+		try {
+		    socket.close(1003, "Invalid JSON");
+		} catch (closeError) {
+		    winston.error(
+			"Could not close malformed WebSocket connection."
+		    );
+		}
+	    }
+
+	    return;
+	}
 
 	if (! Array.isArray(payload)) {
 	    winston.error("WebSocket message is not an array.");
@@ -395,6 +422,25 @@ exports.connection = function( socket ) {
 	}
 
 	var message = payload[0];
+
+	if (typeof message !== 'string') {
+	    winston.error(
+		"WebSocket message name is not a string."
+	    );
+
+	    if (socket.readyState == 1) {
+		try {
+		    socket.close(1003, "Invalid message type");
+		} catch (closeError) {
+		    winston.error(
+			"Could not close invalid WebSocket connection."
+		    );
+		}
+	    }
+
+	    return;
+	}
+
 	var camelCased = message.replace(/-([a-z])/g, function (g) { return g[1].toUpperCase(); });
 
 	if (handlers[camelCased]) {

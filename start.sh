@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -o pipefail
+
 echo "Starting redis, mongod en ximera"
 
 echo "$(date +%F_%X) Starting redis, mongod en ximera" >>/usr/var/server/repositories/start.history
@@ -59,4 +61,4 @@ fi
 export PORT   
 
 echo "Starting npm"
-npm run start 2>&1 | tee $LOGFILE
+npm run start 2>&1 | tee "$LOGFILE"

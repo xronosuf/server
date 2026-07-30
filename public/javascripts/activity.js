@@ -26,6 +26,7 @@ var javascript = require('./javascript');
 var connectInteractives = require('./interactives').connectInteractives;
 
 var database = require('./database');
+var pageRuntime = require('./page-runtime');
 
 var annotator = require('./annotator');
 
@@ -189,6 +190,16 @@ var installLegacyAccordionHints = function(activity) {
 
 var createActivity = function() {
 	var activity = $(this);
+
+    pageRuntime.component(
+        "activity",
+        "waiting-for-initial-state",
+        {
+            path: activity.attr("data-path"),
+            hashAvailable:
+                activity.attr("data-hash") !== undefined
+        }
+    );
 	
 	$(".foldable", activity).foldable();
 	$(".accordion", activity).addClass('hidden-out-of-view')
@@ -196,6 +207,14 @@ var createActivity = function() {
     //$('.activity-body', this).annotator();
     
     activity.fetchData( function() {
+        pageRuntime.component(
+            "activity",
+            "initializing",
+            {
+                path: activity.attr("data-path")
+            }
+        );
+
 	activity.persistentData( function() {
 	    if (!(activity.persistentData( 'experienced' ))) {
 		TinCan.experience(activity);
@@ -233,6 +252,14 @@ var createActivity = function() {
 	connectInteractives();
 	
 	$('.activity-card').activityCard();
+
+        pageRuntime.component(
+            "activity",
+            "initialized",
+            {
+                path: activity.attr("data-path")
+            }
+        );
     });
 };
 

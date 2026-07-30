@@ -9,6 +9,7 @@ var jsondiffpatch = require('jsondiffpatch');
 var chat = require('./chat');
 var users = require('./users');
 var debugLog = require('./debug-log');
+var pageRuntime = require('./page-runtime');
 
 var CANON = require('canon');
 var XXH = require('xxhashjs');
@@ -19,6 +20,7 @@ function checksumObject(object) {
 
 var DIFFSYNC_DEBOUNCE = 5003; // milliseconds to wait to save
 var socket = undefined;
+var connectionAttempt = 0;
 
 // Some heartbeat code to provide feedback when we aren't receiving pings
 /* BADBAD disabled pings for now
@@ -232,10 +234,29 @@ var fetcherCallbacks = [];
 
 // activity.js will use this to download the database from the server
 $.fn.extend({ fetchData: function(callback) {
-    if (DATABASE !== undefined)
+    if (DATABASE !== undefined) {
+        pageRuntime.operation(
+            "initial-state",
+            "available",
+            {
+                delivery: "immediate",
+                callbackCount: 1
+            }
+        );
+
 	callback(DATABASE);
-    else 
+    } else {
+        pageRuntime.operation(
+            "initial-state",
+            "waiting",
+            {
+                queuedCallbackCount:
+                    fetcherCallbacks.length + 1
+            }
+        );
+
 	fetcherCallbacks.unshift( callback );
+    }
 }});
 
 function synchronizePageWithDatabase() {
@@ -248,13 +269,43 @@ function synchronizePageWithDatabase() {
 var backOff = 1000;
 
 function connectToServer() {
+    var attempt;
+
+    connectionAttempt += 1;
+    attempt = connectionAttempt;
+
+    pageRuntime.service(
+        "state-websocket",
+        "connect-requested",
+        {
+            attempt: attempt,
+            online: navigator.onLine
+        }
+    );
+
     // If we're currently connected...
     if (socket) {
-	if (socket.readyState == WebSocket.OPEN) {	    
+	if (socket.readyState == WebSocket.OPEN) {
+            pageRuntime.service(
+                "state-websocket",
+                "already-open",
+                {
+                    attempt: attempt
+                }
+            );
+
 	    // just ignore the request to reconnect
 	    return;
 	}
 	if (socket.readyState == WebSocket.CONNECTING) {
+            pageRuntime.service(
+                "state-websocket",
+                "already-connecting",
+                {
+                    attempt: attempt
+                }
+            );
+
 	    console.log("Still connecting...");
 	    return;
 	}
@@ -270,6 +321,14 @@ function connectToServer() {
     saveWorkStatus( 'error', "Connecting..." );
     
     try {
+        pageRuntime.service(
+            "state-websocket",
+            "connecting",
+            {
+                attempt: attempt
+            }
+        );
+
 	console.log( "Attempting websocket connection...");
 	socket = new WebSocket(	websocketUrl );
 
@@ -283,14 +342,48 @@ function connectToServer() {
 	    socket.send( JSON.stringify( parameters ) );
 	};
     } catch (err) {
+        pageRuntime.service(
+            "state-websocket",
+            "construction-failed",
+            {
+                attempt: attempt,
+                errorName:
+                    err && err.name
+                        ? err.name
+                        : undefined,
+                errorMessage:
+                    err && err.message
+                        ? err.message
+                        : String(err)
+            }
+        );
+
 	saveWorkStatus( 'error', "Could not connect.  Your work is not being saved." );
     }
 
     socket.addEventListener('error', function (event) {
+        pageRuntime.service(
+            "state-websocket",
+            "error",
+            {
+                attempt: attempt
+            }
+        );
+
 	saveWorkStatus( 'error', "There was an error with the WebSocket" );
     });
 
     socket.addEventListener('close', function (event) {
+        pageRuntime.service(
+            "state-websocket",
+            "closed",
+            {
+                attempt: attempt,
+                code: event.code,
+                clean: event.wasClean
+            }
+        );
+
 	backOff = backOff * 2.0;
 	if (backOff > 15000) backOff = 15000;
 
@@ -304,6 +397,24 @@ function connectToServer() {
     var filename = $('main').attr('data-path');
 
     socket.addEventListener('open', function (event) {
+        pageRuntime.service(
+            "state-websocket",
+            "open",
+            {
+                attempt: attempt
+            }
+        );
+
+        pageRuntime.operation(
+            "initial-state",
+            "requested",
+            {
+                attempt: attempt,
+                activityHashAvailable:
+                    findActivityHash() !== undefined
+            }
+        );
+
 	console.log( "WebSocket open!");
 	saveWorkStatus( 'save' );	
 	socket.sendJSON( 'watch', learnerId, findActivityHash() );
@@ -324,6 +435,22 @@ function connectToServer() {
     };
 
     handlers.sync = function(remoteDatabase) {
+        pageRuntime.operation(
+            "initial-state",
+            "sync-received",
+            {
+                callbackCount:
+                    fetcherCallbacks.length,
+                identifierCount:
+                    remoteDatabase &&
+                    typeof remoteDatabase === "object"
+                        ? Object.keys(remoteDatabase).length
+                        : undefined,
+                firstSync:
+                    DATABASE === undefined
+            }
+        );
+
 	SHADOW = jsondiffpatch.clone(remoteDatabase);
 	
 	if (DATABASE === undefined) {
@@ -342,10 +469,29 @@ function connectToServer() {
 		    });
 	    
 	    synchronizePageWithDatabase();
+
+        pageRuntime.operation(
+            "initial-state",
+            "releasing-callbacks",
+            {
+                callbackCount:
+                    fetcherCallbacks.length
+            }
+        );
 	    
 	    _.each( fetcherCallbacks, function(callback) {
 		callback(DATABASE);
 	    });
+
+        pageRuntime.operation(
+            "initial-state",
+            "available",
+            {
+                delivery: "queued-callbacks",
+                callbackCount:
+                    fetcherCallbacks.length
+            }
+        );
 	}
     };
 
@@ -457,8 +603,22 @@ function connectToServer() {
 $(document).ready(function() {
     var activityHash = findActivityHash();
     
-    if (!activityHash)
+    if (!activityHash) {
+        pageRuntime.service(
+            "state-websocket",
+            "not-required"
+        );
+
 	return;
+    }
+
+    pageRuntime.service(
+        "state-websocket",
+        "required",
+        {
+            activityHashAvailable: true
+        }
+    );
 
     connectToServer();
 });

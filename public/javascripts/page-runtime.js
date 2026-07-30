@@ -845,29 +845,83 @@ function summarizeRecords(records) {
     };
 }
 
+function addGroupedRecord(
+    groups,
+    key,
+    record
+) {
+    if (!groups[key])
+        groups[key] = [];
+
+    groups[key].push(record);
+}
+
+function summarizeGroups(groups) {
+    var summarized = {};
+
+    Object.keys(groups)
+        .forEach(function(key) {
+            summarized[key] =
+                summarizeRecords(
+                    groups[key]
+                );
+        });
+
+    return summarized;
+}
+
 function benchmarkReport() {
     var records =
         loadBenchmarkRecords();
     var cacheStates = {};
+    var paths = {};
+    var tags = {};
+    var pathAndCacheStates = {};
 
     records.forEach(function(record) {
         var cacheState =
             record.cacheState ||
             "unspecified";
+        var path =
+            record.path ||
+            "unknown-path";
+        var tag =
+            record.tag ||
+            "untagged";
 
-        if (!cacheStates[cacheState])
-            cacheStates[cacheState] = [];
+        addGroupedRecord(
+            cacheStates,
+            cacheState,
+            record
+        );
 
-        cacheStates[cacheState].push(
+        addGroupedRecord(
+            paths,
+            path,
+            record
+        );
+
+        addGroupedRecord(
+            tags,
+            tag,
+            record
+        );
+
+        if (!pathAndCacheStates[path])
+            pathAndCacheStates[path] = {};
+
+        addGroupedRecord(
+            pathAndCacheStates[path],
+            cacheState,
             record
         );
     });
 
-    Object.keys(cacheStates)
-        .forEach(function(cacheState) {
-            cacheStates[cacheState] =
-                summarizeRecords(
-                    cacheStates[cacheState]
+    Object.keys(pathAndCacheStates)
+        .forEach(function(path) {
+            pathAndCacheStates[path] =
+                summarizeGroups(
+                    pathAndCacheStates[path]
                 );
         });
 
@@ -878,7 +932,13 @@ function benchmarkReport() {
         overall:
             summarizeRecords(records),
         byCacheState:
-            cacheStates
+            summarizeGroups(cacheStates),
+        byPath:
+            summarizeGroups(paths),
+        byTag:
+            summarizeGroups(tags),
+        byPathAndCacheState:
+            pathAndCacheStates
     };
 }
 

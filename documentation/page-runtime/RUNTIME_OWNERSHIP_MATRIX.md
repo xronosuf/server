@@ -25,9 +25,9 @@ Disposition terms:
 | Subpath discovery | `main.js` | bundle execution | synchronous page `HEAD` | request returns | browser/network dependent | `RETAIN`; replace synchronous request |
 | Current-user identity | `users.js` | jQuery ready | `/users/me` | promise success only | none visible | `RETAIN`; `DECOUPLE_FROM_PAGE_READY`; localized failure |
 | Main state socket | `database.js` | jQuery ready | activity hash, WebSocket | socket open | reconnect forever | `RETAIN`; distinguish connection from state readiness |
-| Initial state sync | `database.js`, `routes/state.js` | `watch` message | identity, activity hash, MongoDB | `sync` message | none | `RETAIN`; add explicit found/not-found/failed outcome |
+| Initial state sync | `database.js`, `routes/state.js`, `page-runtime.js` | `watch` message | identity, activity hash, MongoDB | `sync` message / `initial-state: available` | 15-second passive readiness deadline (`XR-STATE-INITIAL-101`); no fallback release | `RETAIN`; add explicit found/not-found/failed outcome |
 | Activity bootstrap | `activity.js` | `.activity()` after document ready | initial `fetchData()` | callback body completes implicitly | none | `RETAIN`; place under coordinator |
-| MathJax startup | `main.js`, `mathjax.js` | configured/startup hooks | page TeX and extensions | MathJax startup signals | none explicit | `RETAIN`; explicit rendering state |
+| MathJax startup | `main.js`, `mathjax.js`, `page-runtime.js` | configured/startup hooks | page TeX and extensions | initial `mathjax-pass: ended` with `passType: process` | 15-second passive readiness deadline (`XR-MATHJAX-INITIAL-101`); late completion recovers | `RETAIN`; explicit rendering state |
 | Problem runtime | `problem.js` | activity bootstrap | persistent data, answer events | implicit initialization; `ximera:complete` per problem | none | `RETAIN` |
 | Math answer | `math-answer.js` | MathJax/answer connection | state, parser, optional validator | click handler returns | none | `RETAIN`; add submission transaction boundary |
 | Grouped validator | `validator.js`, `math-answer.js` | activity bootstrap | contained answer globals/state | handler returns | none | `RETAIN`; verify and repair later |

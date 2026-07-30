@@ -3,11 +3,19 @@
 ## Status
 
 This document records the current Xronos browser runtime observed on the
-`page-runtime-coordinator` branch at baseline commit:
+`page-runtime-coordinator` branch.
+
+The original architecture inventory began at baseline commit:
 
 `b235dc15fa1d409b52ebc7038ebdf967113f0cda`
 
-It describes existing behavior. It is not yet a detailed replacement design.
+The current passive readiness instrumentation described below includes changes
+through:
+
+`0f006781a26a8f9fc885b84c32c846122b7a3417`
+
+It describes existing behavior and current observability. It is not yet a
+detailed replacement design.
 
 ## Browser entrypoint
 
@@ -96,6 +104,28 @@ The global loading spinner is hidden when MathJax reports startup `End`.
 That event does not prove that saved state, Sage display, answer
 initialization, optional interactives, or grade-related operations are ready.
 
+The runtime separately observes the initial MathJax `Process` pass. Completion
+requires an operation with:
+
+- operation: `mathjax-pass`
+- state: `ended`
+- `details.passType`: `process`
+
+A completed `Reprocess` or `Rerender` does not satisfy this initial-process
+boundary.
+
+The passive runtime coordinator applies a 15-second diagnostic readiness
+deadline to the initial process:
+
+- dependency: `mathjax-initial-process`
+- readiness dimension: `content-ready`
+- diagnostic code: `XR-MATHJAX-INITIAL-101`
+- deadline event: `readiness-deadline-exceeded`
+
+The deadline does not cancel MathJax or replace page content. If the initial
+process completes later, `content-ready` may recover to `ready`, while the
+earlier timeout remains recorded in diagnostic history.
+
 ## Initial saved-state gate
 
 `activity.js` initializes most activity behavior only after:
@@ -123,7 +153,28 @@ initialize:
 - progress monitoring
 - activity cards
 
-There is currently no timeout or degraded terminal path for this gate.
+The underlying `fetchData()` gate still has no fallback or release path when
+initial state does not arrive. Queued consumers may therefore remain blocked.
+
+The passive runtime coordinator now applies a 15-second diagnostic readiness
+deadline to this dependency:
+
+- dependency: `initial-state`
+- readiness dimension: `state-synchronized`
+- diagnostic code: `XR-STATE-INITIAL-101`
+- deadline event: `readiness-deadline-exceeded`
+
+When the deadline is exceeded, `state-synchronized` and page readiness become
+degraded for diagnostic purposes. The watchdog does not:
+
+- manufacture empty saved state
+- release queued `fetchData()` callbacks
+- stop WebSocket reconnection
+- suppress a later valid `sync`
+- show a user-facing fallback or error
+
+If valid initial state arrives later, the readiness dimension recovers to
+`ready`. The timeout remains recorded as historical diagnostic metadata.
 
 ## Browser state connection
 
@@ -358,6 +409,49 @@ from browser history.
 
 These are independent navigation owners and should eventually emit explicit
 diagnostic events.
+
+## Passive readiness dimensions
+
+The current coordinator derives three independent readiness dimensions:
+
+- `state-synchronized`
+  - initial saved state is available
+- `content-ready`
+  - initial MathJax `Process` completed
+  - canonical Sage results are available or not required
+- `interaction-ready`
+  - activity initialization completed
+  - initial math answers settled or were not required
+
+Page readiness is derived from those dimensions and may be:
+
+- `waiting`
+- `degraded`
+- `ready`
+
+The two current readiness deadlines are passive diagnostics:
+
+| Dependency | Dimension | Deadline | Code |
+|---|---|---:|---|
+| `initial-state` | `state-synchronized` | 15,000 ms | `XR-STATE-INITIAL-101` |
+| `mathjax-initial-process` | `content-ready` | 15,000 ms | `XR-MATHJAX-INITIAL-101` |
+
+Both watchdogs support degraded-to-ready recovery. A late successful dependency
+changes the current readiness state to `ready`, but does not erase the fact that
+the diagnostic deadline was previously exceeded.
+
+The benchmark object exposes the watchdog records under:
+
+- `deadlines.initialState`
+- `deadlines.initialMathJax`
+
+It also exposes dependency-specific timeout milestones:
+
+- `milestones.initialStateTimedOut`
+- `milestones.initialMathJaxTimedOut`
+
+The milestones are filtered by dependency so one timeout cannot be mistaken for
+the other.
 
 ## Current architectural conclusion
 

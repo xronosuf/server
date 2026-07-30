@@ -13,11 +13,11 @@ Items here are not commitments to include all work in the current project.
 
 ## Runtime coordinator and diagnostics
 
-- Build passive runtime event instrumentation.
-- Provide `window.xronosInspectPageRuntime()`.
-- Record service, operation, and component states separately.
-- Add bounded startup and recent-event buffers.
-- Add stable diagnostic codes and occurrence IDs.
+- Passive runtime event instrumentation exists; continue extending subsystem coverage.
+- `window.xronosInspectPageRuntime()` exists; stabilize and document its support contract.
+- Service, operation, and component states are recorded separately; continue ownership cleanup.
+- A bounded recent-event buffer exists; continue adding bounded subsystem diagnostics.
+- Stable diagnostic codes now exist for initial state and initial MathJax; add occurrence IDs and broader code coverage.
 - Record automatic reload and navigation causes.
 - Detect unresolved visible loading indicators.
 - Record page metadata version, bundle version, `/version`, and feature mode.
@@ -37,7 +37,8 @@ Items here are not commitments to include all work in the current project.
   - state retrieval timed out
   - state access unauthorized
 - Stop converting state-query errors into successful empty state.
-- Add bounded initial-state retry.
+- A passive 15-second initial-state readiness deadline now exists.
+- Add bounded initial-state retry and an explicit server outcome model.
 - Add acknowledged fresh nonpersistent fallback.
 - Add a persistent nonpersistent-session warning.
 - Add a dismissible recovery and reload prompt.
@@ -137,12 +138,15 @@ Items here are not commitments to include all work in the current project.
   - LTI and direct launch
   - fast and slow connection
   - desktop and mobile
-- Use separate timeout classes for:
+- Separate diagnostic deadline classes now exist for:
   - initial saved state
+  - initial MathJax processing
+- Continue adding or refining timeout classes for:
   - Sage request
   - Sage display
-  - MathJax processing
   - optional external libraries
+- Measure whether the current 15-second readiness deadlines are appropriate
+  before treating them as a stable operational policy.
 
 ## Optional interactives
 

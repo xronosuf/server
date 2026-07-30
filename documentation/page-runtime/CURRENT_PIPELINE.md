@@ -268,14 +268,20 @@ Sage has two distinct jQuery-ready handlers:
 Current Sage markers include:
 
 - `.sage`
-- `.sageOutput`
 - `script[type="text/sagemath"]`
+- canonical `\sage{...}` expressions discovered in mathematical source
 
-This supports the rule that Sage readiness should affect only pages with actual
-Sage consumers.
+The `.sageOutput` class belongs to the older public-SageCell standalone
+autoevaluation workflow. The local `/sagecell/service` implementation retains a
+compatibility path for such elements, but no current author macro, generated
+repository HTML, or active page sample has been found to produce them.
+
+Consequently, `.sageOutput` is recorded as legacy standalone Sage telemetry and
+does not block normal page readiness. Canonical Sage request completion and the
+initial MathJax process remain the active content-readiness boundaries.
 
 Sage request, result mapping, MathJax processing, placeholder discovery, and
-visible display are separate runtime operations.
+legacy standalone display are separate runtime operations.
 
 ## Author JavaScript
 

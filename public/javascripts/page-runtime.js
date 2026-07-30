@@ -193,22 +193,16 @@ function updatePageReadiness() {
         ];
     var canonicalSage =
         runtime.components["sage-initial"];
-    var visibleSage =
+    var legacyStandaloneSage =
         runtime.components[
             "sage-visible-initial"
         ];
-    var visibleSageOutputCount =
+    var legacyStandaloneSageOutputCount =
         document.querySelectorAll
             ? document.querySelectorAll(
                 ".sageOutput"
             ).length
             : null;
-    var visibleSageState =
-        visibleSage
-            ? visibleSage.state
-            : visibleSageOutputCount === 0
-                ? "not-required"
-                : null;
     var stateSynchronized =
         readinessSummary([
             readinessDependency(
@@ -245,12 +239,6 @@ function updatePageReadiness() {
                     "failed",
                     "degraded"
                 ]
-            ),
-            readinessDependency(
-                "visible-sage",
-                visibleSageState,
-                ["settled", "not-required"],
-                ["degraded", "failed"]
             )
         ]);
     var interactionReady =
@@ -298,8 +286,16 @@ function updatePageReadiness() {
 
     contentReady.details.dimension =
         "content-ready";
-    contentReady.details.visibleSageOutputs =
-        visibleSageOutputCount;
+    contentReady.details
+        .legacyStandaloneSageOutputs =
+            legacyStandaloneSageOutputCount;
+    contentReady.details
+        .legacyStandaloneSageState =
+            legacyStandaloneSage
+                ? legacyStandaloneSage.state
+                : legacyStandaloneSageOutputCount === 0
+                    ? "not-required"
+                    : "not-observed";
 
     interactionReady.details.dimension =
         "interaction-ready";
@@ -617,11 +613,11 @@ function benchmark(options) {
         runtime.operations["initial-state"];
     var initialSage =
         runtime.components["sage-initial"];
-    var initialVisibleSage =
+    var legacyStandaloneSage =
         runtime.components[
             "sage-visible-initial"
         ];
-    var visibleSageOutputCount =
+    var legacyStandaloneSageOutputCount =
         document.querySelectorAll
             ? document.querySelectorAll(
                 ".sageOutput"
@@ -923,25 +919,25 @@ function benchmark(options) {
                             "not-required"
                         : null
             },
-            visible: {
+            legacyStandaloneOutput: {
                 state:
-                    initialVisibleSage
-                        ? initialVisibleSage.state
-                        : visibleSageOutputCount === 0
+                    legacyStandaloneSage
+                        ? legacyStandaloneSage.state
+                        : legacyStandaloneSageOutputCount === 0
                             ? "not-required"
                             : "not-observed",
                 required:
-                    initialVisibleSage
-                        ? initialVisibleSage.state !==
+                    legacyStandaloneSage
+                        ? legacyStandaloneSage.state !==
                             "not-required"
-                        : visibleSageOutputCount === null
+                        : legacyStandaloneSageOutputCount === null
                             ? null
-                            : visibleSageOutputCount > 0
+                            : legacyStandaloneSageOutputCount > 0
             }
         },
         counts: {
-            visibleSageOutputs:
-                visibleSageOutputCount,
+            legacyStandaloneSageOutputs:
+                legacyStandaloneSageOutputCount,
             initialStateConsumers:
                 initialState &&
                 initialState.details

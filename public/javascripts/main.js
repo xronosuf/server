@@ -231,6 +231,21 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
                 );
         }
 
+        var sageCallRuntime =
+            sagemath.describeMathJaxSageCall
+                ? sagemath.describeMathJaxSageCall(
+                    sageCallTrace
+                )
+                : {
+                    callIndex: null,
+                    initialManifestCall: false,
+                    manifestExpressions: null,
+                    stableId: null,
+                    consumer: null,
+                    problemId: null,
+                    latexify: latexify
+                };
+
         var code = rawSageCode;
 
         if (latexify)
@@ -286,19 +301,111 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
 
         this.Push(placeholder);
 
+        pageRuntime.operation(
+            "sage-placeholder",
+            "discovered",
+            {
+                placeholderId:
+                    placeholderId,
+                callIndex:
+                    sageCallRuntime.callIndex,
+                initialManifestCall:
+                    sageCallRuntime
+                        .initialManifestCall,
+                manifestExpressions:
+                    sageCallRuntime
+                        .manifestExpressions,
+                stableId:
+                    sageCallRuntime.stableId,
+                consumer:
+                    sageCallRuntime.consumer,
+                problemId:
+                    sageCallRuntime.problemId,
+                latexify:
+                    sageCallRuntime.latexify
+            }
+        );
+
+        var sagePlaceholderDetails =
+            function(extra) {
+                var details = {
+                    placeholderId:
+                        placeholderId,
+                    callIndex:
+                        sageCallRuntime.callIndex,
+                    initialManifestCall:
+                        sageCallRuntime
+                            .initialManifestCall,
+                    stableId:
+                        sageCallRuntime.stableId,
+                    consumer:
+                        sageCallRuntime.consumer,
+                    problemId:
+                        sageCallRuntime.problemId,
+                    latexify:
+                        sageCallRuntime.latexify
+                };
+
+                Object.keys(
+                    extra || {}
+                ).forEach(function(key) {
+                    details[key] =
+                        extra[key];
+                });
+
+                return details;
+            };
+
         var rerenderPlaceholder = function() {
             var parent = placeholder;
 
             while (parent.parent != undefined)
                 parent = parent.parent;
 
-            if (parent.inputID) {
-                MathJax.Hub.Queue([
+            if (!parent.inputID) {
+                pageRuntime.operation(
+                    "sage-placeholder",
+                    "rerender-unavailable",
+                    sagePlaceholderDetails({
+                        reason:
+                            "missing-input-id"
+                    })
+                );
+
+                return false;
+            }
+
+            pageRuntime.operation(
+                "sage-placeholder",
+                "rerender-queued",
+                sagePlaceholderDetails({
+                    inputId:
+                        parent.inputID
+                })
+            );
+
+            MathJax.Hub.Queue(
+                [
                     "Rerender",
                     MathJax.Hub,
                     parent.inputID
-                ]);
-            }
+                ],
+                function() {
+                    pageRuntime.operation(
+                        "sage-placeholder",
+                        "rerender-completed",
+                        sagePlaceholderDetails({
+                            inputId:
+                                parent.inputID,
+                            placeholderPresent:
+                                findPlaceholderElements()
+                                    .length > 0
+                        })
+                    );
+                }
+            );
+
+            return true;
         };
 
         var findPlaceholderElements = function() {
@@ -690,6 +797,18 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
                     var info;
 
                     if (!anchor) {
+                        pageRuntime.operation(
+                            "sage-placeholder",
+                            "fallback-placeholder-missing",
+                            sagePlaceholderDetails({
+                                errorName:
+                                    err &&
+                                    err.ename
+                                        ? err.ename
+                                        : null
+                            })
+                        );
+
                         console.log(
                             "Could not locate inline Sage placeholder:",
                             placeholderId
@@ -730,12 +849,38 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
 
                     renderGroupPanel(state);
 
+                    pageRuntime.operation(
+                        "sage-placeholder",
+                        "fallback-shown",
+                        sagePlaceholderDetails({
+                            errorName:
+                                err &&
+                                err.ename
+                                    ? err.ename
+                                    : null,
+                            errorCategory:
+                                info &&
+                                info.category
+                                    ? info.category
+                                    : null
+                        })
+                    );
+
                     return;
                 }
             ]);
         };
 
         var renderResult = function(result) {
+            pageRuntime.operation(
+                "sage-placeholder",
+                "result-resolved",
+                sagePlaceholderDetails({
+                    resultType:
+                        typeof result
+                })
+            );
+
             MathJax.Hub.Queue([
                 function() {
                     try {
@@ -758,8 +903,38 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
                         }
 
                         placeholder.data = mml.root.data;
+
+                        pageRuntime.operation(
+                            "sage-placeholder",
+                            "mml-applied",
+                            sagePlaceholderDetails({
+                                placeholderPresent:
+                                    findPlaceholderElements()
+                                        .length > 0
+                            })
+                        );
+
                         rerenderPlaceholder();
                     } catch (displayError) {
+                        pageRuntime.operation(
+                            "sage-placeholder",
+                            "display-failed",
+                            sagePlaceholderDetails({
+                                errorName:
+                                    displayError &&
+                                    displayError.name
+                                        ? displayError.name
+                                        : null,
+                                errorMessage:
+                                    displayError &&
+                                    displayError.message
+                                        ? displayError.message
+                                        : String(
+                                            displayError
+                                        )
+                            })
+                        );
+
                         showError({
                             ename: "XronosSageDisplayError",
                             evalue:
@@ -776,12 +951,32 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
         };
 
         runSage = function() {
+            pageRuntime.operation(
+                "sage-placeholder",
+                "request-started",
+                sagePlaceholderDetails()
+            );
+
             sagemath.resolveMathJaxSageCall(
                 sageCallTrace,
                 code
             ).then(
                 renderResult,
-                showError
+                function(err) {
+                    pageRuntime.operation(
+                        "sage-placeholder",
+                        "request-failed",
+                        sagePlaceholderDetails({
+                            errorName:
+                                err &&
+                                err.ename
+                                    ? err.ename
+                                    : null
+                        })
+                    );
+
+                    showError(err);
+                }
             );
         };
 

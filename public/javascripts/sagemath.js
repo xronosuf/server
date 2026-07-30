@@ -3001,6 +3001,84 @@ function activateCanonicalPageSageGeneration(
 
 
 /*
+ * Describe how one live MathJax Sage call relates to the immutable initial
+ * page manifest.
+ *
+ * This is passive runtime metadata. It does not choose the execution path or
+ * change fallback behavior.
+ */
+exports.describeMathJaxSageCall =
+    function(traceEntry) {
+        var manifest =
+            initialSagePageManifestSnapshot;
+
+        var expressionEntries =
+            canonicalPageSageExpressionEntries(
+                manifest
+            );
+
+        var callIndex =
+            traceEntry &&
+            typeof traceEntry.callIndex ===
+                "number"
+                ? traceEntry.callIndex
+                : null;
+
+        var entry =
+            callIndex !== null &&
+            callIndex >= 0 &&
+            callIndex <
+                expressionEntries.length
+                ? expressionEntries[
+                    callIndex
+                ]
+                : null;
+
+        var matchesInitialEntry =
+            !!(
+                entry &&
+                canonicalPageSageCallMatchesEntry(
+                    traceEntry,
+                    entry
+                )
+            );
+
+        return {
+            callIndex:
+                callIndex,
+
+            initialManifestCall:
+                matchesInitialEntry,
+
+            manifestExpressions:
+                expressionEntries.length,
+
+            stableId:
+                matchesInitialEntry
+                    ? entry.stableId
+                    : null,
+
+            consumer:
+                matchesInitialEntry
+                    ? entry.consumer
+                    : null,
+
+            problemId:
+                matchesInitialEntry
+                    ? entry.problemId
+                    : null,
+
+            latexify:
+                traceEntry &&
+                traceEntry.latexify !==
+                    undefined
+                    ? traceEntry.latexify
+                    : null
+        };
+    };
+
+
+/*
  * Resolve one MathJax Sage macro call.
  *
  * The initial full MathJax pass has a proven exact ordered mapping to the

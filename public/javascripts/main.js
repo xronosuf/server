@@ -4,6 +4,13 @@ console.log("      ███     ██▐██  ██▌ ▐██  ██▌
 console.log("    ▄██▀██▄   ██▐██  ▐██ ██▌  ██▌██        ▐█▌  ▀██▄   ██▀   ▀██");
 console.log("  ▄██▀   ▀██▄ ██▐██   ▀███▀   ██▌▀█████████▐█▌    ▀██▄██▀     ▀██");
 
+var pageRuntime = require('./page-runtime');
+
+pageRuntime.event("bundle-evaluation-started", {
+    path: window.location.pathname,
+    hasActivity: document.querySelector("main.activity") !== null
+});
+
 var ximera_subpath = localStorage.getItem("ximera-subpath");
 var http = new XMLHttpRequest();
 http.onreadystatechange = function() {
@@ -13,8 +20,18 @@ http.onreadystatechange = function() {
 		localStorage.setItem( "ximera-subpath", ximera_subpath );
 	}
 };
+pageRuntime.operation("subpath-discovery", "started", {
+    cached: ximera_subpath !== null
+});
+
 http.open('HEAD', document.location, false);
 http.send();
+
+pageRuntime.operation("subpath-discovery", "completed", {
+    subpathAvailable:
+        ximera_subpath !== null &&
+        ximera_subpath !== undefined
+});
 
 window.toValidPath = function (uri) {
 	return ximera_subpath + uri
@@ -91,11 +108,19 @@ var sagemath = require('./sagemath');
 var pencil = require('./pencil');
 
 MathJax.Hub.Register.MessageHook("TeX Jax - parse error",function (message) {
+    pageRuntime.event("mathjax-tex-parse-error", {
+        messageAvailable: message !== undefined
+    });
+
     // do something with the error.  message[1] will contain the data about the error.
     console.log(message);
 });
 
 MathJax.Hub.Register.MessageHook("Math Processing Error",function (message) {
+    pageRuntime.event("mathjax-processing-error", {
+        messageAvailable: message !== undefined
+    });
+
     //  do something with the error.  message[2] is the Error object that records the problem.
     console.log(message);
 });
@@ -104,7 +129,16 @@ MathJax.Hub.Register.MessageHook("Math Processing Error",function (message) {
 MathJax.Hub.processSectionDelay = 0;
 MathJax.Hub.processUpdateTime = 0;
 
+pageRuntime.service(
+    "mathjax",
+    "startup-hook-registered"
+);
+
 MathJax.Hub.Register.StartupHook("End", function () {
+        pageRuntime.service(
+            "mathjax",
+            "startup-ended"
+        );
 	$(".accordion").accordion({
 		active: false,
 		autoHeight: false,
@@ -120,6 +154,11 @@ MathJax.Hub.Register.StartupHook("End", function () {
  });
 
 MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
+    pageRuntime.service(
+        "mathjax-tex",
+        "ready"
+    );
+
     // Remove CDATA's from the script tags
     MathJax.InputJax.TeX.prefilterHooks.Add(function (data) {
 	data.math = data.math.replace(/<!\[CDATA\[\s*((.|\n)*)\s*\]\]>/m,"$1");
@@ -999,9 +1038,16 @@ MathJax.Hub.signal.Interest(function (message) {
 });
 
 
+pageRuntime.service(
+    "mathjax",
+    "configured"
+);
+
 MathJax.Hub.Configured();
 
 $(document).ready(function() {
+    pageRuntime.event("document-ready-started");
+
     // Make anchors with references from \ref actually work
 	$('a.ximera-label').texLabel();
 	$('a.reference').reference();
@@ -1077,8 +1123,20 @@ $(document).ready(function() {
 
     $('[data-toggle="tooltip"]').tooltip();
 
+    pageRuntime.operation(
+        "activity-bootstrap",
+        "invoked",
+        {
+            activityCount: $(".activity").length
+        }
+    );
+
     $(".activity").activity();
+
+    pageRuntime.event("document-ready-completed");
 });
+
+pageRuntime.event("bundle-evaluation-completed");
 
 console.log("done.");
 

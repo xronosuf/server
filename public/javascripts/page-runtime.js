@@ -239,6 +239,10 @@ function updatePageReadiness() {
         ];
     var canonicalSage =
         runtime.components["sage-initial"];
+    var initialInlineSage =
+        runtime.components[
+            "sage-inline-initial"
+        ];
     var legacyStandaloneSage =
         runtime.components[
             "sage-visible-initial"
@@ -316,6 +320,19 @@ function updatePageReadiness() {
                     "fallback",
                     "failed",
                     "degraded"
+                ]
+            ),
+            readinessDependency(
+                "sage-inline-initial",
+                initialInlineSage &&
+                    initialInlineSage.state,
+                [
+                    "settled",
+                    "not-required"
+                ],
+                [
+                    "degraded",
+                    "failed"
                 ]
             )
         ]);

@@ -334,6 +334,18 @@ function benchmark(options) {
         runtime.components.validators;
     var initialState =
         runtime.operations["initial-state"];
+    var initialSage =
+        runtime.components["sage-initial"];
+    var initialVisibleSage =
+        runtime.components[
+            "sage-visible-initial"
+        ];
+    var visibleSageOutputCount =
+        document.querySelectorAll
+            ? document.querySelectorAll(
+                ".sageOutput"
+            ).length
+            : null;
 
     options = options || {};
 
@@ -418,6 +430,48 @@ function benchmark(options) {
                     "startup-ended",
                     true
                 ),
+            initialSageRequestSubmitted:
+                milestoneEvent(
+                    "operation",
+                    "sage-initial-request",
+                    "submitted",
+                    false
+                ),
+            initialSageResponseReceived:
+                milestoneEvent(
+                    "operation",
+                    "sage-initial-request",
+                    "response-received",
+                    false
+                ),
+            initialSageResultsAvailable:
+                milestoneEvent(
+                    "component",
+                    "sage-initial",
+                    "results-available",
+                    true
+                ),
+            initialSageResultsDegraded:
+                milestoneEvent(
+                    "component",
+                    "sage-initial",
+                    "results-degraded",
+                    true
+                ),
+            initialVisibleSageSettled:
+                milestoneEvent(
+                    "component",
+                    "sage-visible-initial",
+                    "settled",
+                    true
+                ),
+            initialVisibleSageDegraded:
+                milestoneEvent(
+                    "component",
+                    "sage-visible-initial",
+                    "degraded",
+                    true
+                ),
             browserLoadObserved:
                 milestoneEvent(
                     "event",
@@ -426,7 +480,37 @@ function benchmark(options) {
                     true
                 )
         },
+        sage: {
+            canonical: {
+                state:
+                    initialSage
+                        ? initialSage.state
+                        : "not-observed",
+                required:
+                    initialSage
+                        ? initialSage.state !==
+                            "not-required"
+                        : null
+            },
+            visible: {
+                state:
+                    initialVisibleSage
+                        ? initialVisibleSage.state
+                        : visibleSageOutputCount === 0
+                            ? "not-required"
+                            : "not-observed",
+                required:
+                    initialVisibleSage
+                        ? initialVisibleSage.state !==
+                            "not-required"
+                        : visibleSageOutputCount === null
+                            ? null
+                            : visibleSageOutputCount > 0
+            }
+        },
         counts: {
+            visibleSageOutputs:
+                visibleSageOutputCount,
             initialStateConsumers:
                 initialState &&
                 initialState.details
@@ -698,6 +782,44 @@ var BENCHMARK_METRICS = {
                 record.milestones
                     .mathJaxStartupEnded
                     .navigationElapsedMs;
+        },
+    initialSageRequestSubmitted:
+        function(record) {
+            return record.milestones
+                .initialSageRequestSubmitted &&
+                record.milestones
+                    .initialSageRequestSubmitted
+                    .navigationElapsedMs;
+        },
+    initialSageResponseReceived:
+        function(record) {
+            return record.milestones
+                .initialSageResponseReceived &&
+                record.milestones
+                    .initialSageResponseReceived
+                    .navigationElapsedMs;
+        },
+    initialSageResultsAvailable:
+        function(record) {
+            var milestone =
+                record.milestones
+                    .initialSageResultsAvailable ||
+                record.milestones
+                    .initialSageResultsDegraded;
+
+            return milestone &&
+                milestone.navigationElapsedMs;
+        },
+    initialVisibleSageSettled:
+        function(record) {
+            var milestone =
+                record.milestones
+                    .initialVisibleSageSettled ||
+                record.milestones
+                    .initialVisibleSageDegraded;
+
+            return milestone &&
+                milestone.navigationElapsedMs;
         }
 };
 

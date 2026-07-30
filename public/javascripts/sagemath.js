@@ -3,6 +3,7 @@ var _ = require('underscore');
 var MathJax = require('mathjax');
 var database = require('./database');
 var TinCan = require('./tincan');
+var pageRuntime = require('./page-runtime');
 
 var seeded = false;
 var seedCallbacks = [];
@@ -13,6 +14,52 @@ var executedSageSilents = false;
 var sageSilentCode = "";
 
 var visibleSageOutputsStarted = false;
+
+var initialVisibleSageRuntime = {
+    discovered: 0,
+    started: 0,
+    applied: 0,
+    failed: 0,
+    settled: 0,
+    reportedSettled: false
+};
+
+function reportInitialVisibleSageSettled() {
+    if (
+        initialVisibleSageRuntime.reportedSettled ||
+        initialVisibleSageRuntime.settled <
+            initialVisibleSageRuntime.started
+    ) {
+        return;
+    }
+
+    initialVisibleSageRuntime.reportedSettled =
+        true;
+
+    pageRuntime.component(
+        "sage-visible-initial",
+        initialVisibleSageRuntime.failed > 0
+            ? "degraded"
+            : "settled",
+        {
+            discovered:
+                initialVisibleSageRuntime
+                    .discovered,
+            started:
+                initialVisibleSageRuntime
+                    .started,
+            applied:
+                initialVisibleSageRuntime
+                    .applied,
+            failed:
+                initialVisibleSageRuntime
+                    .failed,
+            settled:
+                initialVisibleSageRuntime
+                    .settled
+        }
+    );
+}
 
 // Browser-side exact-code cache and queue.
 // This avoids duplicate network calls from the same page load and prevents
@@ -1883,6 +1930,15 @@ function executeInitialCanonicalPageSage() {
     canonicalPageSageRuntime.status =
         "waiting-for-seed";
 
+    pageRuntime.operation(
+        "sage-initial-request",
+        "waiting-for-seed",
+        {
+            expressions:
+                expressionEntries.length
+        }
+    );
+
     var pending =
         new Promise(
             function(resolve, reject) {
@@ -1957,6 +2013,22 @@ function executeInitialCanonicalPageSage() {
                             .requestDurationMilliseconds =
                                 null;
 
+                        pageRuntime.operation(
+                            "sage-initial-request",
+                            "submitted",
+                            {
+                                request:
+                                    canonicalPageSageRuntime
+                                        .requestCount,
+                                compiledCharacters:
+                                    compiledCode.length,
+                                compiledUtf8Bytes:
+                                    compiledUtf8Bytes,
+                                resultCountExpected:
+                                    expressionEntries.length
+                            }
+                        );
+
                         postSageRaw(
                             compiledCode
                         ).then(
@@ -1973,6 +2045,16 @@ function executeInitialCanonicalPageSage() {
                                             .requestCompletedAtMilliseconds -
                                         canonicalPageSageRuntime
                                             .requestStartedAtMilliseconds;
+
+                                pageRuntime.operation(
+                                    "sage-initial-request",
+                                    "response-received",
+                                    {
+                                        requestDurationMilliseconds:
+                                            canonicalPageSageRuntime
+                                                .requestDurationMilliseconds
+                                    }
+                                );
 
                                 try {
                                     results =
@@ -2004,6 +2086,25 @@ function executeInitialCanonicalPageSage() {
                                             }
                                         ).length;
 
+                                pageRuntime.component(
+                                    "sage-initial",
+                                    canonicalPageSageRuntime
+                                        .expressionFailureCount > 0
+                                        ? "results-degraded"
+                                        : "results-available",
+                                    {
+                                        resultCount:
+                                            canonicalPageSageRuntime
+                                                .resultCount,
+                                        expressionFailureCount:
+                                            canonicalPageSageRuntime
+                                                .expressionFailureCount,
+                                        requestDurationMilliseconds:
+                                            canonicalPageSageRuntime
+                                                .requestDurationMilliseconds
+                                    }
+                                );
+
                                 resolve({
                                     manifest:
                                         manifest,
@@ -2033,6 +2134,20 @@ function executeInitialCanonicalPageSage() {
                                             .requestCompletedAtMilliseconds -
                                         canonicalPageSageRuntime
                                             .requestStartedAtMilliseconds;
+
+                                pageRuntime.operation(
+                                    "sage-initial-request",
+                                    "failed",
+                                    {
+                                        requestDurationMilliseconds:
+                                            canonicalPageSageRuntime
+                                                .requestDurationMilliseconds,
+                                        errorName:
+                                            err && err.ename
+                                                ? err.ename
+                                                : null
+                                    }
+                                );
 
                                 reject(err);
                             }
@@ -2077,6 +2192,30 @@ function executeInitialCanonicalPageSage() {
                  */
                 canonicalPageSageRuntime.initialPromise =
                     null;
+
+                pageRuntime.component(
+                    "sage-initial",
+                    err &&
+                    err.xronosCanonicalFallback
+                        ? "fallback"
+                        : "failed",
+                    {
+                        requestCount:
+                            canonicalPageSageRuntime
+                                .requestCount,
+                        requestDurationMilliseconds:
+                            canonicalPageSageRuntime
+                                .requestDurationMilliseconds,
+                        errorName:
+                            err && err.ename
+                                ? err.ename
+                                : null,
+                        fallbackCode:
+                            err && err.fallbackCode
+                                ? err.fallbackCode
+                                : null
+                    }
+                );
 
                 throw err;
             }
@@ -4955,6 +5094,38 @@ function captureInitialSagePageManifestSnapshot() {
             snapshot
         );
 
+    var initialExpressionEntries =
+        canonicalPageSageExpressionEntries(
+            initialSagePageManifestSnapshot
+        );
+
+    pageRuntime.component(
+        "sage-initial",
+        initialExpressionEntries.length > 0
+            ? "discovered"
+            : "not-required",
+        {
+            expressions:
+                initialExpressionEntries.length,
+            answerKeys:
+                initialExpressionEntries.filter(
+                    function(entry) {
+                        return (
+                            entry.consumer ===
+                            "answer-key"
+                        );
+                    }
+                ).length,
+            silentBlocks:
+                initialSagePageManifestSnapshot &&
+                initialSagePageManifestSnapshot
+                    .summary
+                    ? initialSagePageManifestSnapshot
+                        .summary.silentBlocks
+                    : null
+        }
+    );
+
     return initialSagePageManifestSnapshot;
 }
 
@@ -5684,14 +5855,46 @@ pieces.push(sageSilentCode);
     return pieces.join("\n\n");
 };
 
-var runVisibleSageOutput = function(output, code) {
+var runVisibleSageOutput = function(
+    output,
+    code,
+    initialRun
+) {
     output.empty();
     output.addClass("sagecell-computing");
+
+    if (initialRun) {
+        initialVisibleSageRuntime.started += 1;
+    }
 
     exports.sage(code).then(
         function(result) {
             output.removeClass("sagecell-computing");
             output.text(result);
+
+            if (initialRun) {
+                initialVisibleSageRuntime.applied += 1;
+                initialVisibleSageRuntime.settled += 1;
+
+                pageRuntime.operation(
+                    "sage-visible-output",
+                    "applied",
+                    {
+                        applied:
+                            initialVisibleSageRuntime
+                                .applied,
+                        settled:
+                            initialVisibleSageRuntime
+                                .settled,
+                        total:
+                            initialVisibleSageRuntime
+                                .started
+                    }
+                );
+
+                reportInitialVisibleSageSettled();
+            }
+
             reprocessMathjax();
         },
         function(err) {
@@ -5701,10 +5904,42 @@ var runVisibleSageOutput = function(output, code) {
                 buildSageErrorElement(
                     err,
                     function() {
-                        runVisibleSageOutput(output, code);
+                        runVisibleSageOutput(
+                            output,
+                            code,
+                            false
+                        );
                     }
                 )
             );
+
+            if (initialRun) {
+                initialVisibleSageRuntime.failed += 1;
+                initialVisibleSageRuntime.settled += 1;
+
+                pageRuntime.operation(
+                    "sage-visible-output",
+                    "failed",
+                    {
+                        failed:
+                            initialVisibleSageRuntime
+                                .failed,
+                        settled:
+                            initialVisibleSageRuntime
+                                .settled,
+                        total:
+                            initialVisibleSageRuntime
+                                .started,
+                        errorName:
+                            err && err.ename
+                                ? err.ename
+                                : null
+                    }
+                );
+
+                reportInitialVisibleSageSettled();
+            }
+
             console.log("sageOutput error=", err);
         }
     );
@@ -5715,9 +5950,52 @@ var processVisibleSageOutputs = function(force) {
         return;
     }
 
+    var initialRun =
+        !visibleSageOutputsStarted &&
+        !force;
+
     visibleSageOutputsStarted = true;
 
-    $(".sageOutput").each(function() {
+    var visibleOutputs =
+        $(".sageOutput");
+
+    if (initialRun) {
+        initialVisibleSageRuntime.discovered =
+            visibleOutputs.filter(
+                function() {
+                    return (
+                        $.trim(
+                            stripCDATA(
+                                $(this).text()
+                            )
+                        ).length > 0
+                    );
+                }
+            ).length;
+
+        pageRuntime.component(
+            "sage-visible-initial",
+            initialVisibleSageRuntime
+                .discovered > 0
+                ? "discovered"
+                : "not-required",
+            {
+                discovered:
+                    initialVisibleSageRuntime
+                        .discovered
+            }
+        );
+
+        if (
+            initialVisibleSageRuntime
+                .discovered === 0
+        ) {
+            initialVisibleSageRuntime
+                .reportedSettled = true;
+        }
+    }
+
+    visibleOutputs.each(function() {
         var output = $(this);
 
         var code = output.data("xronos-sage-code");
@@ -5732,7 +6010,11 @@ var processVisibleSageOutputs = function(force) {
             return;
         }
 
-        runVisibleSageOutput(output, code);
+        runVisibleSageOutput(
+            output,
+            code,
+            initialRun
+        );
     });
 };
 

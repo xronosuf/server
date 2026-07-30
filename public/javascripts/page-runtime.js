@@ -56,7 +56,6 @@ var runtime = {
 };
 
 var updatingPageReadiness = false;
-var latestPageReadinessSignature = null;
 
 function elapsedMs() {
     return (
@@ -117,6 +116,70 @@ function readinessDependency(
     };
 }
 
+function readinessSummary(dependencies) {
+    var pending = [];
+    var degraded = [];
+    var state;
+
+    dependencies.forEach(function(dependency) {
+        if (dependency.status === "waiting") {
+            pending.push(dependency.name);
+        } else if (
+            dependency.status === "degraded"
+        ) {
+            degraded.push(dependency.name);
+        }
+    });
+
+    if (degraded.length > 0) {
+        state = "degraded";
+    } else if (pending.length === 0) {
+        state = "ready";
+    } else {
+        state = "waiting";
+    }
+
+    return {
+        state: state,
+        details: {
+            dependencies: dependencies,
+            pending: pending,
+            degraded: degraded
+        }
+    };
+}
+
+function transitionReadinessComponent(
+    name,
+    state,
+    details
+) {
+    var current =
+        runtime.components[name];
+    var currentSignature =
+        current
+            ? JSON.stringify({
+                state: current.state,
+                details: current.details
+            })
+            : null;
+    var nextSignature =
+        JSON.stringify({
+            state: state,
+            details: details
+        });
+
+    if (currentSignature === nextSignature)
+        return current;
+
+    return transition(
+        "components",
+        name,
+        state,
+        details
+    );
+}
+
 function updatePageReadiness() {
     var initialState =
         runtime.operations["initial-state"];
@@ -146,103 +209,136 @@ function updatePageReadiness() {
             : visibleSageOutputCount === 0
                 ? "not-required"
                 : null;
-    var dependencies = [
+    var stateSynchronized =
+        readinessSummary([
+            readinessDependency(
+                "initial-state",
+                initialState && initialState.state,
+                ["available"],
+                [
+                    "fallback",
+                    "failed",
+                    "degraded"
+                ]
+            )
+        ]);
+    var contentReady =
+        readinessSummary([
+            readinessDependency(
+                "mathjax-initial-process",
+                mathJaxPasses &&
+                    mathJaxPasses.state,
+                ["completed"],
+                ["failed", "degraded"]
+            ),
+            readinessDependency(
+                "canonical-sage",
+                canonicalSage &&
+                    canonicalSage.state,
+                [
+                    "results-available",
+                    "not-required"
+                ],
+                [
+                    "results-degraded",
+                    "fallback",
+                    "failed",
+                    "degraded"
+                ]
+            ),
+            readinessDependency(
+                "visible-sage",
+                visibleSageState,
+                ["settled", "not-required"],
+                ["degraded", "failed"]
+            )
+        ]);
+    var interactionReady =
+        readinessSummary([
+            readinessDependency(
+                "activity",
+                activity && activity.state,
+                ["initialized"],
+                ["failed", "degraded"]
+            ),
+            readinessDependency(
+                "initial-math-answers",
+                initialMathAnswers &&
+                    initialMathAnswers.state,
+                ["settled", "not-required"],
+                ["degraded", "failed"]
+            )
+        ]);
+    var dimensions = [
         readinessDependency(
-            "initial-state",
-            initialState && initialState.state,
-            ["available"],
-            ["fallback", "failed", "degraded"]
+            "state-synchronized",
+            stateSynchronized.state,
+            ["ready"],
+            ["degraded"]
         ),
         readinessDependency(
-            "activity",
-            activity && activity.state,
-            ["initialized"],
-            ["failed", "degraded"]
+            "content-ready",
+            contentReady.state,
+            ["ready"],
+            ["degraded"]
         ),
         readinessDependency(
-            "mathjax-initial-process",
-            mathJaxPasses && mathJaxPasses.state,
-            ["completed"],
-            ["failed", "degraded"]
-        ),
-        readinessDependency(
-            "initial-math-answers",
-            initialMathAnswers &&
-                initialMathAnswers.state,
-            ["settled", "not-required"],
-            ["degraded", "failed"]
-        ),
-        readinessDependency(
-            "canonical-sage",
-            canonicalSage && canonicalSage.state,
-            ["results-available", "not-required"],
-            [
-                "results-degraded",
-                "fallback",
-                "failed",
-                "degraded"
-            ]
-        ),
-        readinessDependency(
-            "visible-sage",
-            visibleSageState,
-            ["settled", "not-required"],
-            ["degraded", "failed"]
+            "interaction-ready",
+            interactionReady.state,
+            ["ready"],
+            ["degraded"]
         )
     ];
-    var pending = [];
-    var degraded = [];
-    var state;
-    var details;
-    var signature;
+    var pageReadiness =
+        readinessSummary(dimensions);
+    var pageDetails;
 
-    dependencies.forEach(function(dependency) {
-        if (dependency.status === "waiting") {
-            pending.push(dependency.name);
-        } else if (
-            dependency.status === "degraded"
-        ) {
-            degraded.push(dependency.name);
-        }
-    });
+    stateSynchronized.details.dimension =
+        "state-synchronized";
 
-    if (degraded.length > 0) {
-        state = "degraded";
-    } else if (pending.length === 0) {
-        state = "ready";
-    } else {
-        state = "waiting";
-    }
+    contentReady.details.dimension =
+        "content-ready";
+    contentReady.details.visibleSageOutputs =
+        visibleSageOutputCount;
 
-    details = {
-        dependencies: dependencies,
-        pending: pending,
-        degraded: degraded,
-        visibleSageOutputs:
-            visibleSageOutputCount
+    interactionReady.details.dimension =
+        "interaction-ready";
+
+    pageDetails = pageReadiness.details;
+    pageDetails.dimensions = {
+        stateSynchronized:
+            stateSynchronized.state,
+        contentReady:
+            contentReady.state,
+        interactionReady:
+            interactionReady.state
     };
 
-    signature = JSON.stringify({
-        state: state,
-        dependencies: dependencies,
-        pending: pending,
-        degraded: degraded,
-        visibleSageOutputs:
-            visibleSageOutputCount
-    });
-
-    if (signature === latestPageReadinessSignature)
-        return;
-
-    latestPageReadinessSignature = signature;
     updatingPageReadiness = true;
 
     try {
-        transition(
-            "components",
+        transitionReadinessComponent(
+            "state-synchronized",
+            stateSynchronized.state,
+            stateSynchronized.details
+        );
+
+        transitionReadinessComponent(
+            "content-ready",
+            contentReady.state,
+            contentReady.details
+        );
+
+        transitionReadinessComponent(
+            "interaction-ready",
+            interactionReady.state,
+            interactionReady.details
+        );
+
+        transitionReadinessComponent(
             "page-readiness",
-            state,
-            details
+            pageReadiness.state,
+            pageDetails
         );
     } finally {
         updatingPageReadiness = false;
@@ -505,6 +601,16 @@ function benchmark(options) {
         ];
     var pageReadiness =
         runtime.components["page-readiness"];
+    var stateSynchronized =
+        runtime.components[
+            "state-synchronized"
+        ];
+    var contentReady =
+        runtime.components["content-ready"];
+    var interactionReady =
+        runtime.components[
+            "interaction-ready"
+        ];
     var validators =
         runtime.components.validators;
     var initialState =
@@ -633,6 +739,48 @@ function benchmark(options) {
                     "degraded",
                     true
                 ),
+            stateSynchronized:
+                milestoneEvent(
+                    "component",
+                    "state-synchronized",
+                    "ready",
+                    true
+                ),
+            stateSynchronizationDegraded:
+                milestoneEvent(
+                    "component",
+                    "state-synchronized",
+                    "degraded",
+                    true
+                ),
+            contentReady:
+                milestoneEvent(
+                    "component",
+                    "content-ready",
+                    "ready",
+                    true
+                ),
+            contentDegraded:
+                milestoneEvent(
+                    "component",
+                    "content-ready",
+                    "degraded",
+                    true
+                ),
+            interactionReady:
+                milestoneEvent(
+                    "component",
+                    "interaction-ready",
+                    "ready",
+                    true
+                ),
+            interactionDegraded:
+                milestoneEvent(
+                    "component",
+                    "interaction-ready",
+                    "degraded",
+                    true
+                ),
             mathJaxStartupEnded:
                 milestoneEvent(
                     "service",
@@ -718,7 +866,21 @@ function benchmark(options) {
                 pageReadiness &&
                 pageReadiness.details
                     ? pageReadiness.details.degraded
-                    : []
+                    : [],
+            dimensions: {
+                stateSynchronized:
+                    stateSynchronized
+                        ? stateSynchronized.state
+                        : "not-observed",
+                contentReady:
+                    contentReady
+                        ? contentReady.state
+                        : "not-observed",
+                interactionReady:
+                    interactionReady
+                        ? interactionReady.state
+                        : "not-observed"
+            }
         },
         mathAnswers: {
             state:
@@ -1062,6 +1224,38 @@ var BENCHMARK_METRICS = {
             var milestone =
                 record.milestones.pageReady ||
                 record.milestones.pageDegraded;
+
+            return milestone &&
+                milestone.navigationElapsedMs;
+        },
+    stateSynchronizationSettled:
+        function(record) {
+            var milestone =
+                record.milestones
+                    .stateSynchronized ||
+                record.milestones
+                    .stateSynchronizationDegraded;
+
+            return milestone &&
+                milestone.navigationElapsedMs;
+        },
+    contentReadinessSettled:
+        function(record) {
+            var milestone =
+                record.milestones.contentReady ||
+                record.milestones
+                    .contentDegraded;
+
+            return milestone &&
+                milestone.navigationElapsedMs;
+        },
+    interactionReadinessSettled:
+        function(record) {
+            var milestone =
+                record.milestones
+                    .interactionReady ||
+                record.milestones
+                    .interactionDegraded;
 
             return milestone &&
                 milestone.navigationElapsedMs;

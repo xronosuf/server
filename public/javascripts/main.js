@@ -105,6 +105,248 @@ var Javascript = require('./javascript');
 
 var sagemath = require('./sagemath');
 
+
+/*
+ * Aggregate the display lifecycle of immutable initial-manifest Sage calls.
+ *
+ * This component is observational only. It is intentionally not yet a
+ * dependency of content-ready.
+ */
+var initialInlineSageRuntime = {
+    expected: null,
+    discovered: 0,
+    started: 0,
+    mmlApplied: 0,
+    rerenderCompleted: 0,
+    failed: 0,
+    settled: 0,
+    processComplete: false,
+    reportedDiscovered: false,
+    reportedTerminal: false,
+    placeholders: {}
+};
+
+
+function initialInlineSageDetails() {
+    return {
+        expected:
+            initialInlineSageRuntime.expected,
+        discovered:
+            initialInlineSageRuntime.discovered,
+        started:
+            initialInlineSageRuntime.started,
+        mmlApplied:
+            initialInlineSageRuntime.mmlApplied,
+        rerenderCompleted:
+            initialInlineSageRuntime
+                .rerenderCompleted,
+        failed:
+            initialInlineSageRuntime.failed,
+        settled:
+            initialInlineSageRuntime.settled,
+        processComplete:
+            initialInlineSageRuntime
+                .processComplete
+    };
+}
+
+
+function reportInitialInlineSageProgress() {
+    if (
+        initialInlineSageRuntime
+            .reportedTerminal
+    ) {
+        return;
+    }
+
+    if (
+        initialInlineSageRuntime
+            .expected === 0
+    ) {
+        initialInlineSageRuntime
+            .reportedTerminal = true;
+
+        pageRuntime.component(
+            "sage-inline-initial",
+            "not-required",
+            initialInlineSageDetails()
+        );
+
+        return;
+    }
+
+    if (
+        !initialInlineSageRuntime
+            .processComplete ||
+        initialInlineSageRuntime
+            .expected === null
+    ) {
+        return;
+    }
+
+    if (
+        initialInlineSageRuntime
+            .settled <
+        initialInlineSageRuntime
+            .expected
+    ) {
+        if (
+            !initialInlineSageRuntime
+                .reportedDiscovered
+        ) {
+            initialInlineSageRuntime
+                .reportedDiscovered = true;
+
+            pageRuntime.component(
+                "sage-inline-initial",
+                "discovered",
+                initialInlineSageDetails()
+            );
+        }
+
+        return;
+    }
+
+    initialInlineSageRuntime
+        .reportedTerminal = true;
+
+    pageRuntime.component(
+        "sage-inline-initial",
+        initialInlineSageRuntime.failed > 0
+            ? "degraded"
+            : "settled",
+        initialInlineSageDetails()
+    );
+}
+
+
+function discoverInitialInlineSage(
+    placeholderId
+) {
+    if (
+        initialInlineSageRuntime
+            .placeholders[
+                placeholderId
+            ]
+    ) {
+        return;
+    }
+
+    initialInlineSageRuntime
+        .placeholders[
+            placeholderId
+        ] = {
+            started: false,
+            mmlApplied: false,
+            terminal: false,
+            terminalState: null
+        };
+
+    initialInlineSageRuntime
+        .discovered += 1;
+}
+
+
+function updateInitialInlineSage(
+    placeholderId,
+    state
+) {
+    var placeholder =
+        initialInlineSageRuntime
+            .placeholders[
+                placeholderId
+            ];
+
+    if (!placeholder) {
+        return;
+    }
+
+    if (
+        state === "request-started" &&
+        !placeholder.started
+    ) {
+        placeholder.started = true;
+
+        initialInlineSageRuntime
+            .started += 1;
+    }
+
+    if (
+        state === "mml-applied" &&
+        !placeholder.mmlApplied
+    ) {
+        placeholder.mmlApplied = true;
+
+        initialInlineSageRuntime
+            .mmlApplied += 1;
+    }
+
+    reportInitialInlineSageProgress();
+}
+
+
+function settleInitialInlineSage(
+    placeholderId,
+    terminalState,
+    failed
+) {
+    var placeholder =
+        initialInlineSageRuntime
+            .placeholders[
+                placeholderId
+            ];
+
+    if (
+        !placeholder ||
+        placeholder.terminal
+    ) {
+        return;
+    }
+
+    placeholder.terminal = true;
+    placeholder.terminalState =
+        terminalState;
+
+    initialInlineSageRuntime
+        .settled += 1;
+
+    if (failed) {
+        initialInlineSageRuntime
+            .failed += 1;
+    } else {
+        initialInlineSageRuntime
+            .rerenderCompleted += 1;
+    }
+
+    reportInitialInlineSageProgress();
+}
+
+
+function completeInitialInlineSageDiscovery() {
+    var descriptor =
+        sagemath.describeMathJaxSageCall
+            ? sagemath.describeMathJaxSageCall(
+                null
+            )
+            : null;
+
+    initialInlineSageRuntime.expected =
+        descriptor &&
+        typeof descriptor
+            .manifestExpressions ===
+            "number"
+            ? descriptor
+                .manifestExpressions
+            : initialInlineSageRuntime
+                .discovered;
+
+    initialInlineSageRuntime
+        .processComplete = true;
+
+    reportInitialInlineSageProgress();
+}
+
+
 var pencil = require('./pencil');
 
 MathJax.Hub.Register.MessageHook("TeX Jax - parse error",function (message) {
@@ -326,6 +568,15 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
             }
         );
 
+        if (
+            sageCallRuntime
+                .initialManifestCall
+        ) {
+            discoverInitialInlineSage(
+                placeholderId
+            );
+        }
+
         var sagePlaceholderDetails =
             function(extra) {
                 var details = {
@@ -372,6 +623,17 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
                     })
                 );
 
+                if (
+                    sageCallRuntime
+                        .initialManifestCall
+                ) {
+                    settleInitialInlineSage(
+                        placeholderId,
+                        "rerender-unavailable",
+                        true
+                    );
+                }
+
                 return false;
             }
 
@@ -402,6 +664,17 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
                                     .length > 0
                         })
                     );
+
+                    if (
+                        sageCallRuntime
+                            .initialManifestCall
+                    ) {
+                        settleInitialInlineSage(
+                            placeholderId,
+                            "rerender-completed",
+                            false
+                        );
+                    }
                 }
             );
 
@@ -809,6 +1082,17 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
                             })
                         );
 
+                        if (
+                            sageCallRuntime
+                                .initialManifestCall
+                        ) {
+                            settleInitialInlineSage(
+                                placeholderId,
+                                "fallback-placeholder-missing",
+                                true
+                            );
+                        }
+
                         console.log(
                             "Could not locate inline Sage placeholder:",
                             placeholderId
@@ -866,6 +1150,17 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
                         })
                     );
 
+                    if (
+                        sageCallRuntime
+                            .initialManifestCall
+                    ) {
+                        settleInitialInlineSage(
+                            placeholderId,
+                            "fallback-shown",
+                            true
+                        );
+                    }
+
                     return;
                 }
             ]);
@@ -914,6 +1209,16 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
                             })
                         );
 
+                        if (
+                            sageCallRuntime
+                                .initialManifestCall
+                        ) {
+                            updateInitialInlineSage(
+                                placeholderId,
+                                "mml-applied"
+                            );
+                        }
+
                         rerenderPlaceholder();
                     } catch (displayError) {
                         pageRuntime.operation(
@@ -956,6 +1261,16 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
                 "request-started",
                 sagePlaceholderDetails()
             );
+
+            if (
+                sageCallRuntime
+                    .initialManifestCall
+            ) {
+                updateInitialInlineSage(
+                    placeholderId,
+                    "request-started"
+                );
+            }
 
             sagemath.resolveMathJaxSageCall(
                 sageCallTrace,
@@ -1380,6 +1695,8 @@ function endMathJaxPass(passType, message) {
                     pass.durationMilliseconds
             }
         );
+
+        completeInitialInlineSageDiscovery();
     }
 
     if (pass.passType === "rerender") {

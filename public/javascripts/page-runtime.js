@@ -15,6 +15,12 @@ var INITIAL_STATE_READINESS_DEADLINE_MS =
 var INITIAL_STATE_TIMEOUT_CODE =
     "XR-STATE-INITIAL-101";
 
+var INITIAL_MATHJAX_READINESS_DEADLINE_MS =
+    15000;
+
+var INITIAL_MATHJAX_TIMEOUT_CODE =
+    "XR-MATHJAX-INITIAL-101";
+
 function nowMonotonic() {
     if (
         window.performance &&
@@ -70,6 +76,16 @@ var readinessWatchdogs = {
         timer: null,
         timedOut: false,
         timedOutAtElapsedMs: null
+    },
+    initialMathJax: {
+        deadlineMilliseconds:
+            INITIAL_MATHJAX_READINESS_DEADLINE_MS,
+        timer: null,
+        timedOut: false,
+        timedOutAtElapsedMs: null,
+        completed: false,
+        completedAtElapsedMs: null,
+        generation: null
     }
 };
 
@@ -201,8 +217,6 @@ function updatePageReadiness() {
         runtime.operations["initial-state"];
     var activity =
         runtime.components.activity;
-    var mathJaxPasses =
-        runtime.components["mathjax-passes"];
     var initialMathAnswers =
         runtime.components[
             "initial-math-answers"
@@ -223,6 +237,12 @@ function updatePageReadiness() {
         initialState && initialState.state;
     var initialStateWatchdog =
         readinessWatchdogs.initialState;
+    var initialMathJaxWatchdog =
+        readinessWatchdogs.initialMathJax;
+    var initialMathJaxObservedState =
+        initialMathJaxWatchdog.completed
+            ? "completed"
+            : null;
 
     if (
         initialStateObservedState !==
@@ -230,6 +250,14 @@ function updatePageReadiness() {
         initialStateWatchdog.timedOut
     ) {
         initialStateObservedState =
+            "timed-out";
+    }
+
+    if (
+        !initialMathJaxWatchdog.completed &&
+        initialMathJaxWatchdog.timedOut
+    ) {
+        initialMathJaxObservedState =
             "timed-out";
     }
 
@@ -251,10 +279,13 @@ function updatePageReadiness() {
         readinessSummary([
             readinessDependency(
                 "mathjax-initial-process",
-                mathJaxPasses &&
-                    mathJaxPasses.state,
+                initialMathJaxObservedState,
                 ["completed"],
-                ["failed", "degraded"]
+                [
+                    "failed",
+                    "degraded",
+                    "timed-out"
+                ]
             ),
             readinessDependency(
                 "canonical-sage",
@@ -329,6 +360,25 @@ function updatePageReadiness() {
 
     contentReady.details.dimension =
         "content-ready";
+    contentReady.details.deadline = {
+        code:
+            INITIAL_MATHJAX_TIMEOUT_CODE,
+        deadlineMilliseconds:
+            initialMathJaxWatchdog
+                .deadlineMilliseconds,
+        timedOut:
+            initialMathJaxWatchdog.timedOut,
+        timedOutAtElapsedMs:
+            initialMathJaxWatchdog
+                .timedOutAtElapsedMs,
+        completed:
+            initialMathJaxWatchdog.completed,
+        completedAtElapsedMs:
+            initialMathJaxWatchdog
+                .completedAtElapsedMs,
+        generation:
+            initialMathJaxWatchdog.generation
+    };
     contentReady.details
         .legacyStandaloneSageOutputs =
             legacyStandaloneSageOutputCount;
@@ -421,6 +471,39 @@ function transition(collectionName, name, state, details) {
     }
 
     if (
+        collectionName === "operations" &&
+        name === "mathjax-pass" &&
+        state === "ended" &&
+        details &&
+        details.passType === "process"
+    ) {
+        var initialMathJaxWatchdog =
+            readinessWatchdogs.initialMathJax;
+
+        initialMathJaxWatchdog.completed =
+            true;
+        initialMathJaxWatchdog
+            .completedAtElapsedMs =
+                elapsedMs();
+        initialMathJaxWatchdog.generation =
+            details.generation === undefined
+                ? null
+                : details.generation;
+
+        if (
+            initialMathJaxWatchdog.timer !==
+                null
+        ) {
+            window.clearTimeout(
+                initialMathJaxWatchdog.timer
+            );
+
+            initialMathJaxWatchdog.timer =
+                null;
+        }
+    }
+
+    if (
         !updatingPageReadiness &&
         !(
             collectionName === "components" &&
@@ -505,6 +588,93 @@ function startInitialStateReadinessWatchdog() {
 }
 
 
+function initialMathJaxProcessCompleted() {
+    return readinessWatchdogs
+        .initialMathJax.completed;
+}
+
+
+function startInitialMathJaxReadinessWatchdog() {
+    var watchdog =
+        readinessWatchdogs.initialMathJax;
+
+    if (
+        watchdog.timer !== null ||
+        watchdog.timedOut ||
+        initialMathJaxProcessCompleted()
+    ) {
+        return;
+    }
+
+    watchdog.timer =
+        window.setTimeout(
+            function() {
+                var mathJaxService =
+                    runtime.services.mathjax;
+                var mathJaxPass =
+                    runtime.operations[
+                        "mathjax-pass"
+                    ];
+                var mathJaxPasses =
+                    runtime.components[
+                        "mathjax-passes"
+                    ];
+
+                watchdog.timer = null;
+
+                if (
+                    initialMathJaxProcessCompleted()
+                ) {
+                    return;
+                }
+
+                watchdog.timedOut = true;
+                watchdog.timedOutAtElapsedMs =
+                    elapsedMs();
+
+                record(
+                    "event",
+                    "readiness-deadline-exceeded",
+                    undefined,
+                    {
+                        dependency:
+                            "mathjax-initial-process",
+                        code:
+                            INITIAL_MATHJAX_TIMEOUT_CODE,
+                        deadlineMilliseconds:
+                            watchdog
+                                .deadlineMilliseconds,
+                        observedMathJaxService:
+                            mathJaxService
+                                ? mathJaxService.state
+                                : "not-observed",
+                        observedMathJaxPass:
+                            mathJaxPass
+                                ? mathJaxPass.state
+                                : "not-observed",
+                        observedMathJaxPassType:
+                            mathJaxPass &&
+                            mathJaxPass.details
+                                ? mathJaxPass
+                                    .details
+                                    .passType ||
+                                    null
+                                : null,
+                        observedMathJaxPasses:
+                            mathJaxPasses
+                                ? mathJaxPasses
+                                    .state
+                                : "not-observed"
+                    }
+                );
+
+                updatePageReadiness();
+            },
+            watchdog.deadlineMilliseconds
+        );
+}
+
+
 function event(name, details) {
     return record("event", name, undefined, details);
 }
@@ -522,6 +692,7 @@ function component(name, state, details) {
 }
 
 startInitialStateReadinessWatchdog();
+startInitialMathJaxReadinessWatchdog();
 
 function inspect() {
     return copyValue(runtime);
@@ -770,11 +941,18 @@ function milestoneEvent(
     type,
     name,
     state,
-    useLast
+    useLast,
+    predicate
 ) {
     var matches =
         matchingEvents(type, name, state);
     var selected;
+
+    if (predicate) {
+        matches = matches.filter(
+            predicate
+        );
+    }
     var runtimeStartMs;
 
     if (matches.length === 0)
@@ -832,6 +1010,8 @@ function benchmark(options) {
         runtime.operations["initial-state"];
     var initialStateWatchdog =
         readinessWatchdogs.initialState;
+    var initialMathJaxWatchdog =
+        readinessWatchdogs.initialMathJax;
     var initialSage =
         runtime.components["sage-initial"];
     var legacyStandaloneSage =
@@ -879,6 +1059,28 @@ function benchmark(options) {
                 timedOutAtElapsedMs:
                     initialStateWatchdog
                         .timedOutAtElapsedMs
+            },
+            initialMathJax: {
+                code:
+                    INITIAL_MATHJAX_TIMEOUT_CODE,
+                deadlineMilliseconds:
+                    initialMathJaxWatchdog
+                        .deadlineMilliseconds,
+                timedOut:
+                    initialMathJaxWatchdog
+                        .timedOut,
+                timedOutAtElapsedMs:
+                    initialMathJaxWatchdog
+                        .timedOutAtElapsedMs,
+                completed:
+                    initialMathJaxWatchdog
+                        .completed,
+                completedAtElapsedMs:
+                    initialMathJaxWatchdog
+                        .completedAtElapsedMs,
+                generation:
+                    initialMathJaxWatchdog
+                        .generation
             }
         },
         milestones: {
@@ -922,7 +1124,30 @@ function benchmark(options) {
                     "event",
                     "readiness-deadline-exceeded",
                     undefined,
-                    true
+                    true,
+                    function(event) {
+                        return !!(
+                            event.details &&
+                            event.details
+                                .dependency ===
+                                "initial-state"
+                        );
+                    }
+                ),
+            initialMathJaxTimedOut:
+                milestoneEvent(
+                    "event",
+                    "readiness-deadline-exceeded",
+                    undefined,
+                    true,
+                    function(event) {
+                        return !!(
+                            event.details &&
+                            event.details
+                                .dependency ===
+                                "mathjax-initial-process"
+                        );
+                    }
                 ),
             activityInitialized:
                 milestoneEvent(

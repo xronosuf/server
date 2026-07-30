@@ -993,10 +993,22 @@ function searchJax(jax, spanID){
 }
 
 var answerIdBindings = {};
+var mathAnswerRuntime = {
+    newMathMessages: 0,
+    discoveredInstances: 0,
+    connectionAttempts: 0,
+    connectedAnswerIds: {},
+    missingAnswerModels: 0,
+    zeroAnswerBatches: 0
+};
 
 MathJax.Hub.signal.Interest(function (message) {    
     if (message[0] == "New Math") {
 	var id = message[1];
+        var batchConnected = 0;
+        var batchDiscovered;
+
+        mathAnswerRuntime.newMathMessages += 1;
 
 	if (answerIdBindings[id] === undefined) {
 	    answerIdBindings[id] = {};
@@ -1004,10 +1016,31 @@ MathJax.Hub.signal.Interest(function (message) {
 
 	var element = $('#' + id + "-Frame");
 	var jax = MathJax.Hub.getAllJax(id);
+        var answers = $(".mathjaxed-input", element);
+
+        batchDiscovered = answers.length;
+        mathAnswerRuntime.discoveredInstances +=
+            batchDiscovered;
+
+        if (batchDiscovered === 0) {
+            mathAnswerRuntime.zeroAnswerBatches += 1;
+            return;
+        }
+
+        pageRuntime.operation(
+            "math-answer-connection",
+            "batch-started",
+            {
+                batch: mathAnswerRuntime.newMathMessages,
+                discovered: batchDiscovered,
+                jaxAvailable:
+                    jax.length > 0
+            }
+        );
 
 	var internalCount = 0;
 	
-	$(".mathjaxed-input", element).each( function() {
+	answers.each( function() {
 	    var result = $(this);
 	    
 	    if (answerIdBindings[id][internalCount] === undefined) {
@@ -1032,8 +1065,71 @@ MathJax.Hub.signal.Interest(function (message) {
 	    var answerId = parseInt(answerDom.attr('id').replace('MathJax-Span-',''));
 	    var answer = searchJax(jax[0].root, answerId);
 
+            mathAnswerRuntime.connectionAttempts += 1;
+
+            if (answer === null ||
+                answer === undefined) {
+                mathAnswerRuntime.missingAnswerModels +=
+                    1;
+            }
+
 	    mathAnswer.connectMathAnswer( result, answer );
+
+            batchConnected += 1;
+            mathAnswerRuntime.connectedAnswerIds[
+                result.attr("id")
+            ] = true;
 	});
+
+        pageRuntime.operation(
+            "math-answer-connection",
+            "batch-completed",
+            {
+                batch: mathAnswerRuntime.newMathMessages,
+                discovered: batchDiscovered,
+                connected: batchConnected,
+                totalConnectionAttempts:
+                    mathAnswerRuntime.connectionAttempts,
+                uniqueConnected:
+                    Object.keys(
+                        mathAnswerRuntime
+                            .connectedAnswerIds
+                    ).length,
+                missingAnswerModels:
+                    mathAnswerRuntime
+                        .missingAnswerModels,
+                zeroAnswerBatches:
+                    mathAnswerRuntime
+                        .zeroAnswerBatches
+            }
+        );
+
+        if (batchDiscovered > 0) {
+            pageRuntime.component(
+                "math-answers",
+                "connected",
+                {
+                    latestBatchDiscovered:
+                        batchDiscovered,
+                    latestBatchConnected:
+                        batchConnected,
+                    uniqueConnected:
+                        Object.keys(
+                            mathAnswerRuntime
+                                .connectedAnswerIds
+                        ).length,
+                    totalConnectionAttempts:
+                        mathAnswerRuntime
+                            .connectionAttempts,
+                    missingAnswerModels:
+                        mathAnswerRuntime
+                            .missingAnswerModels,
+                    zeroAnswerBatches:
+                        mathAnswerRuntime
+                            .zeroAnswerBatches
+                }
+            );
+        }
     }
 });
 

@@ -245,7 +245,26 @@ var createActivity = function() {
 	
 	$(".shuffle", activity).shuffle();
 	$(".feedback", activity).feedback();
+        var validatorCount =
+            $(".validator", activity).length;
+
+        pageRuntime.component(
+            "validators",
+            "initializing",
+            {
+                count: validatorCount
+            }
+        );
+
 	$(".validator", activity).validator();
+
+        pageRuntime.component(
+            "validators",
+            "initialized",
+            {
+                count: validatorCount
+            }
+        );
 	$(".inline-javascript", activity).javascript();
 	$('.youtube-player', activity).youtube();
 	

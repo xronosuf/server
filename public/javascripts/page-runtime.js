@@ -502,6 +502,88 @@ function navigationTiming() {
     };
 }
 
+function classifyDocumentDelivery(navigation) {
+    if (
+        !navigation ||
+        navigation.supported !== true
+    ) {
+        return {
+            state: "unknown",
+            reason: "navigation-timing-unavailable"
+        };
+    }
+
+    if (
+        navigation.source !==
+            "navigation-entry"
+    ) {
+        return {
+            state: "unknown",
+            reason: "transfer-sizes-unavailable"
+        };
+    }
+
+    if (
+        typeof navigation.transferSize !==
+            "number"
+    ) {
+        return {
+            state: "unknown",
+            reason: "transfer-size-unavailable"
+        };
+    }
+
+    if (
+        navigation.transferSize > 0 &&
+        typeof navigation.encodedBodySize ===
+            "number" &&
+        navigation.encodedBodySize > 0 &&
+        navigation.transferSize <
+            navigation.encodedBodySize
+    ) {
+        return {
+            state: "revalidated-cache",
+            reason: "partial-transfer-cached-body"
+        };
+    }
+
+    if (navigation.transferSize > 0) {
+        return {
+            state: "network-transfer",
+            reason: "positive-full-transfer"
+        };
+    }
+
+    if (
+        navigation.transferSize === 0 &&
+        typeof navigation.encodedBodySize ===
+            "number" &&
+        navigation.encodedBodySize > 0
+    ) {
+        return {
+            state: "cached-or-local",
+            reason: "zero-transfer-positive-body"
+        };
+    }
+
+    if (
+        navigation.transferSize === 0 &&
+        navigation.encodedBodySize === 0 &&
+        navigation.decodedBodySize === 0
+    ) {
+        return {
+            state: "empty-or-opaque",
+            reason: "zero-transfer-zero-body"
+        };
+    }
+
+    return {
+        state: "unknown",
+        reason: "insufficient-transfer-evidence"
+    };
+}
+
+
 function runtimeStartFromNavigationMs() {
     var performanceObject =
         window.performance;
@@ -589,6 +671,10 @@ function milestoneEvent(
 function benchmark(options) {
     var navigation =
         navigationTiming();
+    var documentDelivery =
+        classifyDocumentDelivery(
+            navigation
+        );
     var mathAnswers =
         runtime.components["math-answers"];
     var initialMathAnswers =
@@ -639,6 +725,8 @@ function benchmark(options) {
         cacheState:
             options.cacheState ||
                 "unspecified",
+        documentDelivery:
+            documentDelivery,
         navigation:
             navigation,
         runtimeStartFromNavigationMs:

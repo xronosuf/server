@@ -55,6 +55,9 @@ var runtime = {
     components: {}
 };
 
+var updatingPageReadiness = false;
+var latestPageReadinessSignature = null;
+
 function elapsedMs() {
     return (
         Math.round(
@@ -90,6 +93,162 @@ function record(type, name, state, details) {
     return event;
 }
 
+function readinessDependency(
+    name,
+    observedState,
+    readyStates,
+    degradedStates
+) {
+    var status = "waiting";
+
+    if (readyStates.indexOf(observedState) >= 0) {
+        status = "ready";
+    } else if (
+        degradedStates.indexOf(observedState) >= 0
+    ) {
+        status = "degraded";
+    }
+
+    return {
+        name: name,
+        state:
+            observedState || "not-observed",
+        status: status
+    };
+}
+
+function updatePageReadiness() {
+    var initialState =
+        runtime.operations["initial-state"];
+    var activity =
+        runtime.components.activity;
+    var mathJaxPasses =
+        runtime.components["mathjax-passes"];
+    var initialMathAnswers =
+        runtime.components[
+            "initial-math-answers"
+        ];
+    var canonicalSage =
+        runtime.components["sage-initial"];
+    var visibleSage =
+        runtime.components[
+            "sage-visible-initial"
+        ];
+    var visibleSageOutputCount =
+        document.querySelectorAll
+            ? document.querySelectorAll(
+                ".sageOutput"
+            ).length
+            : null;
+    var visibleSageState =
+        visibleSage
+            ? visibleSage.state
+            : visibleSageOutputCount === 0
+                ? "not-required"
+                : null;
+    var dependencies = [
+        readinessDependency(
+            "initial-state",
+            initialState && initialState.state,
+            ["available"],
+            ["fallback", "failed", "degraded"]
+        ),
+        readinessDependency(
+            "activity",
+            activity && activity.state,
+            ["initialized"],
+            ["failed", "degraded"]
+        ),
+        readinessDependency(
+            "mathjax-initial-process",
+            mathJaxPasses && mathJaxPasses.state,
+            ["completed"],
+            ["failed", "degraded"]
+        ),
+        readinessDependency(
+            "initial-math-answers",
+            initialMathAnswers &&
+                initialMathAnswers.state,
+            ["settled", "not-required"],
+            ["degraded", "failed"]
+        ),
+        readinessDependency(
+            "canonical-sage",
+            canonicalSage && canonicalSage.state,
+            ["results-available", "not-required"],
+            [
+                "results-degraded",
+                "fallback",
+                "failed",
+                "degraded"
+            ]
+        ),
+        readinessDependency(
+            "visible-sage",
+            visibleSageState,
+            ["settled", "not-required"],
+            ["degraded", "failed"]
+        )
+    ];
+    var pending = [];
+    var degraded = [];
+    var state;
+    var details;
+    var signature;
+
+    dependencies.forEach(function(dependency) {
+        if (dependency.status === "waiting") {
+            pending.push(dependency.name);
+        } else if (
+            dependency.status === "degraded"
+        ) {
+            degraded.push(dependency.name);
+        }
+    });
+
+    if (degraded.length > 0) {
+        state = "degraded";
+    } else if (pending.length === 0) {
+        state = "ready";
+    } else {
+        state = "waiting";
+    }
+
+    details = {
+        dependencies: dependencies,
+        pending: pending,
+        degraded: degraded,
+        visibleSageOutputs:
+            visibleSageOutputCount
+    };
+
+    signature = JSON.stringify({
+        state: state,
+        dependencies: dependencies,
+        pending: pending,
+        degraded: degraded,
+        visibleSageOutputs:
+            visibleSageOutputCount
+    });
+
+    if (signature === latestPageReadinessSignature)
+        return;
+
+    latestPageReadinessSignature = signature;
+    updatingPageReadiness = true;
+
+    try {
+        transition(
+            "components",
+            "page-readiness",
+            state,
+            details
+        );
+    } finally {
+        updatingPageReadiness = false;
+    }
+}
+
 function transition(collectionName, name, state, details) {
     var collection = runtime[collectionName];
     var value = {
@@ -109,6 +268,16 @@ function transition(collectionName, name, state, details) {
         state,
         details
     );
+
+    if (
+        !updatingPageReadiness &&
+        !(
+            collectionName === "components" &&
+            name === "page-readiness"
+        )
+    ) {
+        updatePageReadiness();
+    }
 
     return value;
 }
@@ -334,6 +503,8 @@ function benchmark(options) {
         runtime.components[
             "initial-math-answers"
         ];
+    var pageReadiness =
+        runtime.components["page-readiness"];
     var validators =
         runtime.components.validators;
     var initialState =
@@ -448,6 +619,20 @@ function benchmark(options) {
                     "not-required",
                     true
                 ),
+            pageReady:
+                milestoneEvent(
+                    "component",
+                    "page-readiness",
+                    "ready",
+                    true
+                ),
+            pageDegraded:
+                milestoneEvent(
+                    "component",
+                    "page-readiness",
+                    "degraded",
+                    true
+                ),
             mathJaxStartupEnded:
                 milestoneEvent(
                     "service",
@@ -518,6 +703,22 @@ function benchmark(options) {
                     undefined,
                     true
                 )
+        },
+        readiness: {
+            state:
+                pageReadiness
+                    ? pageReadiness.state
+                    : "not-observed",
+            pending:
+                pageReadiness &&
+                pageReadiness.details
+                    ? pageReadiness.details.pending
+                    : [],
+            degraded:
+                pageReadiness &&
+                pageReadiness.details
+                    ? pageReadiness.details.degraded
+                    : []
         },
         mathAnswers: {
             state:
@@ -852,6 +1053,15 @@ var BENCHMARK_METRICS = {
                     .initialMathAnswersDegraded ||
                 record.milestones
                     .initialMathAnswersNotRequired;
+
+            return milestone &&
+                milestone.navigationElapsedMs;
+        },
+    pageReadinessSettled:
+        function(record) {
+            var milestone =
+                record.milestones.pageReady ||
+                record.milestones.pageDegraded;
 
             return milestone &&
                 milestone.navigationElapsedMs;

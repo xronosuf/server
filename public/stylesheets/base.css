@@ -13950,6 +13950,15 @@ body {
   visibility: hidden;
 }
 
+.MathJax_Display {
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 0.25rem;
+  -webkit-overflow-scrolling: touch;
+}
+
 .mathjaxed-input.narrow .form-control {
   padding-left: 3px;
   padding-right: 3px;

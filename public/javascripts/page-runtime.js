@@ -9,6 +9,12 @@
 var MAX_EVENTS = 250;
 var nextSequence = 1;
 
+var INITIAL_STATE_READINESS_DEADLINE_MS =
+    15000;
+
+var INITIAL_STATE_TIMEOUT_CODE =
+    "XR-STATE-INITIAL-101";
+
 function nowMonotonic() {
     if (
         window.performance &&
@@ -56,6 +62,16 @@ var runtime = {
 };
 
 var updatingPageReadiness = false;
+
+var readinessWatchdogs = {
+    initialState: {
+        deadlineMilliseconds:
+            INITIAL_STATE_READINESS_DEADLINE_MS,
+        timer: null,
+        timedOut: false,
+        timedOutAtElapsedMs: null
+    }
+};
 
 function elapsedMs() {
     return (
@@ -203,16 +219,31 @@ function updatePageReadiness() {
                 ".sageOutput"
             ).length
             : null;
+    var initialStateObservedState =
+        initialState && initialState.state;
+    var initialStateWatchdog =
+        readinessWatchdogs.initialState;
+
+    if (
+        initialStateObservedState !==
+            "available" &&
+        initialStateWatchdog.timedOut
+    ) {
+        initialStateObservedState =
+            "timed-out";
+    }
+
     var stateSynchronized =
         readinessSummary([
             readinessDependency(
                 "initial-state",
-                initialState && initialState.state,
+                initialStateObservedState,
                 ["available"],
                 [
                     "fallback",
                     "failed",
-                    "degraded"
+                    "degraded",
+                    "timed-out"
                 ]
             )
         ]);
@@ -283,6 +314,18 @@ function updatePageReadiness() {
 
     stateSynchronized.details.dimension =
         "state-synchronized";
+    stateSynchronized.details.deadline = {
+        code:
+            INITIAL_STATE_TIMEOUT_CODE,
+        deadlineMilliseconds:
+            initialStateWatchdog
+                .deadlineMilliseconds,
+        timedOut:
+            initialStateWatchdog.timedOut,
+        timedOutAtElapsedMs:
+            initialStateWatchdog
+                .timedOutAtElapsedMs
+    };
 
     contentReady.details.dimension =
         "content-ready";
@@ -362,6 +405,22 @@ function transition(collectionName, name, state, details) {
     );
 
     if (
+        collectionName === "operations" &&
+        name === "initial-state" &&
+        state === "available" &&
+        readinessWatchdogs.initialState
+            .timer !== null
+    ) {
+        window.clearTimeout(
+            readinessWatchdogs.initialState
+                .timer
+        );
+
+        readinessWatchdogs.initialState
+            .timer = null;
+    }
+
+    if (
         !updatingPageReadiness &&
         !(
             collectionName === "components" &&
@@ -373,6 +432,78 @@ function transition(collectionName, name, state, details) {
 
     return value;
 }
+
+function initialStateAvailable() {
+    return !!(
+        runtime.operations["initial-state"] &&
+        runtime.operations["initial-state"]
+            .state === "available"
+    );
+}
+
+
+function startInitialStateReadinessWatchdog() {
+    var watchdog =
+        readinessWatchdogs.initialState;
+
+    if (
+        watchdog.timer !== null ||
+        watchdog.timedOut ||
+        initialStateAvailable()
+    ) {
+        return;
+    }
+
+    watchdog.timer =
+        window.setTimeout(
+            function() {
+                var websocket =
+                    runtime.services[
+                        "state-websocket"
+                    ];
+                var initialState =
+                    runtime.operations[
+                        "initial-state"
+                    ];
+
+                watchdog.timer = null;
+
+                if (initialStateAvailable())
+                    return;
+
+                watchdog.timedOut = true;
+                watchdog.timedOutAtElapsedMs =
+                    elapsedMs();
+
+                record(
+                    "event",
+                    "readiness-deadline-exceeded",
+                    undefined,
+                    {
+                        dependency:
+                            "initial-state",
+                        code:
+                            INITIAL_STATE_TIMEOUT_CODE,
+                        deadlineMilliseconds:
+                            watchdog
+                                .deadlineMilliseconds,
+                        observedInitialState:
+                            initialState
+                                ? initialState.state
+                                : "not-observed",
+                        observedWebsocket:
+                            websocket
+                                ? websocket.state
+                                : "not-observed"
+                    }
+                );
+
+                updatePageReadiness();
+            },
+            watchdog.deadlineMilliseconds
+        );
+}
+
 
 function event(name, details) {
     return record("event", name, undefined, details);
@@ -389,6 +520,8 @@ function operation(name, state, details) {
 function component(name, state, details) {
     return transition("components", name, state, details);
 }
+
+startInitialStateReadinessWatchdog();
 
 function inspect() {
     return copyValue(runtime);
@@ -697,6 +830,8 @@ function benchmark(options) {
         runtime.components.validators;
     var initialState =
         runtime.operations["initial-state"];
+    var initialStateWatchdog =
+        readinessWatchdogs.initialState;
     var initialSage =
         runtime.components["sage-initial"];
     var legacyStandaloneSage =
@@ -731,6 +866,21 @@ function benchmark(options) {
             navigation,
         runtimeStartFromNavigationMs:
             runtimeStartFromNavigationMs(),
+        deadlines: {
+            initialState: {
+                code:
+                    INITIAL_STATE_TIMEOUT_CODE,
+                deadlineMilliseconds:
+                    initialStateWatchdog
+                        .deadlineMilliseconds,
+                timedOut:
+                    initialStateWatchdog
+                        .timedOut,
+                timedOutAtElapsedMs:
+                    initialStateWatchdog
+                        .timedOutAtElapsedMs
+            }
+        },
         milestones: {
             bundleStarted:
                 milestoneEvent(
@@ -765,6 +915,13 @@ function benchmark(options) {
                     "operation",
                     "initial-state",
                     "available",
+                    true
+                ),
+            initialStateTimedOut:
+                milestoneEvent(
+                    "event",
+                    "readiness-deadline-exceeded",
+                    undefined,
                     true
                 ),
             activityInitialized:

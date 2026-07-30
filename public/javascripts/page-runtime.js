@@ -21,6 +21,12 @@ var INITIAL_MATHJAX_READINESS_DEADLINE_MS =
 var INITIAL_MATHJAX_TIMEOUT_CODE =
     "XR-MATHJAX-INITIAL-101";
 
+var INITIAL_INLINE_SAGE_READINESS_DEADLINE_MS =
+    15000;
+
+var INITIAL_INLINE_SAGE_TIMEOUT_CODE =
+    "XR-SAGE-INLINE-INITIAL-101";
+
 function nowMonotonic() {
     if (
         window.performance &&
@@ -86,6 +92,16 @@ var readinessWatchdogs = {
         completed: false,
         completedAtElapsedMs: null,
         generation: null
+    },
+    initialInlineSage: {
+        deadlineMilliseconds:
+            INITIAL_INLINE_SAGE_READINESS_DEADLINE_MS,
+        timer: null,
+        timedOut: false,
+        timedOutAtElapsedMs: null,
+        completed: false,
+        completedAtElapsedMs: null,
+        terminalState: null
     }
 };
 
@@ -504,6 +520,47 @@ function transition(collectionName, name, state, details) {
     }
 
     if (
+        collectionName === "components" &&
+        name === "sage-inline-initial" &&
+        (
+            state === "settled" ||
+            state === "not-required" ||
+            (
+                state === "degraded" &&
+                !(
+                    details &&
+                    details.deadlineExceeded ===
+                        true
+                )
+            )
+        )
+    ) {
+        var initialInlineSageWatchdog =
+            readinessWatchdogs
+                .initialInlineSage;
+
+        initialInlineSageWatchdog.completed =
+            true;
+        initialInlineSageWatchdog
+            .completedAtElapsedMs =
+                elapsedMs();
+        initialInlineSageWatchdog
+            .terminalState = state;
+
+        if (
+            initialInlineSageWatchdog.timer !==
+                null
+        ) {
+            window.clearTimeout(
+                initialInlineSageWatchdog.timer
+            );
+
+            initialInlineSageWatchdog.timer =
+                null;
+        }
+    }
+
+    if (
         !updatingPageReadiness &&
         !(
             collectionName === "components" &&
@@ -675,6 +732,103 @@ function startInitialMathJaxReadinessWatchdog() {
 }
 
 
+function initialInlineSageCompleted() {
+    return readinessWatchdogs
+        .initialInlineSage.completed;
+}
+
+
+function startInitialInlineSageReadinessWatchdog() {
+    var watchdog =
+        readinessWatchdogs.initialInlineSage;
+
+    if (
+        watchdog.timer !== null ||
+        watchdog.timedOut ||
+        initialInlineSageCompleted()
+    ) {
+        return;
+    }
+
+    watchdog.timer =
+        window.setTimeout(
+            function() {
+                var observed =
+                    runtime.components[
+                        "sage-inline-initial"
+                    ];
+                var timeoutDetails;
+
+                watchdog.timer = null;
+
+                if (
+                    initialInlineSageCompleted()
+                ) {
+                    return;
+                }
+
+                watchdog.timedOut = true;
+                watchdog.timedOutAtElapsedMs =
+                    elapsedMs();
+
+                record(
+                    "event",
+                    "readiness-deadline-exceeded",
+                    undefined,
+                    {
+                        dependency:
+                            "sage-inline-initial",
+                        code:
+                            INITIAL_INLINE_SAGE_TIMEOUT_CODE,
+                        deadlineMilliseconds:
+                            watchdog
+                                .deadlineMilliseconds,
+                        observedState:
+                            observed
+                                ? observed.state
+                                : "not-observed",
+                        observedDetails:
+                            observed &&
+                            observed.details
+                                ? observed.details
+                                : null
+                    }
+                );
+
+                timeoutDetails =
+                    observed &&
+                    observed.details
+                        ? copyValue(
+                            observed.details
+                        )
+                        : {};
+
+                timeoutDetails.deadlineExceeded =
+                    true;
+                timeoutDetails.deadline = {
+                    code:
+                        INITIAL_INLINE_SAGE_TIMEOUT_CODE,
+                    deadlineMilliseconds:
+                        watchdog
+                            .deadlineMilliseconds,
+                    timedOut: true,
+                    timedOutAtElapsedMs:
+                        watchdog
+                            .timedOutAtElapsedMs
+                };
+
+                transition(
+                    "components",
+                    "sage-inline-initial",
+                    "degraded",
+                    timeoutDetails
+                );
+            },
+            watchdog.deadlineMilliseconds
+        );
+}
+
+
 function event(name, details) {
     return record("event", name, undefined, details);
 }
@@ -693,6 +847,7 @@ function component(name, state, details) {
 
 startInitialStateReadinessWatchdog();
 startInitialMathJaxReadinessWatchdog();
+startInitialInlineSageReadinessWatchdog();
 
 function inspect() {
     return copyValue(runtime);
@@ -1012,8 +1167,15 @@ function benchmark(options) {
         readinessWatchdogs.initialState;
     var initialMathJaxWatchdog =
         readinessWatchdogs.initialMathJax;
+    var initialInlineSageWatchdog =
+        readinessWatchdogs
+            .initialInlineSage;
     var initialSage =
         runtime.components["sage-initial"];
+    var initialInlineSage =
+        runtime.components[
+            "sage-inline-initial"
+        ];
     var legacyStandaloneSage =
         runtime.components[
             "sage-visible-initial"
@@ -1081,6 +1243,32 @@ function benchmark(options) {
                 generation:
                     initialMathJaxWatchdog
                         .generation
+            },
+            initialInlineSage: {
+                code:
+                    INITIAL_INLINE_SAGE_TIMEOUT_CODE,
+                deadlineMilliseconds:
+                    initialInlineSageWatchdog
+                        .deadlineMilliseconds,
+                timedOut:
+                    initialInlineSageWatchdog
+                        .timedOut,
+                timedOutAtElapsedMs:
+                    initialInlineSageWatchdog
+                        .timedOutAtElapsedMs,
+                completed:
+                    initialInlineSageWatchdog
+                        .completed,
+                completedAtElapsedMs:
+                    initialInlineSageWatchdog
+                        .completedAtElapsedMs,
+                terminalState:
+                    initialInlineSageWatchdog
+                        .terminalState,
+                observedState:
+                    initialInlineSage
+                        ? initialInlineSage.state
+                        : "not-observed"
             }
         },
         milestones: {
@@ -1148,6 +1336,42 @@ function benchmark(options) {
                                 "mathjax-initial-process"
                         );
                     }
+                ),
+            initialInlineSageTimedOut:
+                milestoneEvent(
+                    "event",
+                    "readiness-deadline-exceeded",
+                    undefined,
+                    true,
+                    function(event) {
+                        return !!(
+                            event.details &&
+                            event.details
+                                .dependency ===
+                                "sage-inline-initial"
+                        );
+                    }
+                ),
+            initialInlineSageSettled:
+                milestoneEvent(
+                    "component",
+                    "sage-inline-initial",
+                    "settled",
+                    true
+                ),
+            initialInlineSageDegraded:
+                milestoneEvent(
+                    "component",
+                    "sage-inline-initial",
+                    "degraded",
+                    true
+                ),
+            initialInlineSageNotRequired:
+                milestoneEvent(
+                    "component",
+                    "sage-inline-initial",
+                    "not-required",
+                    true
                 ),
             activityInitialized:
                 milestoneEvent(

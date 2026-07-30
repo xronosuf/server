@@ -1002,7 +1002,283 @@ var mathAnswerRuntime = {
     zeroAnswerBatches: 0
 };
 
-MathJax.Hub.signal.Interest(function (message) {    
+var mathJaxPassRuntime = {
+    nextGeneration: 1,
+    active: {},
+    completed: [],
+    orphanEnds: 0,
+    rerenderSummary: {
+        passCount: 0,
+        totalDurationMilliseconds: 0,
+        maximumDurationMilliseconds: 0,
+        newMathMessages: 0,
+        answerConnectionAttempts: 0,
+        uniqueAnswersAdded: 0,
+        firstGeneration: null,
+        latestGeneration: null
+    }
+};
+
+function mathJaxPassKey(passType) {
+    return String(passType).toLowerCase();
+}
+
+function beginMathJaxPass(passType, message) {
+    var key =
+        mathJaxPassKey(passType);
+    var generation =
+        mathJaxPassRuntime.nextGeneration;
+    var pass = {
+        generation:
+            generation,
+        passType:
+            key,
+        startedAtMilliseconds:
+            Date.now(),
+        newMathMessagesAtStart:
+            mathAnswerRuntime
+                .newMathMessages,
+        answerConnectionAttemptsAtStart:
+            mathAnswerRuntime
+                .connectionAttempts,
+        uniqueAnswersAtStart:
+            Object.keys(
+                mathAnswerRuntime
+                    .connectedAnswerIds
+            ).length
+    };
+
+    mathJaxPassRuntime.nextGeneration += 1;
+    mathJaxPassRuntime.active[key] = pass;
+
+    if (key !== "rerender") {
+        pageRuntime.operation(
+            "mathjax-pass",
+            "started",
+            {
+                generation:
+                    generation,
+                passType:
+                    key,
+                signal:
+                    message &&
+                    message[0]
+                        ? message[0]
+                        : null,
+                newMathMessagesAtStart:
+                    pass.newMathMessagesAtStart,
+                answerConnectionAttemptsAtStart:
+                    pass
+                        .answerConnectionAttemptsAtStart,
+                uniqueAnswersAtStart:
+                    pass.uniqueAnswersAtStart
+            }
+        );
+    }
+}
+
+function endMathJaxPass(passType, message) {
+    var key =
+        mathJaxPassKey(passType);
+    var pass =
+        mathJaxPassRuntime.active[key];
+    var completedAtMilliseconds =
+        Date.now();
+
+    if (!pass) {
+        mathJaxPassRuntime.orphanEnds += 1;
+
+        pageRuntime.operation(
+            "mathjax-pass",
+            "ended-without-start",
+            {
+                passType:
+                    key,
+                signal:
+                    message &&
+                    message[0]
+                        ? message[0]
+                        : null,
+                orphanEnds:
+                    mathJaxPassRuntime
+                        .orphanEnds
+            }
+        );
+
+        return;
+    }
+
+    delete mathJaxPassRuntime.active[key];
+
+    pass.completedAtMilliseconds =
+        completedAtMilliseconds;
+    pass.durationMilliseconds =
+        completedAtMilliseconds -
+        pass.startedAtMilliseconds;
+    pass.newMathMessages =
+        mathAnswerRuntime.newMathMessages -
+        pass.newMathMessagesAtStart;
+    pass.answerConnectionAttempts =
+        mathAnswerRuntime.connectionAttempts -
+        pass.answerConnectionAttemptsAtStart;
+    pass.uniqueAnswersAdded =
+        Object.keys(
+            mathAnswerRuntime
+                .connectedAnswerIds
+        ).length -
+        pass.uniqueAnswersAtStart;
+
+    mathJaxPassRuntime.completed.push(pass);
+
+    if (mathJaxPassRuntime.completed.length > 50) {
+        mathJaxPassRuntime.completed.shift();
+    }
+
+    if (pass.passType === "rerender") {
+        var rerenderSummary =
+            mathJaxPassRuntime.rerenderSummary;
+
+        rerenderSummary.passCount += 1;
+        rerenderSummary.totalDurationMilliseconds +=
+            pass.durationMilliseconds;
+        rerenderSummary.maximumDurationMilliseconds =
+            Math.max(
+                rerenderSummary
+                    .maximumDurationMilliseconds,
+                pass.durationMilliseconds
+            );
+        rerenderSummary.newMathMessages +=
+            pass.newMathMessages;
+        rerenderSummary.answerConnectionAttempts +=
+            pass.answerConnectionAttempts;
+        rerenderSummary.uniqueAnswersAdded +=
+            pass.uniqueAnswersAdded;
+
+        if (rerenderSummary.firstGeneration === null) {
+            rerenderSummary.firstGeneration =
+                pass.generation;
+        }
+
+        rerenderSummary.latestGeneration =
+            pass.generation;
+
+        pageRuntime.component(
+            "mathjax-rerenders",
+            "observed",
+            {
+                passCount:
+                    rerenderSummary.passCount,
+                totalDurationMilliseconds:
+                    rerenderSummary
+                        .totalDurationMilliseconds,
+                maximumDurationMilliseconds:
+                    rerenderSummary
+                        .maximumDurationMilliseconds,
+                newMathMessages:
+                    rerenderSummary.newMathMessages,
+                answerConnectionAttempts:
+                    rerenderSummary
+                        .answerConnectionAttempts,
+                uniqueAnswersAdded:
+                    rerenderSummary
+                        .uniqueAnswersAdded,
+                firstGeneration:
+                    rerenderSummary.firstGeneration,
+                latestGeneration:
+                    rerenderSummary.latestGeneration
+            }
+        );
+
+        return;
+    }
+
+    pageRuntime.operation(
+        "mathjax-pass",
+        "ended",
+        {
+            generation:
+                pass.generation,
+            passType:
+                pass.passType,
+            signal:
+                message &&
+                message[0]
+                    ? message[0]
+                    : null,
+            durationMilliseconds:
+                pass.durationMilliseconds,
+            newMathMessages:
+                pass.newMathMessages,
+            answerConnectionAttempts:
+                pass.answerConnectionAttempts,
+            uniqueAnswersAdded:
+                pass.uniqueAnswersAdded,
+            completedPasses:
+                mathJaxPassRuntime
+                    .completed.length
+        }
+    );
+
+    pageRuntime.component(
+        "mathjax-passes",
+        "completed",
+        {
+            latestGeneration:
+                pass.generation,
+            latestPassType:
+                pass.passType,
+            latestDurationMilliseconds:
+                pass.durationMilliseconds,
+            completedPasses:
+                mathJaxPassRuntime
+                    .completed.length,
+            rerenderPasses:
+                mathJaxPassRuntime
+                    .rerenderSummary
+                    .passCount,
+            activePassTypes:
+                Object.keys(
+                    mathJaxPassRuntime.active
+                ),
+            orphanEnds:
+                mathJaxPassRuntime
+                    .orphanEnds
+        }
+    );
+}
+
+MathJax.Hub.signal.Interest(function(message) {
+    var signalName =
+        message && message[0]
+            ? message[0]
+            : null;
+    var beginMatch;
+    var endMatch;
+
+    if (typeof signalName === "string") {
+        beginMatch =
+            signalName.match(
+                /^Begin (Process|Reprocess|Rerender)$/
+            );
+
+        endMatch =
+            signalName.match(
+                /^End (Process|Reprocess|Rerender)$/
+            );
+
+        if (beginMatch) {
+            beginMathJaxPass(
+                beginMatch[1],
+                message
+            );
+        } else if (endMatch) {
+            endMathJaxPass(
+                endMatch[1],
+                message
+            );
+        }
+    }
+
     if (message[0] == "New Math") {
 	var id = message[1];
         var batchConnected = 0;

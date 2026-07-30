@@ -430,6 +430,20 @@ function benchmark(options) {
                     "startup-ended",
                     true
                 ),
+            firstMathJaxPassCompleted:
+                milestoneEvent(
+                    "operation",
+                    "mathjax-pass",
+                    "ended",
+                    false
+                ),
+            latestMathJaxPassCompleted:
+                milestoneEvent(
+                    "operation",
+                    "mathjax-pass",
+                    "ended",
+                    true
+                ),
             initialSageRequestSubmitted:
                 milestoneEvent(
                     "operation",
@@ -781,6 +795,22 @@ var BENCHMARK_METRICS = {
                 .mathJaxStartupEnded &&
                 record.milestones
                     .mathJaxStartupEnded
+                    .navigationElapsedMs;
+        },
+    firstMathJaxPassCompleted:
+        function(record) {
+            return record.milestones
+                .firstMathJaxPassCompleted &&
+                record.milestones
+                    .firstMathJaxPassCompleted
+                    .navigationElapsedMs;
+        },
+    latestMathJaxPassCompleted:
+        function(record) {
+            return record.milestones
+                .latestMathJaxPassCompleted &&
+                record.milestones
+                    .latestMathJaxPassCompleted
                     .navigationElapsedMs;
         },
     initialSageRequestSubmitted:

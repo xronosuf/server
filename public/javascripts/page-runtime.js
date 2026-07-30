@@ -133,16 +133,687 @@ function inspect() {
     return copyValue(runtime);
 }
 
+var BENCHMARK_STORAGE_KEY =
+    "xronos-page-benchmarks-v1";
+var MAX_BENCHMARK_RECORDS = 200;
+
+function roundedMilliseconds(value) {
+    if (
+        value === undefined ||
+        value === null ||
+        isNaN(Number(value))
+    ) {
+        return null;
+    }
+
+    return (
+        Math.round(Number(value) * 1000) /
+        1000
+    );
+}
+
+function navigationTiming() {
+    var performanceObject =
+        window.performance;
+    var navigationEntry;
+    var legacyTiming;
+    var navigationStart;
+
+    if (!performanceObject) {
+        return {
+            supported: false
+        };
+    }
+
+    if (
+        typeof performanceObject
+            .getEntriesByType === "function"
+    ) {
+        navigationEntry =
+            performanceObject
+                .getEntriesByType("navigation")[0];
+    }
+
+    if (navigationEntry) {
+        return {
+            supported: true,
+            source: "navigation-entry",
+            responseStartMs:
+                roundedMilliseconds(
+                    navigationEntry.responseStart
+                ),
+            domContentLoadedMs:
+                roundedMilliseconds(
+                    navigationEntry
+                        .domContentLoadedEventEnd
+                ),
+            loadEventMs:
+                navigationEntry.loadEventEnd > 0
+                    ? roundedMilliseconds(
+                        navigationEntry.loadEventEnd
+                    )
+                    : null,
+            transferSize:
+                navigationEntry.transferSize,
+            encodedBodySize:
+                navigationEntry.encodedBodySize,
+            decodedBodySize:
+                navigationEntry.decodedBodySize
+        };
+    }
+
+    legacyTiming = performanceObject.timing;
+
+    if (!legacyTiming) {
+        return {
+            supported: false
+        };
+    }
+
+    navigationStart =
+        legacyTiming.navigationStart;
+
+    function legacyOffset(value) {
+        if (!value || !navigationStart)
+            return null;
+
+        return roundedMilliseconds(
+            value - navigationStart
+        );
+    }
+
+    return {
+        supported: true,
+        source: "performance-timing",
+        responseStartMs:
+            legacyOffset(
+                legacyTiming.responseStart
+            ),
+        domContentLoadedMs:
+            legacyOffset(
+                legacyTiming
+                    .domContentLoadedEventEnd
+            ),
+        loadEventMs:
+            legacyOffset(
+                legacyTiming.loadEventEnd
+            )
+    };
+}
+
+function runtimeStartFromNavigationMs() {
+    var performanceObject =
+        window.performance;
+    var navigationStart;
+
+    if (
+        performanceObject &&
+        performanceObject.timing &&
+        performanceObject.timing.navigationStart
+    ) {
+        navigationStart =
+            performanceObject
+                .timing.navigationStart;
+
+        return roundedMilliseconds(
+            new Date(runtime.startedAt).getTime() -
+                navigationStart
+        );
+    }
+
+    if (
+        performanceObject &&
+        typeof performanceObject
+            .timeOrigin === "number"
+    ) {
+        return roundedMilliseconds(
+            new Date(runtime.startedAt).getTime() -
+                performanceObject.timeOrigin
+        );
+    }
+
+    return null;
+}
+
+function matchingEvents(type, name, state) {
+    return runtime.events.filter(
+        function(item) {
+            return (
+                (type === undefined ||
+                    item.type === type) &&
+                (name === undefined ||
+                    item.name === name) &&
+                (state === undefined ||
+                    item.state === state)
+            );
+        }
+    );
+}
+
+function milestoneEvent(
+    type,
+    name,
+    state,
+    useLast
+) {
+    var matches =
+        matchingEvents(type, name, state);
+    var selected;
+    var runtimeStartMs;
+
+    if (matches.length === 0)
+        return null;
+
+    selected = useLast
+        ? matches[matches.length - 1]
+        : matches[0];
+
+    runtimeStartMs =
+        runtimeStartFromNavigationMs();
+
+    return {
+        sequence: selected.sequence,
+        runtimeElapsedMs:
+            selected.elapsedMs,
+        navigationElapsedMs:
+            runtimeStartMs === null
+                ? null
+                : roundedMilliseconds(
+                    runtimeStartMs +
+                        selected.elapsedMs
+                )
+    };
+}
+
+function benchmark(options) {
+    var navigation =
+        navigationTiming();
+    var mathAnswers =
+        runtime.components["math-answers"];
+    var validators =
+        runtime.components.validators;
+    var initialState =
+        runtime.operations["initial-state"];
+
+    options = options || {};
+
+    return {
+        schemaVersion: 1,
+        capturedAt:
+            new Date().toISOString(),
+        sessionId:
+            runtime.sessionId,
+        path:
+            window.location.pathname,
+        tag:
+            options.tag || null,
+        cacheState:
+            options.cacheState ||
+                "unspecified",
+        navigation:
+            navigation,
+        runtimeStartFromNavigationMs:
+            runtimeStartFromNavigationMs(),
+        milestones: {
+            bundleStarted:
+                milestoneEvent(
+                    "event",
+                    "bundle-evaluation-started",
+                    undefined,
+                    false
+                ),
+            bundleCompleted:
+                milestoneEvent(
+                    "event",
+                    "bundle-evaluation-completed",
+                    undefined,
+                    true
+                ),
+            documentReadyCompleted:
+                milestoneEvent(
+                    "event",
+                    "document-ready-completed",
+                    undefined,
+                    true
+                ),
+            websocketOpened:
+                milestoneEvent(
+                    "service",
+                    "state-websocket",
+                    "open",
+                    false
+                ),
+            initialStateAvailable:
+                milestoneEvent(
+                    "operation",
+                    "initial-state",
+                    "available",
+                    true
+                ),
+            activityInitialized:
+                milestoneEvent(
+                    "component",
+                    "activity",
+                    "initialized",
+                    true
+                ),
+            firstMathAnswerConnected:
+                milestoneEvent(
+                    "component",
+                    "math-answers",
+                    "connected",
+                    false
+                ),
+            latestMathAnswerConnected:
+                milestoneEvent(
+                    "component",
+                    "math-answers",
+                    "connected",
+                    true
+                ),
+            mathJaxStartupEnded:
+                milestoneEvent(
+                    "service",
+                    "mathjax",
+                    "startup-ended",
+                    true
+                ),
+            browserLoadObserved:
+                milestoneEvent(
+                    "event",
+                    "browser-load-observed",
+                    undefined,
+                    true
+                )
+        },
+        counts: {
+            initialStateConsumers:
+                initialState &&
+                initialState.details
+                    ? initialState.details
+                        .callbackCount
+                    : null,
+            validators:
+                validators &&
+                validators.details
+                    ? validators.details.count
+                    : null,
+            uniqueMathAnswers:
+                mathAnswers &&
+                mathAnswers.details
+                    ? mathAnswers.details
+                        .uniqueConnected
+                    : 0,
+            mathAnswerConnectionAttempts:
+                mathAnswers &&
+                mathAnswers.details
+                    ? mathAnswers.details
+                        .totalConnectionAttempts
+                    : 0,
+            missingMathAnswerModels:
+                mathAnswers &&
+                mathAnswers.details
+                    ? mathAnswers.details
+                        .missingAnswerModels
+                    : 0,
+            zeroAnswerMathJaxBatches:
+                mathAnswers &&
+                mathAnswers.details
+                    ? mathAnswers.details
+                        .zeroAnswerBatches
+                    : 0
+        }
+    };
+}
+
+function loadBenchmarkRecords() {
+    var raw;
+    var parsed;
+
+    try {
+        raw = window.localStorage.getItem(
+            BENCHMARK_STORAGE_KEY
+        );
+
+        if (!raw)
+            return [];
+
+        parsed = JSON.parse(raw);
+
+        if (!Array.isArray(parsed))
+            return [];
+
+        return parsed;
+    } catch (err) {
+        return [];
+    }
+}
+
+function saveBenchmarkRecords(records) {
+    window.localStorage.setItem(
+        BENCHMARK_STORAGE_KEY,
+        JSON.stringify(records)
+    );
+}
+
+function recordBenchmark(options) {
+    var records =
+        loadBenchmarkRecords();
+    var current =
+        benchmark(options);
+
+    records.push(current);
+
+    if (
+        records.length >
+        MAX_BENCHMARK_RECORDS
+    ) {
+        records = records.slice(
+            records.length -
+                MAX_BENCHMARK_RECORDS
+        );
+    }
+
+    try {
+        saveBenchmarkRecords(records);
+
+        return {
+            stored: true,
+            recordCount: records.length,
+            record: current
+        };
+    } catch (err) {
+        return {
+            stored: false,
+            error:
+                err && err.message
+                    ? err.message
+                    : String(err),
+            record: current
+        };
+    }
+}
+
+function percentile(sorted, fraction) {
+    var index;
+
+    if (sorted.length === 0)
+        return null;
+
+    index =
+        Math.ceil(
+            sorted.length * fraction
+        ) - 1;
+
+    if (index < 0)
+        index = 0;
+
+    if (index >= sorted.length)
+        index = sorted.length - 1;
+
+    return sorted[index];
+}
+
+function summarizeValues(values) {
+    var sorted =
+        values
+            .filter(function(value) {
+                return (
+                    value !== null &&
+                    value !== undefined &&
+                    !isNaN(Number(value))
+                );
+            })
+            .map(Number)
+            .sort(function(a, b) {
+                return a - b;
+            });
+    var total;
+
+    if (sorted.length === 0) {
+        return {
+            sampleCount: 0
+        };
+    }
+
+    total = sorted.reduce(
+        function(sum, value) {
+            return sum + value;
+        },
+        0
+    );
+
+    return {
+        sampleCount:
+            sorted.length,
+        minimumMs:
+            roundedMilliseconds(
+                sorted[0]
+            ),
+        p10Ms:
+            roundedMilliseconds(
+                percentile(sorted, 0.10)
+            ),
+        medianMs:
+            roundedMilliseconds(
+                percentile(sorted, 0.50)
+            ),
+        meanMs:
+            roundedMilliseconds(
+                total / sorted.length
+            ),
+        p90Ms:
+            roundedMilliseconds(
+                percentile(sorted, 0.90)
+            ),
+        p95Ms:
+            roundedMilliseconds(
+                percentile(sorted, 0.95)
+            ),
+        maximumMs:
+            roundedMilliseconds(
+                sorted[
+                    sorted.length - 1
+                ]
+            )
+    };
+}
+
+var BENCHMARK_METRICS = {
+    responseStart:
+        function(record) {
+            return record.navigation
+                .responseStartMs;
+        },
+    domContentLoaded:
+        function(record) {
+            return record.navigation
+                .domContentLoadedMs;
+        },
+    browserLoad:
+        function(record) {
+            return record.navigation
+                .loadEventMs;
+        },
+    bundleStarted:
+        function(record) {
+            return record.milestones
+                .bundleStarted &&
+                record.milestones
+                    .bundleStarted
+                    .navigationElapsedMs;
+        },
+    documentReadyCompleted:
+        function(record) {
+            return record.milestones
+                .documentReadyCompleted &&
+                record.milestones
+                    .documentReadyCompleted
+                    .navigationElapsedMs;
+        },
+    websocketOpened:
+        function(record) {
+            return record.milestones
+                .websocketOpened &&
+                record.milestones
+                    .websocketOpened
+                    .navigationElapsedMs;
+        },
+    initialStateAvailable:
+        function(record) {
+            return record.milestones
+                .initialStateAvailable &&
+                record.milestones
+                    .initialStateAvailable
+                    .navigationElapsedMs;
+        },
+    activityInitialized:
+        function(record) {
+            return record.milestones
+                .activityInitialized &&
+                record.milestones
+                    .activityInitialized
+                    .navigationElapsedMs;
+        },
+    firstMathAnswerConnected:
+        function(record) {
+            return record.milestones
+                .firstMathAnswerConnected &&
+                record.milestones
+                    .firstMathAnswerConnected
+                    .navigationElapsedMs;
+        },
+    latestMathAnswerConnected:
+        function(record) {
+            return record.milestones
+                .latestMathAnswerConnected &&
+                record.milestones
+                    .latestMathAnswerConnected
+                    .navigationElapsedMs;
+        },
+    mathJaxStartupEnded:
+        function(record) {
+            return record.milestones
+                .mathJaxStartupEnded &&
+                record.milestones
+                    .mathJaxStartupEnded
+                    .navigationElapsedMs;
+        }
+};
+
+function summarizeRecords(records) {
+    var metrics = {};
+
+    Object.keys(
+        BENCHMARK_METRICS
+    ).forEach(function(name) {
+        metrics[name] =
+            summarizeValues(
+                records.map(
+                    BENCHMARK_METRICS[name]
+                )
+            );
+    });
+
+    return {
+        recordCount:
+            records.length,
+        metrics:
+            metrics
+    };
+}
+
+function benchmarkReport() {
+    var records =
+        loadBenchmarkRecords();
+    var cacheStates = {};
+
+    records.forEach(function(record) {
+        var cacheState =
+            record.cacheState ||
+            "unspecified";
+
+        if (!cacheStates[cacheState])
+            cacheStates[cacheState] = [];
+
+        cacheStates[cacheState].push(
+            record
+        );
+    });
+
+    Object.keys(cacheStates)
+        .forEach(function(cacheState) {
+            cacheStates[cacheState] =
+                summarizeRecords(
+                    cacheStates[cacheState]
+                );
+        });
+
+    return {
+        schemaVersion: 1,
+        storageKey:
+            BENCHMARK_STORAGE_KEY,
+        overall:
+            summarizeRecords(records),
+        byCacheState:
+            cacheStates
+    };
+}
+
+function clearBenchmarks() {
+    try {
+        window.localStorage.removeItem(
+            BENCHMARK_STORAGE_KEY
+        );
+
+        return true;
+    } catch (err) {
+        return false;
+    }
+}
+
+if (
+    document.readyState === "complete"
+) {
+    event(
+        "browser-load-observed",
+        {
+            delivery:
+                "already-complete"
+        }
+    );
+} else {
+    window.addEventListener(
+        "load",
+        function() {
+            event(
+                "browser-load-observed"
+            );
+        }
+    );
+}
+
 var api = {
     event: event,
     service: service,
     operation: operation,
     component: component,
-    inspect: inspect
+    inspect: inspect,
+    benchmark: benchmark,
+    recordBenchmark: recordBenchmark,
+    benchmarkReport: benchmarkReport,
+    clearBenchmarks: clearBenchmarks
 };
 
 window.xronosPageRuntime = api;
 window.xronosRuntimeEvent = event;
 window.xronosInspectPageRuntime = inspect;
+window.xronosPageBenchmark = benchmark;
+window.xronosRecordPageBenchmark =
+    recordBenchmark;
+window.xronosBenchmarkReport =
+    benchmarkReport;
+window.xronosClearBenchmarks =
+    clearBenchmarks;
 
 module.exports = api;

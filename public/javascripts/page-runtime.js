@@ -330,6 +330,10 @@ function benchmark(options) {
         navigationTiming();
     var mathAnswers =
         runtime.components["math-answers"];
+    var initialMathAnswers =
+        runtime.components[
+            "initial-math-answers"
+        ];
     var validators =
         runtime.components.validators;
     var initialState =
@@ -423,6 +427,27 @@ function benchmark(options) {
                     "connected",
                     true
                 ),
+            initialMathAnswersSettled:
+                milestoneEvent(
+                    "component",
+                    "initial-math-answers",
+                    "settled",
+                    true
+                ),
+            initialMathAnswersDegraded:
+                milestoneEvent(
+                    "component",
+                    "initial-math-answers",
+                    "degraded",
+                    true
+                ),
+            initialMathAnswersNotRequired:
+                milestoneEvent(
+                    "component",
+                    "initial-math-answers",
+                    "not-required",
+                    true
+                ),
             mathJaxStartupEnded:
                 milestoneEvent(
                     "service",
@@ -493,6 +518,35 @@ function benchmark(options) {
                     undefined,
                     true
                 )
+        },
+        mathAnswers: {
+            state:
+                initialMathAnswers
+                    ? initialMathAnswers.state
+                    : "not-observed",
+            required:
+                initialMathAnswers
+                    ? initialMathAnswers.state !==
+                        "not-required"
+                    : null,
+            expected:
+                initialMathAnswers &&
+                initialMathAnswers.details
+                    ? initialMathAnswers.details
+                        .expectedAnswers
+                    : null,
+            connected:
+                initialMathAnswers &&
+                initialMathAnswers.details
+                    ? initialMathAnswers.details
+                        .connectedAnswers
+                    : null,
+            missingModels:
+                initialMathAnswers &&
+                initialMathAnswers.details
+                    ? initialMathAnswers.details
+                        .missingAnswerModels
+                    : null
         },
         sage: {
             canonical: {
@@ -788,6 +842,19 @@ var BENCHMARK_METRICS = {
                 record.milestones
                     .latestMathAnswerConnected
                     .navigationElapsedMs;
+        },
+    initialMathAnswersSettled:
+        function(record) {
+            var milestone =
+                record.milestones
+                    .initialMathAnswersSettled ||
+                record.milestones
+                    .initialMathAnswersDegraded ||
+                record.milestones
+                    .initialMathAnswersNotRequired;
+
+            return milestone &&
+                milestone.navigationElapsedMs;
         },
     mathJaxStartupEnded:
         function(record) {

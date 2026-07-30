@@ -1038,9 +1038,15 @@ function beginMathJaxPass(passType, message) {
         newMathMessagesAtStart:
             mathAnswerRuntime
                 .newMathMessages,
+        discoveredAnswerInstancesAtStart:
+            mathAnswerRuntime
+                .discoveredInstances,
         answerConnectionAttemptsAtStart:
             mathAnswerRuntime
                 .connectionAttempts,
+        missingAnswerModelsAtStart:
+            mathAnswerRuntime
+                .missingAnswerModels,
         uniqueAnswersAtStart:
             Object.keys(
                 mathAnswerRuntime
@@ -1118,9 +1124,15 @@ function endMathJaxPass(passType, message) {
     pass.newMathMessages =
         mathAnswerRuntime.newMathMessages -
         pass.newMathMessagesAtStart;
+    pass.discoveredAnswerInstances =
+        mathAnswerRuntime.discoveredInstances -
+        pass.discoveredAnswerInstancesAtStart;
     pass.answerConnectionAttempts =
         mathAnswerRuntime.connectionAttempts -
         pass.answerConnectionAttemptsAtStart;
+    pass.missingAnswerModels =
+        mathAnswerRuntime.missingAnswerModels -
+        pass.missingAnswerModelsAtStart;
     pass.uniqueAnswersAdded =
         Object.keys(
             mathAnswerRuntime
@@ -1132,6 +1144,47 @@ function endMathJaxPass(passType, message) {
 
     if (mathJaxPassRuntime.completed.length > 50) {
         mathJaxPassRuntime.completed.shift();
+    }
+
+    if (pass.passType === "process") {
+        var expectedAnswers =
+            pass.discoveredAnswerInstances;
+        var connectedAnswers =
+            pass.uniqueAnswersAdded;
+        var answerSettlementState;
+
+        if (expectedAnswers === 0) {
+            answerSettlementState =
+                "not-required";
+        } else if (
+            connectedAnswers === expectedAnswers &&
+            pass.missingAnswerModels === 0
+        ) {
+            answerSettlementState =
+                "settled";
+        } else {
+            answerSettlementState =
+                "degraded";
+        }
+
+        pageRuntime.component(
+            "initial-math-answers",
+            answerSettlementState,
+            {
+                generation:
+                    pass.generation,
+                expectedAnswers:
+                    expectedAnswers,
+                connectedAnswers:
+                    connectedAnswers,
+                missingAnswerModels:
+                    pass.missingAnswerModels,
+                connectionAttempts:
+                    pass.answerConnectionAttempts,
+                processDurationMilliseconds:
+                    pass.durationMilliseconds
+            }
+        );
     }
 
     if (pass.passType === "rerender") {
@@ -1209,8 +1262,12 @@ function endMathJaxPass(passType, message) {
                 pass.durationMilliseconds,
             newMathMessages:
                 pass.newMathMessages,
+            discoveredAnswerInstances:
+                pass.discoveredAnswerInstances,
             answerConnectionAttempts:
                 pass.answerConnectionAttempts,
+            missingAnswerModels:
+                pass.missingAnswerModels,
             uniqueAnswersAdded:
                 pass.uniqueAnswersAdded,
             completedPasses:

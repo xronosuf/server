@@ -5533,7 +5533,7 @@ seedCallbacks.forEach(function(callback) {
     callback();
 });
 seedCallbacks = [];
-    });
+    }, "sage-seed");
 });
 
 function ensureShowMeAnotherButton() {

@@ -260,7 +260,7 @@ var createActivity = function() {
                 path: activity.attr("data-path")
             }
         );
-    });
+    }, "activity");
 };
 
 $.fn.extend({

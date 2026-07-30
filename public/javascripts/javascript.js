@@ -40,7 +40,7 @@ $( function() {
 		});
 		exports.reevaluate( seedDiv );
 	    });
-	});
+	}, "javascript-seed");
     }
 });
 

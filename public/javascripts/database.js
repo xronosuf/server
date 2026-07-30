@@ -232,30 +232,44 @@ $.fn.extend({
 
 var fetcherCallbacks = [];
 
-// activity.js will use this to download the database from the server
-$.fn.extend({ fetchData: function(callback) {
+// Consumers use this to wait for the initial database from the server.
+$.fn.extend({ fetchData: function(callback, consumer) {
+    consumer = consumer || "unlabeled";
+
     if (DATABASE !== undefined) {
         pageRuntime.operation(
-            "initial-state",
+            "initial-state-consumer:" + consumer,
             "available",
             {
-                delivery: "immediate",
-                callbackCount: 1
+                delivery: "immediate"
             }
         );
 
 	callback(DATABASE);
     } else {
         pageRuntime.operation(
-            "initial-state",
+            "initial-state-consumer:" + consumer,
             "waiting",
             {
-                queuedCallbackCount:
+                queuePosition:
                     fetcherCallbacks.length + 1
             }
         );
 
-	fetcherCallbacks.unshift( callback );
+        pageRuntime.operation(
+            "initial-state",
+            "waiting",
+            {
+                queuedCallbackCount:
+                    fetcherCallbacks.length + 1,
+                latestConsumer: consumer
+            }
+        );
+
+	fetcherCallbacks.unshift({
+            callback: callback,
+            consumer: consumer
+        });
     }
 }});
 
@@ -479,8 +493,23 @@ function connectToServer() {
             }
         );
 	    
-	    _.each( fetcherCallbacks, function(callback) {
-		callback(DATABASE);
+	    _.each( fetcherCallbacks, function(fetcher) {
+            pageRuntime.operation(
+                "initial-state-consumer:" +
+                    fetcher.consumer,
+                "releasing"
+            );
+
+		fetcher.callback(DATABASE);
+
+            pageRuntime.operation(
+                "initial-state-consumer:" +
+                    fetcher.consumer,
+                "available",
+                {
+                    delivery: "queued-callback"
+                }
+            );
 	    });
 
         pageRuntime.operation(

@@ -42,3 +42,14 @@
     overflow: hidden;
     visibility: hidden;
 }
+
+// Keep oversized display equations within the page viewport while allowing
+// students to scroll horizontally to see the full rendered expression.
+.MathJax_Display {
+  box-sizing: border-box;
+  max-width: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding-bottom: 0.25rem;
+  -webkit-overflow-scrolling: touch;
+}

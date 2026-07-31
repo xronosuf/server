@@ -412,6 +412,57 @@ A block of author-provided setup, definitions, helpers, or computation.
 An inline call or expression that may produce page or mathematical content and
 may require MathJax reprocessing.
 
+### Browser-validated setup timing
+
+A non-random `javascript` environment was instrumented in the browser on
+July 31, 2026.
+
+Observed behavior:
+
+1. the generated `.javascript script` executed while
+   `document.readyState` was `loading`
+2. later author-supplied host markup was not yet present
+3. `initial-state` and the activity component had not yet been observed
+4. page readiness was still `waiting`
+5. a callback deferred to `DOMContentLoaded` ran at `interactive`
+6. that callback could access later DOM markup, but saved state and activity
+   initialization were still unavailable
+
+Therefore:
+
+- ordinary setup blocks are parser-owned inline scripts
+- setup definitions may execute before later page markup
+- DOM-dependent installation must wait for an appropriate DOM event
+- `DOMContentLoaded` is not a saved-state or activity-readiness boundary
+- work depending on answer globals, validators, persistent data, or initialized
+  activity behavior requires a later Xronos-owned lifecycle
+- Xronos cannot directly prove successful parser execution after the fact; it
+  can only observe that setup-script markup exists
+
+A random-marked setup block was also browser-tested. It executed twice:
+
+1. once through normal parser-owned script execution while the document was
+   `loading`, before state or activity initialization
+2. once through the legacy `$.globalEval(...)` path after initial state released
+   the JavaScript seed consumer and after activity initialization
+
+Random setup blocks must therefore currently tolerate repeated execution. Code
+that installs DOM, listeners, globals, or external resources should be
+idempotent. Removing the duplicate execution requires a compatibility review
+because existing content may rely on either the early parser pass or the later
+seeded pass.
+
+The passive runtime now records:
+
+- `author-javascript-setup`
+  - `observed` or `not-required`
+  - script count and random-script count
+  - parser ownership and lack of direct execution observability
+- `author-javascript-random-setup`
+  - the existing explicit random setup path waiting for state and evaluating
+- `author-inline-javascript`
+  - post-state inline-JavaScript initialization performed by `activity.js`
+
 ### Interactive callbacks
 
 Generated callbacks exposed through `window.interactives`, with optional

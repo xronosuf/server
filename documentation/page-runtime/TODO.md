@@ -135,6 +135,18 @@ Items here are not commitments to include all work in the current project.
   is repairing unresolved initial content.
 - Isolate one author block failure so it does not silently prevent unrelated
   blocks from initializing.
+- Passive setup-script and post-state inline-JavaScript lifecycle telemetry now
+  exists; browser-validate its event ordering before promoting it.
+- Decide whether parser-owned setup blocks should remain an authoring contract
+  or be migrated to an explicit Xronos-owned execution phase.
+- Define an explicit post-state author hook for code that requires persistent
+  data, answer globals, validators, or initialized activity behavior.
+- Random-marked setup blocks currently execute twice: once during parsing and
+  again through post-state `$.globalEval(...)`. Inventory compatibility before
+  removing either execution and document that random setup must be idempotent.
+- Replace the textual `/random/` heuristic with an explicit generated authoring
+  contract after compatibility review; comments, strings, and unrelated names
+  can currently classify a setup block as randomized.
 
 ### MEDIUM - Standardize JavaScript randomization and seed ownership
 

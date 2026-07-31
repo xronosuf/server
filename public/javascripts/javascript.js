@@ -1,16 +1,44 @@
 var $ = require('jquery');
 var _ = require('underscore');
 var MathJax = require('./mathjax');
+var pageRuntime = require('./page-runtime');
 
 $( function() {
     var anyRandomness = false;
-    
+    var setupScriptCount = 0;
+    var randomSetupScriptCount = 0;
+
     $('.javascript script').each( function() {
-	if ($(this).html().match( /random/ ))
+	setupScriptCount += 1;
+
+	if ($(this).html().match( /random/ )) {
 	    anyRandomness = true;
+	    randomSetupScriptCount += 1;
+	}
     });
 
+    pageRuntime.component(
+	'author-javascript-setup',
+	setupScriptCount > 0 ? 'observed' : 'not-required',
+	{
+	    scriptCount: setupScriptCount,
+	    randomScriptCount: randomSetupScriptCount,
+	    parserOwnedExecution: setupScriptCount > 0,
+	    executionDirectlyObservable: false,
+	    observedAtDocumentReadyState: document.readyState
+	}
+    );
+
     if (anyRandomness) {
+	pageRuntime.operation(
+	    'author-javascript-random-setup',
+	    'waiting-for-initial-state',
+	    {
+		scriptCount: setupScriptCount,
+		randomScriptCount: randomSetupScriptCount
+	    }
+	);
+
 	$("#show-me-another-button").show();
 
 	var seedDiv;
@@ -22,6 +50,15 @@ $( function() {
 	}
 	
 	seedDiv.fetchData( function() {
+	    pageRuntime.operation(
+		'author-javascript-random-setup',
+		'initial-state-available',
+		{
+		    scriptCount: setupScriptCount,
+		    randomScriptCount: randomSetupScriptCount
+		}
+	    );
+
 	    seedDiv.persistentData( function() {
 		var newSeed = seedDiv.persistentData('seed');
 		
@@ -35,9 +72,29 @@ $( function() {
 		console.log("newSeed=", newSeed);
 		console.log("reevaluate",seedDiv);
 		
+		pageRuntime.operation(
+		    'author-javascript-random-setup',
+		    'evaluating',
+		    {
+			scriptCount: setupScriptCount,
+			randomScriptCount: randomSetupScriptCount,
+			seedAvailable: newSeed !== undefined
+		    }
+		);
+
 		$('.javascript script').each( function() {
 		    $.globalEval( $(this).html() );
 		});
+
+		pageRuntime.operation(
+		    'author-javascript-random-setup',
+		    'evaluated',
+		    {
+			scriptCount: setupScriptCount,
+			randomScriptCount: randomSetupScriptCount
+		    }
+		);
+
 		exports.reevaluate( seedDiv );
 	    });
 	}, "javascript-seed");

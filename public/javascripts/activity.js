@@ -265,7 +265,31 @@ var createActivity = function() {
                 count: validatorCount
             }
         );
+	var inlineJavascriptCount =
+	    $(".inline-javascript", activity).length;
+
+	pageRuntime.component(
+	    "author-inline-javascript",
+	    "initializing",
+	    {
+		count: inlineJavascriptCount,
+		initialStateAvailable: true
+	    }
+	);
+
 	$(".inline-javascript", activity).javascript();
+
+	pageRuntime.component(
+	    "author-inline-javascript",
+	    inlineJavascriptCount > 0
+		? "initialized"
+		: "not-required",
+	    {
+		count: inlineJavascriptCount,
+		initialStateAvailable: true
+	    }
+	);
+
 	$('.youtube-player', activity).youtube();
 	
 	connectInteractives();

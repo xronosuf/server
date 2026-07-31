@@ -14425,6 +14425,14 @@ footer {
   display: none;
 }
 
+/*
+ * Course-level styles may force reveal buttons to display with !important.
+ * An exhausted legacy hint button must remain hidden after the final hint.
+ */
+.xronos-legacy-hint-button.xronos-hints-exhausted {
+  display: none !important;
+}
+
 .btn-reveal-hint {
   float: right;
   clear: right;

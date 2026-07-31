@@ -141,6 +141,22 @@ var installLegacyAccordionHints = function(activity) {
     groups.forEach(function(group) {
         var button = makeButton(group.hints.length);
         var revealed = 0;
+        var exhaustButton = function() {
+            button.addClass('xronos-hints-exhausted');
+
+            /*
+             * Some frozen course styles force reveal buttons to display with
+             * !important. Use an inline important declaration so an exhausted
+             * compatibility button cannot remain visible.
+             */
+            if (button[0]) {
+                button[0].style.setProperty(
+                    'display',
+                    'none',
+                    'important'
+                );
+            }
+        };
 
         group.hints.forEach(function(hint) {
             hint.hide();
@@ -163,7 +179,7 @@ var installLegacyAccordionHints = function(activity) {
             }
 
             if (revealed >= group.hints.length) {
-                button.hide();
+                exhaustButton();
                 return false;
             }
 
@@ -199,7 +215,7 @@ var installLegacyAccordionHints = function(activity) {
             button.find('.count').text(Math.min(revealed + 1, group.hints.length).toString());
 
             if (revealed >= group.hints.length) {
-                button.hide();
+                exhaustButton();
             }
 
             if (MathJax && MathJax.Hub) {

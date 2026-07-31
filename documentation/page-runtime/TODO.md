@@ -334,6 +334,10 @@ Items here are not commitments to include all work in the current project.
   remains necessary after the source-output path is corrected.
 - Test persisted hint visibility and feedback availability across reload.
 - Verify multiple sequential hints preserve reveal order and first-paint hiding.
+- Low priority: correct the sequential hint-button counter wording. After one
+  of three hints is revealed, the button currently shows the next reveal number
+  (`2 of 3`) rather than the number already revealed (`1 of 3`), which can be
+  misleading.
 
 ## Completion accounting
 

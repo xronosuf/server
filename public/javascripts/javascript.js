@@ -150,39 +150,163 @@ var evaluateLatex = exports.evaluateLatex = function(code) {
     return value;
 };
 
-var reevaluateMathjaxNow = function(element) {
+var authorJavascriptReevaluationSequence = 0;
+
+var describeReevaluationElement = function(element) {
+    var domElement =
+        element && element.length > 0
+            ? element[0]
+            : null;
+
+    return {
+        tagName:
+            domElement && domElement.tagName
+                ? domElement.tagName
+                : null,
+        id:
+            element && element.attr
+                ? element.attr('id') || null
+                : null,
+        dataId:
+            element && element.attr
+                ? element.attr('data-id') || null
+                : null,
+        className:
+            domElement &&
+            typeof domElement.className === 'string'
+                ? domElement.className
+                : null
+    };
+};
+
+var reevaluateMathjaxNow = function(request) {
+    var element = request.element;
     var activity = element.closest('.activity-body');
-
+    var watcherCount =
+        $('.mathjax-javascript', activity).length;
     var ids = new Set();
-	
-    $('.mathjax-javascript', activity ).each( function(i,e) {
-	var value;
-	var code = $(e).attr('data-code');
-	try {
-	    value = evaluateLatex(code);
-	} catch(err) {
-	    value = '\\square';
-	}
 
-	if (value != $(e).attr('data-value')) {
-	    var id = $(e).closest(".MathJax").attr('id').replace('-Frame', '');
-	    ids.add(id);
-	}
-    });
+    pageRuntime.operation(
+        'author-javascript-mathjax-reevaluation',
+        'scanning',
+        {
+            reevaluationId: request.reevaluationId,
+            trigger: request.trigger,
+            watcherCount: watcherCount
+        }
+    );
 
-    ids.forEach( function(id) {
-	MathJax.Hub.Queue(["Reprocess",MathJax.Hub,id]);
+    $('.mathjax-javascript', activity).each(
+        function(i, e) {
+            var value;
+            var code = $(e).attr('data-code');
+            var frame = $(e).closest('.MathJax');
+            var frameId = frame.attr('id');
+
+            try {
+                value = evaluateLatex(code);
+            } catch (err) {
+                value = '\\square';
+            }
+
+            if (value != $(e).attr('data-value')) {
+                if (frameId) {
+                    ids.add(
+                        frameId.replace(
+                            '-Frame',
+                            ''
+                        )
+                    );
+                } else {
+                    pageRuntime.operation(
+                        'author-javascript-mathjax-watcher',
+                        'frame-missing',
+                        {
+                            code:
+                                'XR-JS-WATCHER-101',
+                            reevaluationId:
+                                request.reevaluationId,
+                            watcherIndex: i,
+                            watcherCode:
+                                code || null
+                        }
+                    );
+                }
+            }
+        }
+    );
+
+    pageRuntime.operation(
+        'author-javascript-mathjax-reevaluation',
+        ids.size > 0
+            ? 'queued'
+            : 'not-required',
+        {
+            reevaluationId: request.reevaluationId,
+            trigger: request.trigger,
+            watcherCount: watcherCount,
+            targetCount: ids.size,
+            targetIds: Array.from(ids)
+        }
+    );
+
+    ids.forEach(function(id) {
+        MathJax.Hub.Queue([
+            'Reprocess',
+            MathJax.Hub,
+            id
+        ]);
     });
 };
 
-var reevaluateMathjax = _.debounce(reevaluateMathjaxNow, 250);
+var reevaluateMathjax = _.debounce(
+    reevaluateMathjaxNow,
+    250
+);
 
 exports.reevaluate = function(element) {
-    var activity = element.closest('.activity-body');
-    
-    $('.inline-javascript', activity ).each( function(i,e) { $(e).triggerHandler( 'ximera:reevaluate' ); } );
-    
-    reevaluateMathjax(element);
+    var activity =
+        element.closest('.activity-body');
+    var inlineJavascriptCount =
+        $('.inline-javascript', activity).length;
+    var watcherCount =
+        $('.mathjax-javascript', activity).length;
+    var request;
+
+    authorJavascriptReevaluationSequence += 1;
+
+    request = {
+        reevaluationId:
+            authorJavascriptReevaluationSequence,
+        element: element,
+        trigger:
+            describeReevaluationElement(element)
+    };
+
+    pageRuntime.operation(
+        'author-javascript-reevaluation',
+        'requested',
+        {
+            reevaluationId:
+                request.reevaluationId,
+            trigger:
+                request.trigger,
+            inlineJavascriptCount:
+                inlineJavascriptCount,
+            watcherCount:
+                watcherCount
+        }
+    );
+
+    $('.inline-javascript', activity).each(
+        function(i, e) {
+            $(e).triggerHandler(
+                'ximera:reevaluate'
+            );
+        }
+    );
+
+    reevaluateMathjax(request);
 };
 
 

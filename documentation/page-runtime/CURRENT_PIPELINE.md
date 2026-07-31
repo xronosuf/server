@@ -454,6 +454,35 @@ seeded pass.
 
 The passive runtime now records:
 
+### Author JavaScript reevaluation
+
+Browser testing confirmed the `\js{...}` reevaluation path:
+
+1. restoring a persisted answer requested one reevaluation
+2. changing the answer requested one reevaluation
+3. the 250 ms debounce retained the originating request ID and trigger
+4. duplicate watcher nodes in the same MathJax frame collapsed to one target
+5. each changed value queued exactly one targeted MathJax `Reprocess`
+6. malformed or detached watcher frames are contained rather than throwing
+
+The runtime records:
+
+- `author-javascript-reevaluation`
+  - `requested`
+  - request ID and triggering element
+  - inline JavaScript and MathJax watcher counts
+- `author-javascript-mathjax-reevaluation`
+  - `scanning`
+  - `queued` or `not-required`
+  - target count and target MathJax IDs
+- `author-javascript-mathjax-watcher`
+  - `frame-missing`
+  - diagnostic `XR-JS-WATCHER-101`
+
+A startup request can observe fewer watcher nodes than its delayed scan because
+MathJax may still be completing duplicate semantic/rendered watcher markup
+during the debounce window. Targeting remains frame-based and deduplicated.
+
 - `author-javascript-setup`
   - `observed` or `not-required`
   - script count and random-script count

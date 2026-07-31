@@ -148,6 +148,12 @@ Items here are not commitments to include all work in the current project.
   contract after compatibility review; comments, strings, and unrelated names
   can currently classify a setup block as randomized.
 
+- Decide whether the current duplicate `.mathjax-javascript` watcher nodes are
+  an intentional MathJax representation detail or generated markup that can be
+  simplified. Current reevaluation safely deduplicates them by MathJax frame.
+- Add a permanent fixture covering persisted-answer restoration and post-load
+  answer-driven `\js{...}` reevaluation.
+
 ### MEDIUM - Standardize JavaScript randomization and seed ownership
 
 - Determine whether JavaScript and Sage share or overwrite persisted seed state.

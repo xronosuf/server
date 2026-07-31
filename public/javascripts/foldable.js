@@ -19,9 +19,18 @@ jQuery.fn.removeAttributes = function () {
 
 var createFoldable = function() {
     var foldable = $(this);
-	foldable.removeAttributes()
-	foldable.wrap('<div class="accordion"></div>')
-	foldable.before("<h3>Expand</h3>")
+
+    /*
+     * A foldable begins expanded, unlike an expandable accordion.
+     * Preserve authored attributes such as the generated element ID, remove
+     * only the bootstrap marker class, and identify the generated wrapper so
+     * the shared accordion initializer can select the correct initial state.
+     */
+    foldable.removeClass('foldable');
+    foldable.wrap(
+        '<div class="accordion xronos-foldable-accordion"></div>'
+    );
+    foldable.before('<h3>Fold this content</h3>');
 
 	/*foldable.wrap(function () {
 		return '<div class="accordion"><h3>Expand</h3><div>'+ $(this).html() + '</div></div>'

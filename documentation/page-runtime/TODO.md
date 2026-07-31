@@ -324,6 +324,14 @@ Items here are not commitments to include all work in the current project.
 - Decide when to move Statistics into the unified account menu.
 - Investigate Test Student role presentation under Canvas LTI.
 
+## Foldable and expandable content
+
+- Low priority: restore a clear visual affordance for accordion headings.
+  Expandable and foldable headings remain clickable, but the historical
+  border, bar, or arrow treatment is no longer sufficiently visible.
+- Inventory whether foldable/expandable open state should persist across
+  reload before changing the current non-persistent accordion behavior.
+
 ## Hints and feedback
 
 - Clarify with XimeraLaTeX developers why current frozen publications emit

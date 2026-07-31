@@ -387,13 +387,23 @@ MathJax.Hub.Register.StartupHook("End", function () {
             "mathjax",
             "startup-ended"
         );
-	$(".accordion").accordion({
-		active: false,
-		autoHeight: false,
-		collapsible: true,
-		heightStyle: "content"
-	});
-	$(".accordion").removeClass('hidden-out-of-view')
+    $(".accordion").each(function() {
+        var accordion = $(this);
+        var initiallyOpen =
+            accordion.hasClass(
+                "xronos-foldable-accordion"
+            );
+
+        accordion.accordion({
+            active: initiallyOpen ? 0 : false,
+            autoHeight: false,
+            collapsible: true,
+            heightStyle: "content"
+        });
+    });
+    $(".accordion").removeClass(
+        "hidden-out-of-view"
+    );
 
 	$("#loadingSpinner").hide() 
 	//$("#theActivity").removeClass('hidden') // Currently, the hidden class is not set

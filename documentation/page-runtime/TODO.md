@@ -96,18 +96,43 @@ Items here are not commitments to include all work in the current project.
 
 ### Grouped validator environment
 
-- Verify answer boxes are consistently buttonless inside `validator`.
-- Test one answer, several answers, and partially completed groups.
-- Compare Enter with the enclosing validator button.
-- Reproduce the historical blink and cleared-answer failure.
-- Determine whether MathJax DOM replacement contributes.
-- Submit grouped answers as one atomic operation.
+Browser inventory is complete for the current stabilization scope.
+
+Confirmed working behavior:
+
+- Multi-answer grouped validators initialize and attach their logical answers.
+- Correct grouped submission persists across reload.
+- Typed responses remain visible and persist after ordinary incorrect results.
+- A normal Boolean `false` marks the group and contained answers incorrect
+  without emitting a runtime diagnostic.
+- Partial grouped submission preserves entered responses and leaves untouched
+  fields empty.
+- Missing answer globals and other synchronous validator exceptions are
+  contained as incorrect results and emit `XR-VALIDATOR-RESULT-101`.
+- Malformed non-Boolean validator results are prevented from entering
+  persistent state, avoiding later differential-synchronization failure.
+- Grouped-validator failures remain localized and do not degrade page
+  readiness.
+
+Deferred grouped-validator defects and design work:
+
+- Individual answer-box `?` buttons are supposed to be suppressed inside a
+  validator environment, but remain visible.
+- Pressing Enter in a contained answer triggers the individual answer form,
+  evaluates the enclosing validator, and then performs an unprevented native
+  GET form submission that reloads the page with a trailing `?`.
+- Define the intended Enter-key behavior for grouped validators and prevent
+  native form navigation.
+- Partial submission currently marks untouched contained answers incorrect.
 - Decide whether individual correctness should remain hidden.
-- Repair the environment as a later focused feature project.
-- Remove or consistently suppress the individual answer-box `?` buttons inside
-  grouped validators.
-- Coalesce one grouped submission into one persistence transaction instead of
-  issuing several immediate synchronization attempts.
+- Submit grouped answers as one atomic operation instead of several immediate
+  persistence transactions.
+- Prevent stale asynchronous validation results from overwriting newer
+  attempts.
+- Handle rejected asynchronous validators without generic alerts.
+- Reproduce and repair any remaining MathJax-related blink or DOM-replacement
+  behavior only as part of the later focused grouped-validator project.
+
 
 ## JavaScript authoring and randomization
 

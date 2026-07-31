@@ -1812,7 +1812,17 @@ function endMathJaxPass(passType, message) {
         mathJaxPassRuntime.completed.shift();
     }
 
-    if (pass.passType === "process") {
+    if (
+        pass.passType === "process" &&
+        !initialMathAnswerRuntime.processComplete
+    ) {
+        /*
+         * Only the first completed MathJax Process defines the initial answer
+         * and inline-Sage manifests. Later full Process passes may repair an
+         * unresolved registered answer through New Math, but must not replace
+         * the original generation metadata or emit another initial terminal
+         * event merely because the page was processed again.
+         */
         initialMathAnswerRuntime.processComplete =
             true;
         initialMathAnswerRuntime.generation =

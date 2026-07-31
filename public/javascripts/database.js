@@ -93,6 +93,9 @@ window.addEventListener('offline', function () {
 });
 
 function differentialSynchronization() {
+    var delta;
+    var nextShadow;
+
     if ((!socket) || (!(socket.readyState == WebSocket.OPEN))) {
 	saveWorkStatus( 'error', "Synchronization failed" );
 	connectToServer();
@@ -100,13 +103,68 @@ function differentialSynchronization() {
 	return;
     }
 
-    var delta = jsondiffpatch.diff( SHADOW, DATABASE );
+    /*
+     * Build both the outgoing delta and the next local shadow before sending
+     * anything.  jsondiffpatch rejects unsupported values such as functions.
+     * Contain that failure so one malformed consumer cannot throw out of the
+     * save loop without a visible status or runtime diagnostic.
+     */
+    try {
+	delta = jsondiffpatch.diff( SHADOW, DATABASE );
+
+	if (delta !== undefined) {
+	    nextShadow = jsondiffpatch.clone(DATABASE);
+	}
+    } catch(err) {
+	saveWorkStatus(
+	    'error',
+	    'Page state could not be saved because it contains unsupported data.'
+	);
+
+	debugLog.log(
+	    'Page state differential synchronization failed.',
+	    {
+		code: 'XR-STATE-DIFF-101',
+		errorName:
+		    err && err.name
+			? err.name
+			: undefined,
+		errorMessage:
+		    err && err.message
+			? err.message
+			: String(err)
+	    }
+	);
+
+	pageRuntime.operation(
+	    'state-differential-sync',
+	    'failed',
+	    {
+		code: 'XR-STATE-DIFF-101',
+		errorName:
+		    err && err.name
+			? err.name
+			: undefined,
+		errorMessage:
+		    err && err.message
+			? err.message
+			: String(err)
+	    }
+	);
+
+	console.error(
+	    'Page state differential synchronization failed.',
+	    err
+	);
+
+	return;
+    }
 
     if (delta !== undefined) {
 	saveWorkStatus( 'saving' );
 	socket.sendJSON( 'patch', delta, checksumObject(SHADOW) );
 	debugLog.log('Sent page state update to Xronos server.');
-	SHADOW = jsondiffpatch.clone(DATABASE);
+	SHADOW = nextShadow;
     }
 }
 

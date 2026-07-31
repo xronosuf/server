@@ -87,6 +87,11 @@ Items here are not commitments to include all work in the current project.
 - Handle rejected asynchronous validators without generic alerts.
 - Prevent stale validation results from overwriting newer attempts.
 - Catch malformed validator results such as `null` or `undefined`.
+- A grouped-validator Boolean-result guard now prevents functions and other
+  non-Boolean results from entering persistent state; browser-validate the
+  diagnostic and compatibility behavior before treating it as complete.
+- Differential synchronization now contains unsupported-state errors and emits
+  `XR-STATE-DIFF-101`; add offending persistent-data paths to the diagnostic.
 - Prevent full activity reset after a localized answer failure.
 
 ### Grouped validator environment
@@ -99,6 +104,10 @@ Items here are not commitments to include all work in the current project.
 - Submit grouped answers as one atomic operation.
 - Decide whether individual correctness should remain hidden.
 - Repair the environment as a later focused feature project.
+- Remove or consistently suppress the individual answer-box `?` buttons inside
+  grouped validators.
+- Coalesce one grouped submission into one persistence transaction instead of
+  issuing several immediate synchronization attempts.
 
 ## JavaScript authoring and randomization
 
@@ -292,9 +301,16 @@ Items here are not commitments to include all work in the current project.
 - Decide when to move Statistics into the unified account menu.
 - Investigate Test Student role presentation under Canvas LTI.
 
+## Completion accounting
+
+- Low priority: answers and other required interactions inside a `hint`
+  environment should initialize and persist normally, but should not contribute
+  to or be required for page completion percentage.
+
 ## Testing repository
 
-Prepare `.tex` fixtures covering:
+The eight-page direct-launch browser suite passed on July 31, 2026 after fixture
+corrections. Keep the fixtures as a repeatable regression suite covering:
 
 1. static content and core MathJax
 2. answers and saved progress
@@ -315,6 +331,20 @@ Include grouped-validator tests verifying:
 
 Use author `javascript` environments for glanceable test status where doing so
 does not introduce unintended state or seed dependencies.
+
+Fixture lessons:
+
+- A grouped validator must invoke its helper in the optional argument, for
+  example
+  `\begin{validator}[helper(answerA,answerB)]`, rather than merely returning
+  the helper function.
+- Numeric globals used by an author validator should use an explicit numeric
+  answer format when ordinary JavaScript arithmetic is expected.
+- Raw HTML fixture markup should use `\htmlOnly{...}` with `\HCode{...}`;
+  literal tags inside `htmlOnly` are escaped.
+- The identity fixture covered a direct development launch. Authenticated LTI
+  learner, role, and Canvas-context propagation still require a separate LTI
+  launch test.
 
 ## Documentation follow-up
 

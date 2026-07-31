@@ -565,6 +565,31 @@ It also exposes dependency-specific timeout milestones:
 The milestones are filtered by dependency so one timeout cannot be mistaken for
 another.
 
+
+## Eight-page direct-launch regression suite
+
+The page-runtime fixtures were browser-tested on July 31, 2026:
+
+| Fixture | Result | Main contract |
+|---|---|---|
+| Static MathJax | Pass | Initial MathJax completes; no Sage or answers required |
+| Answers and saved progress | Pass | Logical answers attach once and submitted state survives reload |
+| Basic Sage | Pass | Batched Sage results complete all initial inline rerenders |
+| Sage generation and Another | Pass | Later generation remains outside initial readiness |
+| Mixed critical lifecycle | Pass | State, content, and interaction dimensions aggregate independently |
+| Optional interactive | Pass | Optional author interaction works without blocking critical readiness |
+| Legacy and unusual features | Pass | Parent, nested, and hidden hint answers attach and persist |
+| Identity and launch context | Pass | Repository, path, hash, and direct-launch saved-state context agree |
+
+The suite exposed one malformed grouped-validator fixture that returned a
+function rather than a Boolean. Once that function entered persistent state,
+`jsondiffpatch` rejected every later differential synchronization and subsequent
+answers did not survive reload. The fixture was corrected to invoke its helper
+with explicitly numeric answer globals.
+
+The direct identity test does not establish authenticated LTI learner, role, or
+Canvas-context behavior.
+
 ## Current architectural conclusion
 
 The present runtime is a network of cooperating callbacks rather than a single

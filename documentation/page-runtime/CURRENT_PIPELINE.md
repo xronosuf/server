@@ -337,6 +337,28 @@ After initial state arrives, it initializes features including:
 - activity cards
 - progress behavior
 
+### Hidden hints and feedback
+
+Hint and feedback contents are already present in the DOM during initial page
+processing. Their mathematics and author inline JavaScript participate in the
+normal initial lifecycle while the containers remain hidden.
+
+For UF publications whose frozen XimeraLaTeX package emits hints using the
+KU Leuven accordion structure, the server currently converts those accordions
+into `.xronos-legacy-hint` containers and sequential reveal buttons.
+
+The source accordion heading and panel are hidden by stylesheet rules before
+JavaScript runs, preventing hint content from flashing during startup.
+
+Opening a legacy hint is a later user interaction. It:
+
+- displays one already-initialized hint;
+- records `legacy-hint-reveal`;
+- queues a whole-problem MathJax `Rerender`;
+- records `legacy-hint-rerender` completion.
+
+This reveal-time rerender does not participate in initial page readiness.
+
 ## Problem and completion runtime
 
 `problem.js`:

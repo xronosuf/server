@@ -29,6 +29,7 @@ var database = require('./database');
 var pageRuntime = require('./page-runtime');
 
 var annotator = require('./annotator');
+var pageRuntime = require('./page-runtime');
 
 var installLegacyAccordionHints = function(activity) {
     var HINT_WAIT_SECONDS = 10;
@@ -166,8 +167,33 @@ var installLegacyAccordionHints = function(activity) {
                 return false;
             }
 
-            group.hints[revealed].show();
+            var hintIndex = revealed;
+            var problemId =
+                group.problem.attr('id') || null;
+
+            pageRuntime.operation(
+                'legacy-hint-reveal',
+                'requested',
+                {
+                    problemId: problemId,
+                    hintIndex: hintIndex,
+                    totalHints: group.hints.length
+                }
+            );
+
+            group.hints[hintIndex].show();
             revealed += 1;
+
+            pageRuntime.operation(
+                'legacy-hint-reveal',
+                'displayed',
+                {
+                    problemId: problemId,
+                    hintIndex: hintIndex,
+                    revealedHints: revealed,
+                    totalHints: group.hints.length
+                }
+            );
 
             button.find('.counter').show();
             button.find('.count').text(Math.min(revealed + 1, group.hints.length).toString());
@@ -177,7 +203,42 @@ var installLegacyAccordionHints = function(activity) {
             }
 
             if (MathJax && MathJax.Hub) {
-                MathJax.Hub.Queue(["Rerender", MathJax.Hub, group.problem[0]]);
+                pageRuntime.operation(
+                    'legacy-hint-rerender',
+                    'queued',
+                    {
+                        problemId: problemId,
+                        hintIndex: hintIndex
+                    }
+                );
+
+                MathJax.Hub.Queue(
+                    [
+                        "Rerender",
+                        MathJax.Hub,
+                        group.problem[0]
+                    ],
+                    function() {
+                        pageRuntime.operation(
+                            'legacy-hint-rerender',
+                            'completed',
+                            {
+                                problemId: problemId,
+                                hintIndex: hintIndex
+                            }
+                        );
+                    }
+                );
+            } else {
+                pageRuntime.operation(
+                    'legacy-hint-rerender',
+                    'not-required',
+                    {
+                        problemId: problemId,
+                        hintIndex: hintIndex,
+                        reason: 'mathjax-unavailable'
+                    }
+                );
             }
 
             return false;

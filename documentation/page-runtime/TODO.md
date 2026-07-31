@@ -324,6 +324,17 @@ Items here are not commitments to include all work in the current project.
 - Decide when to move Statistics into the unified account menu.
 - Investigate Test Student role presentation under Canvas LTI.
 
+## Hints and feedback
+
+- Clarify with XimeraLaTeX developers why current frozen publications emit
+  ordinary `hint` environments through the KU Leuven accordion structure.
+- Retain the UF legacy accordion conversion until that authoring contract is
+  understood and affected publications can be republished safely.
+- Decide later whether the whole-problem MathJax rerender on legacy hint reveal
+  remains necessary after the source-output path is corrected.
+- Test persisted hint visibility and feedback availability across reload.
+- Verify multiple sequential hints preserve reveal order and first-paint hiding.
+
 ## Completion accounting
 
 - Low priority: answers and other required interactions inside a `hint`

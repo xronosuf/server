@@ -64,16 +64,21 @@ Items here are not commitments to include all work in the current project.
 
 ## Answer and validator behavior
 
-- Audit late recovery for `initial-math-answers`.
-  - The initial MathJax `Process` pass immediately reports `settled`,
-    `degraded`, or `not-required`.
-  - A later successful `Rerender` connection currently does not appear to
-    recover an initially degraded answer component.
-  - Preserve the initial failure in event history while allowing a verified
-    complete late connection to restore `interaction-ready`.
-- Distinguish attempted answer attachment from successful model attachment;
-  current counters may count a DOM answer as connected even when its parsed
-  MathJax answer model is missing.
+- Logical initial-answer readiness is now implemented and browser-validated.
+  - Readiness tracks stable logical answers rather than current DOM nodes.
+  - Missing MathJax models are not counted as connected.
+  - Attachment exceptions are contained and diagnosed.
+  - Successful attachment is retained across MathJax DOM replacement and
+    completed-answer rendering.
+  - Ordinary rebinding does not emit repeated initial-readiness events.
+  - A later MathJax pass can recover `initial-math-answers`,
+    `interaction-ready`, and page readiness from degraded to ready while
+    retaining the original failure event.
+- Add bounded detail for repeated pre-success attachment failures without
+  creating unbounded per-answer history.
+- Decide whether initial-answer readiness needs its own deadline only if
+  answer attachment can remain unresolved after the initial MathJax pass has
+  already ended and no later pass is naturally expected.
 - Add an answer-submission transaction lifecycle.
 - Preserve typed responses on validator failure.
 - Distinguish button click from Enter-key behavior.
@@ -96,6 +101,31 @@ Items here are not commitments to include all work in the current project.
 - Repair the environment as a later focused feature project.
 
 ## JavaScript authoring and randomization
+
+### Initial author JavaScript lifecycle
+
+- Inventory every initial execution path in `javascript.js`, including:
+  - `javascript` environment setup blocks
+  - `\js{...}` result evaluation
+  - saved-state-triggered execution
+  - answer-driven `Javascript.reevaluate(...)`
+  - MathJax rerenders caused by generated output
+- Separate finite initial author JavaScript work from later interactive
+  reevaluation.
+- Determine whether initial author JavaScript can introduce additional:
+  - required visible content
+  - Sage requests
+  - answer boxes
+  - validators
+  - MathJax processing or rerender work
+- Define a finite initial manifest or generation identity rather than waiting
+  for the page to become globally idle.
+- Add explicit initial terminal outcomes such as settled, degraded, failed,
+  or not-required only after the existing execution graph is understood.
+- Keep ordinary answer-driven reevaluation outside page readiness unless it
+  is repairing unresolved initial content.
+- Isolate one author block failure so it does not silently prevent unrelated
+  blocks from initializing.
 
 ### MEDIUM - Standardize JavaScript randomization and seed ownership
 

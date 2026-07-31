@@ -12,7 +12,7 @@ The original architecture inventory began at baseline commit:
 The current passive readiness instrumentation described below includes changes
 through:
 
-`5f7b8e11933b005230932a0757794b9c9d8febe0`
+`7b05bfab5a1f27e4d6ac042a4bfae73f2c13f126`
 
 It describes existing behavior and current observability. It is not yet a
 detailed replacement design.
@@ -486,7 +486,48 @@ The current coordinator derives three independent readiness dimensions:
   - canonical Sage results are available or not required
 - `interaction-ready`
   - activity initialization completed
-  - initial math answers settled or were not required
+  - every logical initial math answer attached successfully at least once, or
+    no initial math answers were required
+
+Initial answer readiness is based on retained logical answer identities, not
+current DOM presence. MathJax may recreate answer elements, and a completed
+answer may replace its input form with blue submitted-answer TeX.
+
+For each answer discovered during the initial MathJax `Process`, the runtime
+records:
+
+- stable logical answer ID
+- connection attempts before first success
+- whether the MathJax answer model resolved
+- whether attachment completed successfully at least once
+- the latest pre-success failure category
+
+A missing MathJax model is not counted as a successful connection.
+`connectMathAnswer()` exceptions are contained and reported as attachment
+failures instead of being counted as connected.
+
+Once a logical initial answer attaches successfully, that terminal success is
+retained permanently for initial readiness. Ordinary MathJax recreation and
+rebinding do not increment its initial attempt count or emit repeated
+`initial-math-answers` readiness events.
+
+If an initial answer fails to attach during the first `Process`, a later
+`Rerender` or other `New Math` pass can attach the same stable logical answer
+and recover:
+
+- `initial-math-answers`: `degraded` to `settled`
+- `interaction-ready`: `degraded` to `ready`
+- page readiness: `degraded` to `ready`
+
+The original degraded component event remains in bounded runtime history.
+
+The implementation was browser-validated for:
+
+1. three successful initial answer attachments
+2. ordinary MathJax rebinding without duplicate readiness events
+3. correct-answer replacement with no readiness regression
+4. one forced initial missing-model failure
+5. automatic later-pass recovery of that logical answer
 
 Page readiness is derived from those dimensions and may be:
 
@@ -494,29 +535,35 @@ Page readiness is derived from those dimensions and may be:
 - `degraded`
 - `ready`
 
-The two current readiness deadlines are passive diagnostics:
+The three current readiness deadlines are passive diagnostics:
 
 | Dependency | Dimension | Deadline | Code |
 |---|---|---:|---|
 | `initial-state` | `state-synchronized` | 15,000 ms | `XR-STATE-INITIAL-101` |
 | `mathjax-initial-process` | `content-ready` | 15,000 ms | `XR-MATHJAX-INITIAL-101` |
+| `sage-inline-initial` | `content-ready` | 15,000 ms | `XR-SAGE-INLINE-INITIAL-101` |
 
-Both watchdogs support degraded-to-ready recovery. A late successful dependency
-changes the current readiness state to `ready`, but does not erase the fact that
-the diagnostic deadline was previously exceeded.
+All three watchdogs support degraded-to-ready recovery. A late successful
+dependency changes the current readiness state to `ready`, but does not erase
+the fact that the diagnostic deadline was previously exceeded.
 
 The benchmark object exposes the watchdog records under:
 
 - `deadlines.initialState`
 - `deadlines.initialMathJax`
+- `deadlines.initialInlineSage`
 
 It also exposes dependency-specific timeout milestones:
 
 - `milestones.initialStateTimedOut`
 - `milestones.initialMathJaxTimedOut`
+- `milestones.initialInlineSageTimedOut`
+- `milestones.initialInlineSageSettled`
+- `milestones.initialInlineSageDegraded`
+- `milestones.initialInlineSageNotRequired`
 
 The milestones are filtered by dependency so one timeout cannot be mistaken for
-the other.
+another.
 
 ## Current architectural conclusion
 

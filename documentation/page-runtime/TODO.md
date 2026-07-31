@@ -17,7 +17,7 @@ Items here are not commitments to include all work in the current project.
 - `window.xronosInspectPageRuntime()` exists; stabilize and document its support contract.
 - Service, operation, and component states are recorded separately; continue ownership cleanup.
 - A bounded recent-event buffer exists; continue adding bounded subsystem diagnostics.
-- Stable diagnostic codes now exist for initial state and initial MathJax; add occurrence IDs and broader code coverage.
+- Stable diagnostic codes now exist for initial state, initial MathJax, and initial inline Sage display; add occurrence IDs and broader code coverage.
 - Record automatic reload and navigation causes.
 - Detect unresolved visible loading indicators.
 - Record page metadata version, bundle version, `/version`, and feature mode.
@@ -64,6 +64,16 @@ Items here are not commitments to include all work in the current project.
 
 ## Answer and validator behavior
 
+- Audit late recovery for `initial-math-answers`.
+  - The initial MathJax `Process` pass immediately reports `settled`,
+    `degraded`, or `not-required`.
+  - A later successful `Rerender` connection currently does not appear to
+    recover an initially degraded answer component.
+  - Preserve the initial failure in event history while allowing a verified
+    complete late connection to restore `interaction-ready`.
+- Distinguish attempted answer attachment from successful model attachment;
+  current counters may count a DOM answer as connected even when its parsed
+  MathJax answer model is missing.
 - Add an answer-submission transaction lifecycle.
 - Preserve typed responses on validator failure.
 - Distinguish button click from Enter-key behavior.
@@ -141,9 +151,9 @@ Items here are not commitments to include all work in the current project.
 - Separate diagnostic deadline classes now exist for:
   - initial saved state
   - initial MathJax processing
+  - initial inline Sage display
 - Continue adding or refining timeout classes for:
-  - Sage request
-  - Sage display
+  - canonical Sage request
   - optional external libraries
 - Measure whether the current 15-second readiness deadlines are appropriate
   before treating them as a stable operational policy.

@@ -12,7 +12,7 @@ The original architecture inventory began at baseline commit:
 The current passive readiness instrumentation described below includes changes
 through:
 
-`0f006781a26a8f9fc885b84c32c846122b7a3417`
+`5f7b8e11933b005230932a0757794b9c9d8febe0`
 
 It describes existing behavior and current observability. It is not yet a
 detailed replacement design.
@@ -125,6 +125,71 @@ deadline to the initial process:
 The deadline does not cancel MathJax or replace page content. If the initial
 process completes later, `content-ready` may recover to `ready`, while the
 earlier timeout remains recorded in diagnostic history.
+
+## Initial inline Sage display readiness
+
+The runtime separately aggregates the display lifecycle of immutable
+initial-manifest inline Sage expressions in the component:
+
+- `sage-inline-initial`
+
+The aggregate records:
+
+- expected placeholders
+- discovered placeholders
+- requests started
+- MathML applied
+- rerenders completed
+- failed placeholders
+- settled placeholders
+- whether initial MathJax discovery completed
+
+Terminal states are:
+
+- `settled`: every expected placeholder completed successfully
+- `degraded`: every expected placeholder reached a terminal state, but at
+  least one failed and displayed a fallback
+- `not-required`: the initial page manifest contains no inline Sage expressions
+
+The component is a dependency of `content-ready`:
+
+- `settled` and `not-required` are ready
+- `degraded` and `failed` are degraded
+- absent or `discovered` remain waiting
+
+The passive runtime coordinator applies a 15-second diagnostic readiness
+deadline:
+
+- dependency: `sage-inline-initial`
+- readiness dimension: `content-ready`
+- diagnostic code: `XR-SAGE-INLINE-INITIAL-101`
+- deadline event: `readiness-deadline-exceeded`
+
+The deadline does not cancel Sage requests, replace mathematical content, or
+prevent late completion. If all placeholders settle later, the component,
+`content-ready`, and page readiness may recover to ready. The watchdog retains
+the earlier timeout as diagnostic history.
+
+The promoted implementation has been browser-validated for:
+
+1. a page with 23 successful inline Sage expressions
+2. a page requiring no inline Sage
+3. one forced display failure with 22 successful expressions
+4. a forced 500-millisecond readiness timeout
+5. late successful settlement after that timeout
+
+The observed readiness results were:
+
+| Scenario | Inline Sage | Content readiness | Page readiness |
+|---|---|---|---|
+| 23 successful expressions | `settled` | `ready` | `ready` |
+| No inline Sage | `not-required` | `ready` | `ready` |
+| One display failure | `degraded` | `degraded` | `degraded` |
+| Deadline exceeded | `degraded` | `degraded` | `degraded` |
+| Late successful completion | `settled` | recovered to `ready` | recovered to `ready` |
+
+The timeout history remains visible after recovery through
+`window.xronosPageBenchmark(options)`.
 
 ## Initial saved-state gate
 

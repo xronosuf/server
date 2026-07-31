@@ -109,8 +109,14 @@ var sagemath = require('./sagemath');
 /*
  * Aggregate the display lifecycle of immutable initial-manifest Sage calls.
  *
- * This component is observational only. It is intentionally not yet a
- * dependency of content-ready.
+ * The terminal state of this component is a content-ready dependency:
+ *
+ * - settled and not-required are ready
+ * - degraded and failed are degraded
+ * - absent or discovered remain waiting
+ *
+ * The runtime coordinator applies its own diagnostic deadline and permits
+ * late recovery when every initial placeholder eventually settles.
  */
 var initialInlineSageRuntime = {
     expected: null,

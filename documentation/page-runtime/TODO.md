@@ -347,6 +347,16 @@ Items here are not commitments to include all work in the current project.
   (`2 of 3`) rather than the number already revealed (`1 of 3`), which can be
   misleading.
 
+## Nested problem behavior
+
+- Three-level nested availability, completion, answer attachment, progress,
+  and reload persistence were browser-validated on July 31, 2026.
+- Preserve the current immediate-child unlock behavior.
+- Preserve the current recursive hierarchy weighting unless a later product
+  decision intentionally changes how nested work contributes to grades.
+- Possible first-paint flashing of unavailable nested problems is currently
+  out of scope.
+
 ## Completion accounting
 
 - Low priority: answers and other required interactions inside a `hint`

@@ -359,6 +359,56 @@ Opening a legacy hint is a later user interaction. It:
 
 This reveal-time rerender does not participate in initial page readiness.
 
+## Nested-problem browser validation
+
+A three-level nested-problem fixture was browser-tested on July 31, 2026.
+
+The fixture contained:
+
+- one top-level blocking problem;
+- one immediate nested blocking problem;
+- one second-level nested blocking problem;
+- one answer at each level;
+- hidden nested mathematics;
+- author inline JavaScript in nested content.
+
+Observed initial behavior:
+
+- the top-level problem was available and visible;
+- the child and grandchild were unavailable and hidden;
+- all three logical answers attached during the initial MathJax process;
+- hidden nested mathematics and inline JavaScript initialized normally;
+- page readiness reached `ready` with no diagnostics.
+
+Observed unlock behavior:
+
+- completing the parent unlocked only its immediate child;
+- completing the child unlocked only its immediate child;
+- completing the grandchild completed the full hierarchy.
+
+Observed progress values were:
+
+- initial: `0`;
+- parent complete: `0.5`;
+- parent and child complete: `0.75`;
+- all three complete: `1`.
+
+This reflects the current recursive hierarchy weighting in `progress-bar.js`,
+rather than assigning equal flat weight to every answer.
+
+After saved state synchronized, a hard reload restored:
+
+- all three problems as available;
+- all three problems as complete;
+- all three problems as visible;
+- activity score `1`;
+- three of three logical answers attached;
+- page readiness `ready`;
+- no diagnostics.
+
+A possible brief first-paint display of unavailable nested problems was not
+investigated and is currently outside the stabilization scope.
+
 ## Problem and completion runtime
 
 `problem.js`:

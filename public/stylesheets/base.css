@@ -14410,6 +14410,21 @@ footer {
   margin: 1em;
 }
 
+/*
+ * UF compatibility for publications whose frozen XimeraLaTeX package emits
+ * hints using the KU Leuven accordion structure.
+ *
+ * Hide the authored accordion heading and panel before JavaScript runs so a
+ * student can never see hint content flash during page initialization.
+ *
+ * Keep the accordion ancestor in these selectors. A future native .xmhint
+ * implementation must not inherit this legacy compatibility behavior.
+ */
+.problem-environment .accordion > .xmhint,
+.problem-environment .accordion > .xmhint-content {
+  display: none;
+}
+
 .btn-reveal-hint {
   float: right;
   clear: right;

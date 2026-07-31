@@ -113,10 +113,32 @@ var createJavascript = function() {
 	}
 
 	try {
-	    value.text( window[element.attr('id')].call(this).toString() );
+	    value.text(
+		window[element.attr('id')]
+		    .call(this)
+		    .toString()
+	    );
 	} catch (err) {
-	    value.html( '&#9633;' );
-	};
+	    value.html('&#9633;');
+
+	    pageRuntime.operation(
+		'author-inline-javascript-evaluation',
+		'failed-contained',
+		{
+		    code: 'XR-JS-INLINE-101',
+		    inlineId:
+			element.attr('id') || null,
+		    errorName:
+			err && err.name
+			    ? err.name
+			    : null,
+		    errorMessage:
+			err && err.message
+			    ? err.message
+			    : String(err)
+		}
+	    );
+	}
     });
 
     element.trigger( 'ximera:reevaluate' );

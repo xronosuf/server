@@ -154,6 +154,11 @@ Items here are not commitments to include all work in the current project.
 - Add a permanent fixture covering persisted-answer restoration and post-load
   answer-driven `\js{...}` reevaluation.
 
+- Add permanent coverage for malformed ordinary-text `\js{...}` evaluation
+  and diagnostic `XR-JS-INLINE-101`.
+- Decide whether author-facing UI should expose contained inline-JavaScript
+  diagnostics beyond the existing hollow-square fallback.
+
 ### MEDIUM - Standardize JavaScript randomization and seed ownership
 
 - Determine whether JavaScript and Sage share or overwrite persisted seed state.

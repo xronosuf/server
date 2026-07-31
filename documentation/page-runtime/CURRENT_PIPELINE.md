@@ -483,6 +483,31 @@ A startup request can observe fewer watcher nodes than its delayed scan because
 MathJax may still be completing duplicate semantic/rendered watcher markup
 during the debounce window. Targeting remains frame-based and deduplicated.
 
+### Inline author-JavaScript failure containment
+
+Ordinary-text `\js{...}` content remains in the DOM as
+`.inline-javascript`. Activity initialization attaches its reevaluation handler
+after initial state is available and performs the initial evaluation.
+
+Browser testing confirmed that a malformed generated inline function:
+
+- remains local to the inline value
+- renders the existing hollow-square fallback
+- does not throw through activity initialization
+- does not degrade page readiness
+- does not prevent unrelated optional interactives from working
+
+Contained failures now emit:
+
+- operation: `author-inline-javascript-evaluation`
+- state: `failed-contained`
+- diagnostic: `XR-JS-INLINE-101`
+- inline element ID
+- JavaScript error name and message
+
+This is distinct from math-delimited `\js{...}` content, which uses
+`.mathjax-javascript` watchers and targeted MathJax reprocessing.
+
 - `author-javascript-setup`
   - `observed` or `not-required`
   - script count and random-script count

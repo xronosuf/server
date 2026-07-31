@@ -1515,8 +1515,158 @@ var mathAnswerRuntime = {
     connectionAttempts: 0,
     connectedAnswerIds: {},
     missingAnswerModels: 0,
+    attachmentFailures: 0,
     zeroAnswerBatches: 0
 };
+
+/*
+ * Track logical answers discovered during the initial MathJax Process pass.
+ *
+ * Successful attachment is retained permanently. Current DOM presence is not
+ * used because MathJax may replace answer elements and completed answers may
+ * be rendered as blue submitted-answer TeX without an input form.
+ */
+var initialMathAnswerRuntime = {
+    processComplete: false,
+    generation: null,
+    processDurationMilliseconds: null,
+    answers: {}
+};
+
+function initialMathAnswerEntry(answerId) {
+    if (!initialMathAnswerRuntime.answers[answerId]) {
+        initialMathAnswerRuntime.answers[answerId] = {
+            answerId: answerId,
+            discoveredDuringInitialProcess: true,
+            connectionAttempts: 0,
+            modelResolved: false,
+            attachedAtLeastOnce: false,
+            latestFailure: null
+        };
+    }
+
+    return initialMathAnswerRuntime.answers[answerId];
+}
+
+function initialMathAnswerDetails() {
+    var answerIds =
+        Object.keys(initialMathAnswerRuntime.answers);
+    var attachedAnswers = 0;
+    var modelResolvedAnswers = 0;
+    var unresolvedAnswerIds = [];
+    var totalConnectionAttempts = 0;
+
+    answerIds.forEach(function(answerId) {
+        var entry =
+            initialMathAnswerRuntime.answers[answerId];
+
+        totalConnectionAttempts +=
+            entry.connectionAttempts;
+
+        if (entry.modelResolved)
+            modelResolvedAnswers += 1;
+
+        if (entry.attachedAtLeastOnce) {
+            attachedAnswers += 1;
+        } else {
+            unresolvedAnswerIds.push(answerId);
+        }
+    });
+
+    return {
+        generation:
+            initialMathAnswerRuntime.generation,
+        expectedAnswers:
+            answerIds.length,
+        modelResolvedAnswers:
+            modelResolvedAnswers,
+        attachedAnswers:
+            attachedAnswers,
+        unresolvedAnswers:
+            unresolvedAnswerIds.length,
+        unresolvedAnswerIds:
+            unresolvedAnswerIds,
+        connectionAttempts:
+            totalConnectionAttempts,
+        processDurationMilliseconds:
+            initialMathAnswerRuntime
+                .processDurationMilliseconds,
+        processComplete:
+            initialMathAnswerRuntime.processComplete
+    };
+}
+
+function reportInitialMathAnswerReadiness() {
+    var details;
+    var state;
+
+    if (!initialMathAnswerRuntime.processComplete)
+        return;
+
+    details = initialMathAnswerDetails();
+
+    if (details.expectedAnswers === 0) {
+        state = "not-required";
+    } else if (
+        details.attachedAnswers ===
+            details.expectedAnswers
+    ) {
+        state = "settled";
+    } else {
+        state = "degraded";
+    }
+
+    pageRuntime.component(
+        "initial-math-answers",
+        state,
+        details
+    );
+}
+
+function recordInitialMathAnswerAttempt(
+    answerId,
+    modelResolved,
+    attached,
+    failure
+) {
+    var entry =
+        initialMathAnswerRuntime.answers[answerId];
+    var changed = false;
+
+    if (!entry)
+        return;
+
+    /*
+     * Once an initial logical answer has attached successfully, preserve that
+     * terminal success without counting ordinary MathJax recreation or
+     * rebinding as another initial-readiness attempt.
+     */
+    if (entry.attachedAtLeastOnce)
+        return;
+
+    entry.connectionAttempts += 1;
+    changed = true;
+
+    if (modelResolved && !entry.modelResolved) {
+        entry.modelResolved = true;
+        changed = true;
+    }
+
+    if (attached) {
+        entry.attachedAtLeastOnce = true;
+        entry.latestFailure = null;
+        changed = true;
+    } else if (
+        failure &&
+        entry.latestFailure !== failure
+    ) {
+        entry.latestFailure = failure;
+        changed = true;
+    }
+
+    if (changed)
+        reportInitialMathAnswerReadiness();
+}
 
 var mathJaxPassRuntime = {
     nextGeneration: 1,
@@ -1663,45 +1813,15 @@ function endMathJaxPass(passType, message) {
     }
 
     if (pass.passType === "process") {
-        var expectedAnswers =
-            pass.discoveredAnswerInstances;
-        var connectedAnswers =
-            pass.uniqueAnswersAdded;
-        var answerSettlementState;
+        initialMathAnswerRuntime.processComplete =
+            true;
+        initialMathAnswerRuntime.generation =
+            pass.generation;
+        initialMathAnswerRuntime
+            .processDurationMilliseconds =
+            pass.durationMilliseconds;
 
-        if (expectedAnswers === 0) {
-            answerSettlementState =
-                "not-required";
-        } else if (
-            connectedAnswers === expectedAnswers &&
-            pass.missingAnswerModels === 0
-        ) {
-            answerSettlementState =
-                "settled";
-        } else {
-            answerSettlementState =
-                "degraded";
-        }
-
-        pageRuntime.component(
-            "initial-math-answers",
-            answerSettlementState,
-            {
-                generation:
-                    pass.generation,
-                expectedAnswers:
-                    expectedAnswers,
-                connectedAnswers:
-                    connectedAnswers,
-                missingAnswerModels:
-                    pass.missingAnswerModels,
-                connectionAttempts:
-                    pass.answerConnectionAttempts,
-                processDurationMilliseconds:
-                    pass.durationMilliseconds
-            }
-        );
-
+        reportInitialMathAnswerReadiness();
         completeInitialInlineSageDiscovery();
     }
 
@@ -1857,7 +1977,10 @@ MathJax.Hub.signal.Interest(function(message) {
     if (message[0] == "New Math") {
 	var id = message[1];
         var batchConnected = 0;
+        var batchFailed = 0;
         var batchDiscovered;
+        var initialProcessActive =
+            !!mathJaxPassRuntime.active.process;
 
         mathAnswerRuntime.newMathMessages += 1;
 
@@ -1912,9 +2035,34 @@ MathJax.Hub.signal.Interest(function(message) {
 	    result.attr('id', answerIdBindings[id][internalCount] );
 	    internalCount = internalCount + 1;
 
+            var stableAnswerId =
+                result.attr("id");
 	    var answerDom = result.closest('.semantics').prev('.mpadded').find('.mphantom').first();
-	    var answerId = parseInt(answerDom.attr('id').replace('MathJax-Span-',''));
-	    var answer = searchJax(jax[0].root, answerId);
+            var answerDomId =
+                answerDom.attr('id');
+            var answerId =
+                answerDomId
+                    ? parseInt(
+                        answerDomId.replace(
+                            'MathJax-Span-',
+                            ''
+                        )
+                    )
+                    : null;
+            var answer =
+                jax.length > 0 &&
+                jax[0] &&
+                jax[0].root &&
+                answerId !== null &&
+                !isNaN(answerId)
+                    ? searchJax(
+                        jax[0].root,
+                        answerId
+                    )
+                    : null;
+
+            if (initialProcessActive)
+                initialMathAnswerEntry(stableAnswerId);
 
             mathAnswerRuntime.connectionAttempts += 1;
 
@@ -1922,14 +2070,80 @@ MathJax.Hub.signal.Interest(function(message) {
                 answer === undefined) {
                 mathAnswerRuntime.missingAnswerModels +=
                     1;
+                batchFailed += 1;
+
+                recordInitialMathAnswerAttempt(
+                    stableAnswerId,
+                    false,
+                    false,
+                    "missing-answer-model"
+                );
+
+                pageRuntime.operation(
+                    "math-answer-connection",
+                    "model-missing",
+                    {
+                        answerId: stableAnswerId,
+                        mathJaxInputId: id,
+                        answerSpanId: answerId
+                    }
+                );
+
+                return;
             }
 
-	    mathAnswer.connectMathAnswer( result, answer );
+            try {
+	        mathAnswer.connectMathAnswer(
+                    result,
+                    answer
+                );
+            } catch (attachmentError) {
+                mathAnswerRuntime.attachmentFailures +=
+                    1;
+                batchFailed += 1;
+
+                recordInitialMathAnswerAttempt(
+                    stableAnswerId,
+                    true,
+                    false,
+                    "attachment-exception"
+                );
+
+                pageRuntime.operation(
+                    "math-answer-connection",
+                    "attachment-failed",
+                    {
+                        answerId: stableAnswerId,
+                        mathJaxInputId: id,
+                        errorName:
+                            attachmentError &&
+                            attachmentError.name
+                                ? attachmentError.name
+                                : null,
+                        errorMessage:
+                            attachmentError &&
+                            attachmentError.message
+                                ? attachmentError.message
+                                : String(
+                                    attachmentError
+                                )
+                    }
+                );
+
+                return;
+            }
 
             batchConnected += 1;
             mathAnswerRuntime.connectedAnswerIds[
-                result.attr("id")
+                stableAnswerId
             ] = true;
+
+            recordInitialMathAnswerAttempt(
+                stableAnswerId,
+                true,
+                true,
+                null
+            );
 	});
 
         pageRuntime.operation(
@@ -1939,6 +2153,7 @@ MathJax.Hub.signal.Interest(function(message) {
                 batch: mathAnswerRuntime.newMathMessages,
                 discovered: batchDiscovered,
                 connected: batchConnected,
+                failed: batchFailed,
                 totalConnectionAttempts:
                     mathAnswerRuntime.connectionAttempts,
                 uniqueConnected:
@@ -1949,6 +2164,9 @@ MathJax.Hub.signal.Interest(function(message) {
                 missingAnswerModels:
                     mathAnswerRuntime
                         .missingAnswerModels,
+                attachmentFailures:
+                    mathAnswerRuntime
+                        .attachmentFailures,
                 zeroAnswerBatches:
                     mathAnswerRuntime
                         .zeroAnswerBatches
@@ -1964,6 +2182,8 @@ MathJax.Hub.signal.Interest(function(message) {
                         batchDiscovered,
                     latestBatchConnected:
                         batchConnected,
+                    latestBatchFailed:
+                        batchFailed,
                     uniqueConnected:
                         Object.keys(
                             mathAnswerRuntime
@@ -1975,6 +2195,9 @@ MathJax.Hub.signal.Interest(function(message) {
                     missingAnswerModels:
                         mathAnswerRuntime
                             .missingAnswerModels,
+                    attachmentFailures:
+                        mathAnswerRuntime
+                            .attachmentFailures,
                     zeroAnswerBatches:
                         mathAnswerRuntime
                             .zeroAnswerBatches

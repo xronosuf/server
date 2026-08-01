@@ -161,13 +161,58 @@ exports.update = _.debounce( function() {
 	}
     });
 
-    var pointsPossible = $("main").attr( 'data-points' );
-    var xourseUrl = $("main").attr( 'data-xourse-url' );
+    var pointsPossible = parseFloat(
+        $("main").attr("data-points")
+    );
+    var xourseUrl = $("main").attr("data-xourse-url");
+
+    /*
+     * Older generated xourses provide the aggregate point total through
+     * main[data-points]. Newer generated xourses may omit that aggregate
+     * while retaining each activity card's data-weight. In that case, derive
+     * the same xourse-level denominator by summing the valid card weights.
+     */
+    if (isNaN(pointsPossible) || pointsPossible <= 0) {
+        pointsPossible = 0;
+
+        $(".activity-card").each(function() {
+            var weight = parseFloat(
+                $(this).attr("data-weight")
+            );
+
+            if (!isNaN(weight) && weight > 0) {
+                pointsPossible += weight;
+            }
+        });
+    }
 
     var payload = {
-	pointsEarned: pointsEarned,
-	pointsPossible: pointsPossible	
+        pointsEarned: pointsEarned,
+        pointsPossible: pointsPossible
     };
+
+    /*
+     * A successful HTTP response only means the route handled the request.
+     * Do not submit an unusable score payload that the server cannot convert
+     * into a normalized grade.
+     */
+    if (
+        !isFinite(pointsEarned) ||
+        !isFinite(pointsPossible) ||
+        pointsPossible <= 0
+    ) {
+        debugLog.log(
+            "Did not send gradebook update because the xourse point total is invalid.",
+            payload
+        );
+
+        $(".progress.completion-meter").attr(
+            "title",
+            "Could not determine the xourse point total."
+        );
+
+        return;
+    }
 
     $(".progress.completion-meter").attr('title', 'Submitting grade...' );
     debugLog.log('Sent gradebook update to Xronos server; Canvas passback may be queued.', payload);

@@ -14,7 +14,7 @@ function flush() {
 }
 
 describe(
-    "page runtime coordinator passive adapter",
+    "page runtime coordinator adapter",
     function() {
         it("starts with all passive leaves waiting", function() {
             var coordinator =
@@ -313,6 +313,144 @@ describe(
                     }
                 ).matches,
                 false
+            );
+        });
+
+        it("runs the configured activity bootstrap exactly once", async function() {
+            var coordinator =
+                adapter.create();
+            var calls = 0;
+
+            coordinator
+                .setActivityBootstrapRunner(
+                    function() {
+                        calls += 1;
+
+                        return {
+                            state:
+                                "succeeded",
+                            value: {
+                                owner:
+                                    "coordinator"
+                            }
+                        };
+                    }
+                );
+
+            assert.strictEqual(
+                coordinator
+                    .requestActivityBootstrap(
+                        {
+                            activityCount:
+                                1
+                        }
+                    ),
+                true
+            );
+
+            await flush();
+
+            assert.strictEqual(
+                calls,
+                1
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "activity-bootstrap-trigger"
+                    ].state,
+                "succeeded"
+            );
+
+            assert.strictEqual(
+                coordinator
+                    .requestActivityBootstrap(
+                        {
+                            activityCount:
+                                1
+                        }
+                    ),
+                true
+            );
+
+            await flush();
+
+            assert.strictEqual(
+                calls,
+                1
+            );
+        });
+
+        it("keeps activity completion separate from bootstrap invocation", async function() {
+            var coordinator =
+                adapter.create();
+
+            coordinator
+                .setActivityBootstrapRunner(
+                    function() {
+                        return {
+                            state:
+                                "succeeded"
+                        };
+                    }
+                );
+
+            coordinator
+                .requestActivityBootstrap(
+                    {
+                        activityCount:
+                            1
+                    }
+                );
+
+            await flush();
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "activity-bootstrap-trigger"
+                    ].state,
+                "succeeded"
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks.activity.state,
+                "waiting"
+            );
+
+            assert.strictEqual(
+                adapter.readinessSnapshot(
+                    coordinator
+                ).interactionReady,
+                "waiting"
+            );
+        });
+
+        it("fails the active trigger when no runner is configured", async function() {
+            var coordinator =
+                adapter.create();
+
+            assert.strictEqual(
+                coordinator
+                    .requestActivityBootstrap(
+                        {
+                            activityCount:
+                                1
+                        }
+                    ),
+                true
+            );
+
+            await flush();
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "activity-bootstrap-trigger"
+                    ].state,
+                "failed"
             );
         });
     }

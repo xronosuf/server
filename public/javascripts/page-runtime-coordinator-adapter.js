@@ -13,6 +13,11 @@ var LEAF_TASKS = [
     "initial-math-answers"
 ];
 
+var CONTROL_TASKS = [
+    "document-ready",
+    "activity-bootstrap-trigger"
+];
+
 var DIMENSION_TASKS = [
     "state-synchronized",
     "content-ready",
@@ -83,12 +88,42 @@ function registerExternalLeaf(
 function createPassiveCoordinator(options) {
     var coordinator =
         coordinatorCore.create(options);
+    var activityBootstrapRunner = null;
 
     LEAF_TASKS.forEach(function(taskId) {
         registerExternalLeaf(
             coordinator,
             taskId
         );
+    });
+
+    coordinator.register({
+        id: "document-ready",
+        external: true
+    });
+
+    coordinator.register({
+        id: "activity-bootstrap-trigger",
+        dependsOn: [
+            "document-ready"
+        ],
+        accepts: {
+            "document-ready": [
+                "succeeded"
+            ]
+        },
+        run: function() {
+            if (
+                typeof activityBootstrapRunner !==
+                    "function"
+            ) {
+                throw new Error(
+                    "Activity bootstrap runner is not configured."
+                );
+            }
+
+            return activityBootstrapRunner();
+        }
     });
 
     coordinator.register({
@@ -231,8 +266,62 @@ function createPassiveCoordinator(options) {
         }
     });
 
+    coordinator.setActivityBootstrapRunner =
+        function(runner) {
+            if (typeof runner !== "function") {
+                throw new Error(
+                    "Activity bootstrap runner must be a function."
+                );
+            }
+
+            activityBootstrapRunner = runner;
+
+            coordinator.record(
+                "activity-bootstrap-runner-configured",
+                "activity-bootstrap-trigger"
+            );
+
+            return true;
+        };
+
+    coordinator.requestActivityBootstrap =
+        function(details) {
+            var report =
+                coordinator.inspect();
+            var trigger =
+                report.tasks[
+                    "activity-bootstrap-trigger"
+                ];
+
+            if (
+                trigger &&
+                (
+                    trigger.state === "running" ||
+                    trigger.state === "succeeded" ||
+                    trigger.state === "not-required"
+                )
+            ) {
+                coordinator.record(
+                    "duplicate-activity-bootstrap-request-ignored",
+                    "activity-bootstrap-trigger",
+                    {
+                        state: trigger.state
+                    }
+                );
+
+                return true;
+            }
+
+            return coordinator.signal(
+                "document-ready",
+                "succeeded",
+                details
+            );
+        };
+
     coordinator.start({
-        mode: "passive-observation"
+        mode:
+            "active-activity-bootstrap-trigger"
     });
 
     return coordinator;
@@ -565,6 +654,8 @@ module.exports = {
         mappedSignal,
     leafTasks:
         LEAF_TASKS.slice(),
+    controlTasks:
+        CONTROL_TASKS.slice(),
     dimensionTasks:
         DIMENSION_TASKS.slice()
 };

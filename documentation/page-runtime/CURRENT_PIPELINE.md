@@ -319,10 +319,51 @@ guest identity.
 Authorized instructor masquerade must remain a distinct, explicitly verified
 workflow.
 
+## Passive coordinator browser agreement
+
+At commit `ee5bb03`, the passive coordinator was deployed on the development
+server and compared against legacy readiness on all eleven page-runtime browser
+fixtures.
+
+Every settled fixture reported:
+
+- `comparison.matches === true`;
+- legacy page readiness `ready`;
+- coordinator page readiness `ready`;
+- no final mismatches;
+- exactly one terminal signal for each applicable external readiness leaf.
+
+The fixtures covered Sage required/not-required and initial math answers
+succeeded/not-required combinations.
+
+## Active activity-trigger browser validation
+
+The first active ownership transfer was deployed and exercised across all
+eleven page-runtime browser fixtures.
+
+Every settled fixture reported:
+
+- the activity-bootstrap trigger succeeded on its first attempt;
+- the trigger result identified the coordinator as owner;
+- the existing activity completion leaf subsequently succeeded;
+- no guarded legacy fallback occurred;
+- no duplicate activity invocation occurred;
+- final coordinator and legacy readiness matched.
+
+Temporary readiness mismatches were observed while external leaf signals and
+derived coordinator tasks were being scheduled. These diagnostics converged
+without fallback or recovery and were not terminal mismatches.
+
 ## Activity bootstrap
 
 In this codebase, `.activity()` is effectively the activity-page runtime
 bootstrapper rather than a small widget initializer.
+
+The first active ownership transfer controls only the one-shot document-ready
+invocation of this existing initializer. A guard prevents duplicate invocation,
+and a direct legacy fallback remains available if coordinator ownership cannot
+be configured or requested. The internal `fetchData()` wait and callback body
+remain unchanged during this phase.
 
 After initial state arrives, it initializes features including:
 

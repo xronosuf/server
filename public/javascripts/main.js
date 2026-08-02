@@ -84,6 +84,126 @@ var MathJax = require('./mathjax');
 
 var activity = require('./activity');
 var mathAnswer = require('./math-answer');
+
+var activityBootstrapInvocation = {
+    started: false,
+    owner: null,
+    completed: false
+};
+
+function invokeActivityBootstrap(owner) {
+    var activityCount =
+        $(".activity").length;
+
+    if (activityBootstrapInvocation.started) {
+        pageRuntime.event(
+            "activity-bootstrap-duplicate-invocation-ignored",
+            {
+                requestedOwner: owner,
+                activeOwner:
+                    activityBootstrapInvocation.owner,
+                completed:
+                    activityBootstrapInvocation.completed,
+                activityCount:
+                    activityCount
+            }
+        );
+
+        return {
+            state: "not-required",
+            value: {
+                reason:
+                    "already-started",
+                owner:
+                    activityBootstrapInvocation.owner,
+                activityCount:
+                    activityCount
+            }
+        };
+    }
+
+    activityBootstrapInvocation.started = true;
+    activityBootstrapInvocation.owner =
+        owner;
+
+    pageRuntime.operation(
+        "activity-bootstrap",
+        "invoked",
+        {
+            owner: owner,
+            activityCount:
+                activityCount
+        }
+    );
+
+    try {
+        $(".activity").activity();
+
+        activityBootstrapInvocation.completed =
+            true;
+
+        pageRuntime.operation(
+            "activity-bootstrap",
+            "completed",
+            {
+                owner: owner,
+                activityCount:
+                    activityCount
+            }
+        );
+
+        return {
+            state:
+                activityCount > 0
+                    ? "succeeded"
+                    : "not-required",
+            value: {
+                owner: owner,
+                activityCount:
+                    activityCount
+            }
+        };
+    } catch (err) {
+        pageRuntime.operation(
+            "activity-bootstrap",
+            "failed",
+            {
+                owner: owner,
+                activityCount:
+                    activityCount,
+                message:
+                    err && err.message
+                        ? err.message
+                        : String(err)
+            }
+        );
+
+        pageRuntime.component(
+            "activity",
+            "failed",
+            {
+                owner: owner,
+                activityCount:
+                    activityCount,
+                message:
+                    err && err.message
+                        ? err.message
+                        : String(err)
+            }
+        );
+
+        throw err;
+    }
+}
+
+var activityBootstrapOwnerConfigured =
+    pageRuntime.configureActivityBootstrap(
+        function() {
+            return invokeActivityBootstrap(
+                "coordinator"
+            );
+        }
+    );
 var ProgressBar = require('./progress-bar');
 
 var userProfile = require('./profile');
@@ -405,7 +525,7 @@ MathJax.Hub.Register.StartupHook("End", function () {
         "hidden-out-of-view"
     );
 
-	$("#loadingSpinner").hide() 
+	$("#loadingSpinner").hide()
 	//$("#theActivity").removeClass('hidden') // Currently, the hidden class is not set
 
 	references.highlightTarget(); // Scroll to target
@@ -421,26 +541,26 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
     MathJax.InputJax.TeX.prefilterHooks.Add(function (data) {
 	data.math = data.math.replace(/<!\[CDATA\[\s*((.|\n)*)\s*\]\]>/m,"$1");
     });
-    
+
     // Replace "answer" commands with DOM elements
     var VERSION = "1.0";
-    
+
     var TEX = MathJax.InputJax.TeX,
 	TEXDEF = TEX.Definitions,
 	MML = MathJax.ElementJax.mml,
 	HTML = MathJax.HTML;
-    
+
     TEXDEF.macros.answer = "answer";
     TEXDEF.macros.graph = "graph";
     TEXDEF.macros.newlabel = "newlabel";
     TEXDEF.macros.sage = "sage";
     TEXDEF.macros.sagestr = "sagestr";
     TEXDEF.macros.delimiter = "delimiter";
-    
+
     TEXDEF.macros.js = "js";
 
-    var calculatorCount = 0;		    
-    
+    var calculatorCount = 0;
+
     /* Sometimes htlatex generates \relax's which should be ignored */
     MathJax.InputJax.TeX.Definitions.Add({
 	macros: {
@@ -464,14 +584,14 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
 		var mml = TEX.Parse("\\rangle",this.stack.env).mml();
 		this.Push(mml);
 		return;
-	    }	    
+	    }
 	},
-	
+
 	// https://stackoverflow.com/questions/38726590/replace-variable-in-mathjax-equation
 	sage: function(name) {
 	    return this.sagestr(name, true);
 	},
-	
+
     sagestr: function(name, latexify) {
         var rawSageCode =
             this.GetArgument(name);
@@ -1320,7 +1440,7 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
 	graph: function(name) {
 	    // Load Desmos asynchronously
 	    Desmos.loadAsynchronously();
-	    
+
 	    var optionalArguments = this.GetBrackets(name);
 	    var equations = this.GetArgument(name);
 
@@ -1390,11 +1510,11 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
 		    if( keys.hideYAxisNumbers ) {
 			calculator.setGraphSettings({yAxisNumbers:false});
 		    }
-		    
+
                     // Bart requests that projectorMode be default
-	            calculator.setGraphSettings({projectorMode:true});	
+	            calculator.setGraphSettings({projectorMode:true});
 		    if( keys.projectorMode ) {
-			calculator.setGraphSettings({projectorMode:true});	
+			calculator.setGraphSettings({projectorMode:true});
 		    }
 		    if( keys.thinMode ) {
 			calculator.setGraphSettings({projectorMode:false});
@@ -1419,14 +1539,14 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
 				     {className:"mathjax-javascript",
 				      style: {display: "none"}
 				     });
-	    
+
 	    watcher.setAttribute("data-code", code);
 	    watcher.setAttribute("data-value", value);
-	    	    
+
 	    var watcherMml = MML["annotation-xml"](MML.xml(watcher)).With({encoding:"application/xhtml+xml",isToken:true});
 	    this.Push(MML.semantics(watcherMml));
 	},
-	
+
 	/* Implements \answer[key=value]{text} */
 	answer: function(name) {
 	    var keys = this.GetBrackets(name);
@@ -1436,27 +1556,27 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
 				      style: {marginBottom: "10px", marginTop: "10px", display: "inline-flex" },
 				     });
 	    input.setAttribute("xmlns","http://www.w3.org/1999/xhtml");
-	    
+
 	    // Parse key=value pairs from optional [bracket] into data- attributes
 	    var options = {};
 	    if (keys !== undefined) {
-		keys.split(",").forEach( function(keyvalue) { 
+		keys.split(",").forEach( function(keyvalue) {
 		    var key = keyvalue.split("=")[0];
 		    var value = keyvalue.split("=").slice(1).join('=');
 		    if (value === undefined)
 			value = true;
 
 		    input.setAttribute("data-" + key,value);
-		    
+
 		    options[key] = value;
 		});
 		}
 		var showAnswer = options['onlinenoinput'] === '' || options['onlineshowanswerbutton'] === ''
 		var showInput = options['onlinenoinput'] !== ''
-	    	    
+
 	    var format = options['format'];
 	    var answer;
-	    
+
 	    if (format == 'string') {
 		answer = this.GetArgument(name);
 		answer = MML.mtext(answer);
@@ -1477,7 +1597,7 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
 		// Attempt to change size if we have a short answer
 	    try {
 		answer.parent = {inferRow: false};
-		var correctAnswerMml = answer.toMathML("");	
+		var correctAnswerMml = answer.toMathML("");
 		var correctAnswer = Expression.fromMml(correctAnswerMml).toString().toString();
 		if (correctAnswer.length <= 3) {
 		    input.classList.add('narrow'); // to eliminate some padding
@@ -1485,7 +1605,7 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
 		}
 	    } catch (err) {
 	    }
-	    
+
 	    this.Push(MML.mpadded(MML.mphantom(answer)).With({height: 0, width: 0}));
 		mathAnswer.createMathAnswer(input, showInput, showAnswer);
 
@@ -1504,7 +1624,7 @@ function searchJax(jax, spanID){
     // Sometimes the jax is null?  I don't really know why.
     if (jax === null)
 	return null;
-    
+
      if(jax.spanID == spanID){
           return jax;
      } else if (jax.data != null){
@@ -2033,10 +2153,10 @@ MathJax.Hub.signal.Interest(function(message) {
         );
 
 	var internalCount = 0;
-	
+
 	answers.each( function() {
 	    var result = $(this);
-	    
+
 	    if (answerIdBindings[id][internalCount] === undefined) {
 		// Number the answer boxes in order
 		var problem = result.parents( ".problem-environment" ).first();
@@ -2044,14 +2164,14 @@ MathJax.Hub.signal.Interest(function(message) {
 		if (typeof count === typeof undefined || count === false) {
 		    count = 0;
 		}
-    
+
 		problem.attr( "data-answer-count", parseInt(count) + 1 );
 		var problemIdentifier = problem.attr( "id" );
 
 		// Store the answer index as an id
 		answerIdBindings[id][internalCount] = "answer" + count + problemIdentifier;
 	    }
-	    
+
 	    result.attr('id', answerIdBindings[id][internalCount] );
 	    internalCount = internalCount + 1;
 
@@ -2241,7 +2361,7 @@ $(document).ready(function() {
     // Make anchors with references from \ref actually work
 	$('a.ximera-label').texLabel();
 	$('a.reference').reference();
-	
+
 	// This could go in "init" above, but it needs to be after the end process hook
     /*
      * Capture the complete author-delivered activity source before MathJax
@@ -2250,7 +2370,7 @@ $(document).ready(function() {
     sagemath.captureInitialSagePageManifestSnapshot();
 
 	MathJax.Hub.Startup.onload();
-    
+
     // BADBAD: This seems like the wrong thing---why is default here?
     syntaxHighlighter.default.highlight();
 
@@ -2293,12 +2413,12 @@ $(document).ready(function() {
 	// distance = 0;
 	// startTime = e.originalEvent.timeStamp
     // });
-    
+
     // $('.activity-card').on( "touchmove", function(e){
 	// var newPosition = e.originalEvent.touches[0].screenX;
 	// distance = distance + Math.abs( newPosition - position );
 	// position = newPosition;
-    // });    
+    // });
 
     // $('.activity-card').on( "touchend", function(e){
 	// var duration = e.originalEvent.timeStamp - startTime;
@@ -2313,15 +2433,34 @@ $(document).ready(function() {
 
     $('[data-toggle="tooltip"]').tooltip();
 
-    pageRuntime.operation(
-        "activity-bootstrap",
-        "invoked",
-        {
-            activityCount: $(".activity").length
-        }
-    );
+    var activityBootstrapRequested =
+        activityBootstrapOwnerConfigured &&
+        pageRuntime.requestActivityBootstrap(
+            {
+                activityCount:
+                    $(".activity").length,
+                documentReady:
+                    true
+            }
+        );
 
-    $(".activity").activity();
+    if (!activityBootstrapRequested) {
+        pageRuntime.event(
+            "activity-bootstrap-legacy-fallback",
+            {
+                reason:
+                    activityBootstrapOwnerConfigured
+                        ? "coordinator-request-rejected"
+                        : "coordinator-owner-not-configured",
+                activityCount:
+                    $(".activity").length
+            }
+        );
+
+        invokeActivityBootstrap(
+            "legacy-fallback"
+        );
+    }
 
     pageRuntime.event("document-ready-completed");
 });

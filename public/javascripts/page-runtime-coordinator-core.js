@@ -105,6 +105,17 @@ Coordinator.prototype.register = function(specification) {
     }
 
     if (
+        specification.external === true &&
+        specification.run !== undefined
+    ) {
+        throw new Error(
+            "External coordinator task " +
+            specification.id +
+            " may not define run."
+        );
+    }
+
+    if (
         specification.recoveryPolicy !== undefined &&
         specification.recoveryPolicy !== "reject-late" &&
         specification.recoveryPolicy !== "allow-late-success"
@@ -130,6 +141,8 @@ Coordinator.prototype.register = function(specification) {
         recoveryPolicy:
             specification.recoveryPolicy ||
             "reject-late",
+        external:
+            specification.external === true,
         run: specification.run || null,
         state: "registered",
         result: undefined,
@@ -137,7 +150,9 @@ Coordinator.prototype.register = function(specification) {
         blockedBy: [],
         timer: null,
         attempt: 0,
-        operationId: null
+        operationId: null,
+        signalCount: 0,
+        pendingSignal: null
     };
 
     this.tasks[task.id] = task;
@@ -149,7 +164,9 @@ Coordinator.prototype.register = function(specification) {
             dependsOn: task.dependsOn,
             timeoutMs: task.timeoutMs,
             recoveryPolicy:
-                task.recoveryPolicy
+                task.recoveryPolicy,
+            external:
+                task.external
         }
     );
 
@@ -581,6 +598,295 @@ Coordinator.prototype.reconsiderBlockedTasks = function() {
     return this;
 };
 
+Coordinator.prototype.armExternalTask = function(task) {
+    var self = this;
+    var operationId;
+
+    if (
+        task.state === "waiting" &&
+        task.operationId !== null
+    ) {
+        return;
+    }
+
+    task.attempt += 1;
+    operationId = this.nextOperationId;
+    this.nextOperationId += 1;
+    task.operationId = operationId;
+
+    this.transition(
+        task,
+        "waiting"
+    );
+
+    this.record(
+        "task-awaiting-signal",
+        task.id,
+        {
+            operationId:
+                operationId
+        }
+    );
+
+    if (task.pendingSignal !== null) {
+        var bufferedSignal =
+            task.pendingSignal;
+
+        task.pendingSignal = null;
+
+        this.transition(
+            task,
+            bufferedSignal.state,
+            {
+                result:
+                    bufferedSignal.value
+            }
+        );
+
+        this.record(
+            "task-buffered-signal-applied",
+            task.id,
+            {
+                operationId:
+                    operationId,
+                state:
+                    bufferedSignal.state
+            }
+        );
+
+        return;
+    }
+
+    if (
+        task.timeoutMs !== null &&
+        task.timeoutMs >= 0
+    ) {
+        task.timer = setTimeout(
+            function() {
+                if (
+                    task.operationId !==
+                        operationId ||
+                    task.state !== "waiting"
+                ) {
+                    return;
+                }
+
+                task.timer = null;
+
+                self.transition(
+                    task,
+                    "timed-out",
+                    {
+                        error:
+                            "Task exceeded " +
+                            task.timeoutMs +
+                            " ms."
+                    }
+                );
+
+                self.schedule();
+            },
+            task.timeoutMs
+        );
+    }
+};
+
+Coordinator.prototype.signal = function(
+    taskId,
+    state,
+    value
+) {
+    var task = this.tasks[taskId];
+    var recoverableStates = [
+        "succeeded",
+        "not-required",
+        "degraded"
+    ];
+
+    if (!task) {
+        throw new Error(
+            "Unknown coordinator task: " +
+            taskId
+        );
+    }
+
+    if (!task.external) {
+        throw new Error(
+            "Coordinator task is not externally signaled: " +
+            taskId
+        );
+    }
+
+    if (
+        TERMINAL_STATES.indexOf(state) < 0
+    ) {
+        throw new Error(
+            "Unsupported external task state " +
+            state +
+            " for " +
+            taskId
+        );
+    }
+
+    task.signalCount += 1;
+
+    if (
+        task.operationId === null &&
+        (
+            task.state === "registered" ||
+            task.state === "waiting"
+        )
+    ) {
+        if (task.pendingSignal === null) {
+            task.pendingSignal = {
+                state: state,
+                value: copy(value)
+            };
+
+            this.record(
+                "task-signal-buffered",
+                task.id,
+                {
+                    state: state,
+                    reason:
+                        "prerequisites-not-yet-satisfied"
+                }
+            );
+
+            return true;
+        }
+
+        if (
+            task.pendingSignal.state === state
+        ) {
+            this.record(
+                "duplicate-task-signal-ignored",
+                task.id,
+                {
+                    state: state,
+                    buffered: true
+                }
+            );
+
+            return false;
+        }
+
+        this.record(
+            "conflicting-task-signal-ignored",
+            task.id,
+            {
+                bufferedState:
+                    task.pendingSignal.state,
+                attemptedState:
+                    state,
+                reason:
+                    "buffered-signal-already-present"
+            }
+        );
+
+        return false;
+    }
+
+    if (task.state === state) {
+        this.record(
+            "duplicate-task-signal-ignored",
+            task.id,
+            {
+                state: state,
+                operationId:
+                    task.operationId
+            }
+        );
+
+        return false;
+    }
+
+    if (task.state === "timed-out") {
+        if (
+            task.recoveryPolicy !==
+                "allow-late-success" ||
+            recoverableStates.indexOf(state) < 0
+        ) {
+            this.record(
+                "stale-task-completion",
+                task.id,
+                {
+                    attemptedState:
+                        state,
+                    operationId:
+                        task.operationId,
+                    reason:
+                        "late-external-signal-rejected"
+                }
+            );
+
+            return false;
+        }
+
+        this.transition(
+            task,
+            state,
+            {
+                result: value
+            }
+        );
+
+        this.record(
+            "task-recovered",
+            task.id,
+            {
+                operationId:
+                    task.operationId,
+                fromState:
+                    "timed-out",
+                toState:
+                    state,
+                source:
+                    "external-signal"
+            }
+        );
+
+        this.reconsiderBlockedTasks();
+        this.schedule();
+
+        return true;
+    }
+
+    if (task.state !== "waiting") {
+        this.record(
+            "stale-task-completion",
+            task.id,
+            {
+                attemptedState:
+                    state,
+                operationId:
+                    task.operationId,
+                reason:
+                    "external-task-not-waiting"
+            }
+        );
+
+        return false;
+    }
+
+    if (task.timer !== null) {
+        clearTimeout(task.timer);
+        task.timer = null;
+    }
+
+    this.transition(
+        task,
+        state,
+        {
+            result: value
+        }
+    );
+
+    this.schedule();
+
+    return true;
+};
+
 Coordinator.prototype.schedule = function() {
     var self = this;
     var changed = true;
@@ -636,6 +942,20 @@ Coordinator.prototype.schedule = function() {
                     return;
                 }
 
+                if (task.external) {
+                    if (
+                        task.state !== "waiting" ||
+                        task.operationId === null
+                    ) {
+                        self.armExternalTask(
+                            task
+                        );
+                        changed = true;
+                    }
+
+                    return;
+                }
+
                 self.startTask(task);
                 changed = true;
             }
@@ -686,6 +1006,8 @@ Coordinator.prototype.inspect = function() {
                 task.timeoutMs,
             recoveryPolicy:
                 task.recoveryPolicy,
+            external:
+                task.external,
             state:
                 task.state,
             result:
@@ -697,7 +1019,11 @@ Coordinator.prototype.inspect = function() {
             attempt:
                 task.attempt,
             operationId:
-                task.operationId
+                task.operationId,
+            signalCount:
+                task.signalCount,
+            pendingSignal:
+                copy(task.pendingSignal)
         };
     });
 

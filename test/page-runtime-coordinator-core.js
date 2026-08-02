@@ -790,4 +790,472 @@ describe("page runtime coordinator core", function() {
         );
     });
 
+    it("keeps an external task waiting until it is signaled", function() {
+        var coordinator =
+            coordinatorCore.create();
+
+        coordinator.register({
+            id: "external-state",
+            external: true
+        });
+
+        coordinator.start();
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks["external-state"]
+                .state,
+            "waiting"
+        );
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks["external-state"]
+                .attempt,
+            1
+        );
+
+        assert.strictEqual(
+            typeof coordinator.inspect()
+                .tasks["external-state"]
+                .operationId,
+            "number"
+        );
+    });
+
+    it("releases a dependent task after an external signal", async function() {
+        var coordinator =
+            coordinatorCore.create();
+        var childRuns = 0;
+
+        coordinator.register({
+            id: "external-ready",
+            external: true
+        });
+
+        coordinator.register({
+            id: "external-child",
+            dependsOn: [
+                "external-ready"
+            ],
+            run: function() {
+                childRuns += 1;
+            }
+        });
+
+        coordinator.start();
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks["external-child"]
+                .state,
+            "waiting"
+        );
+
+        assert.strictEqual(
+            coordinator.signal(
+                "external-ready",
+                "succeeded",
+                {
+                    source:
+                        "existing-runtime"
+                }
+            ),
+            true
+        );
+
+        await Promise.resolve();
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks["external-ready"]
+                .state,
+            "succeeded"
+        );
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks["external-child"]
+                .state,
+            "succeeded"
+        );
+
+        assert.strictEqual(
+            childRuns,
+            1
+        );
+    });
+
+    it("ignores a duplicate external signal", async function() {
+        var coordinator =
+            coordinatorCore.create();
+        var childRuns = 0;
+
+        coordinator.register({
+            id: "external-once",
+            external: true
+        });
+
+        coordinator.register({
+            id: "child-once",
+            dependsOn: [
+                "external-once"
+            ],
+            run: function() {
+                childRuns += 1;
+            }
+        });
+
+        coordinator.start();
+
+        coordinator.signal(
+            "external-once",
+            "succeeded"
+        );
+
+        coordinator.signal(
+            "external-once",
+            "succeeded"
+        );
+
+        await Promise.resolve();
+
+        assert.strictEqual(
+            childRuns,
+            1
+        );
+
+        assert.strictEqual(
+            coordinator.inspect().events.some(
+                function(event) {
+                    return (
+                        event.type ===
+                            "duplicate-task-signal-ignored" &&
+                        event.taskId ===
+                            "external-once"
+                    );
+                }
+            ),
+            true
+        );
+    });
+
+    it("allows an external task to recover after timeout", async function() {
+        var coordinator =
+            coordinatorCore.create();
+        var childRuns = 0;
+
+        coordinator.register({
+            id: "external-recovering",
+            external: true,
+            timeoutMs: 2,
+            recoveryPolicy:
+                "allow-late-success"
+        });
+
+        coordinator.register({
+            id: "external-recovery-child",
+            dependsOn: [
+                "external-recovering"
+            ],
+            run: function() {
+                childRuns += 1;
+            }
+        });
+
+        coordinator.start();
+        await delay(5);
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks["external-recovering"]
+                .state,
+            "timed-out"
+        );
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks["external-recovery-child"]
+                .state,
+            "blocked"
+        );
+
+        assert.strictEqual(
+            coordinator.signal(
+                "external-recovering",
+                "succeeded",
+                "late-runtime-signal"
+            ),
+            true
+        );
+
+        await Promise.resolve();
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks["external-recovering"]
+                .state,
+            "succeeded"
+        );
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks["external-recovery-child"]
+                .state,
+            "succeeded"
+        );
+
+        assert.strictEqual(
+            childRuns,
+            1
+        );
+    });
+
+    it("buffers an external signal until prerequisites are satisfied", async function() {
+        var coordinator =
+            coordinatorCore.create();
+        var resolvePrerequisite;
+        var childRuns = 0;
+
+        coordinator.register({
+            id: "buffer-prerequisite",
+            run: function() {
+                return new Promise(
+                    function(resolve) {
+                        resolvePrerequisite =
+                            resolve;
+                    }
+                );
+            }
+        });
+
+        coordinator.register({
+            id: "buffered-external",
+            external: true,
+            dependsOn: [
+                "buffer-prerequisite"
+            ]
+        });
+
+        coordinator.register({
+            id: "buffered-child",
+            dependsOn: [
+                "buffered-external"
+            ],
+            run: function() {
+                childRuns += 1;
+            }
+        });
+
+        coordinator.start();
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks["buffered-external"]
+                .state,
+            "waiting"
+        );
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks["buffered-external"]
+                .operationId,
+            null
+        );
+
+        assert.strictEqual(
+            coordinator.signal(
+                "buffered-external",
+                "succeeded",
+                {
+                    source:
+                        "early-runtime-event"
+                }
+            ),
+            true
+        );
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks["buffered-external"]
+                .state,
+            "waiting"
+        );
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks["buffered-external"]
+                .pendingSignal.state,
+            "succeeded"
+        );
+
+        assert.strictEqual(
+            childRuns,
+            0
+        );
+
+        resolvePrerequisite();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks["buffered-external"]
+                .state,
+            "succeeded"
+        );
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks["buffered-external"]
+                .pendingSignal,
+            null
+        );
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks["buffered-child"]
+                .state,
+            "succeeded"
+        );
+
+        assert.strictEqual(
+            childRuns,
+            1
+        );
+
+        assert.strictEqual(
+            coordinator.inspect().events.some(
+                function(event) {
+                    return (
+                        event.type ===
+                            "task-buffered-signal-applied" &&
+                        event.taskId ===
+                            "buffered-external"
+                    );
+                }
+            ),
+            true
+        );
+    });
+
+    it("ignores a duplicate buffered external signal", function() {
+        var coordinator =
+            coordinatorCore.create();
+
+        coordinator.register({
+            id: "unresolved-prerequisite",
+            external: true
+        });
+
+        coordinator.register({
+            id: "duplicate-buffered",
+            external: true,
+            dependsOn: [
+                "unresolved-prerequisite"
+            ]
+        });
+
+        coordinator.start();
+
+        assert.strictEqual(
+            coordinator.signal(
+                "duplicate-buffered",
+                "succeeded",
+                "first"
+            ),
+            true
+        );
+
+        assert.strictEqual(
+            coordinator.signal(
+                "duplicate-buffered",
+                "succeeded",
+                "second"
+            ),
+            false
+        );
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks["duplicate-buffered"]
+                .pendingSignal.value,
+            "first"
+        );
+
+        assert.strictEqual(
+            coordinator.inspect().events.some(
+                function(event) {
+                    return (
+                        event.type ===
+                            "duplicate-task-signal-ignored" &&
+                        event.taskId ===
+                            "duplicate-buffered" &&
+                        event.details &&
+                        event.details.buffered ===
+                            true
+                    );
+                }
+            ),
+            true
+        );
+    });
+
+    it("rejects a conflicting buffered external signal", function() {
+        var coordinator =
+            coordinatorCore.create();
+
+        coordinator.register({
+            id: "blocked-prerequisite",
+            external: true
+        });
+
+        coordinator.register({
+            id: "conflicting-buffered",
+            external: true,
+            dependsOn: [
+                "blocked-prerequisite"
+            ]
+        });
+
+        coordinator.start();
+
+        assert.strictEqual(
+            coordinator.signal(
+                "conflicting-buffered",
+                "succeeded"
+            ),
+            true
+        );
+
+        assert.strictEqual(
+            coordinator.signal(
+                "conflicting-buffered",
+                "failed"
+            ),
+            false
+        );
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks["conflicting-buffered"]
+                .pendingSignal.state,
+            "succeeded"
+        );
+
+        assert.strictEqual(
+            coordinator.inspect().events.some(
+                function(event) {
+                    return (
+                        event.type ===
+                            "conflicting-task-signal-ignored" &&
+                        event.taskId ===
+                            "conflicting-buffered"
+                    );
+                }
+            ),
+            true
+        );
+    });
+
 });

@@ -143,6 +143,9 @@ Coordinator.prototype.register = function(specification) {
             "reject-late",
         external:
             specification.external === true,
+        recomputeOnDependencyChange:
+            specification.recomputeOnDependencyChange ===
+                true,
         run: specification.run || null,
         state: "registered",
         result: undefined,
@@ -152,7 +155,8 @@ Coordinator.prototype.register = function(specification) {
         attempt: 0,
         operationId: null,
         signalCount: 0,
-        pendingSignal: null
+        pendingSignal: null,
+        dependencySignature: null
     };
 
     this.tasks[task.id] = task;
@@ -166,7 +170,9 @@ Coordinator.prototype.register = function(specification) {
             recoveryPolicy:
                 task.recoveryPolicy,
             external:
-                task.external
+                task.external,
+            recomputeOnDependencyChange:
+                task.recomputeOnDependencyChange
         }
     );
 
@@ -319,6 +325,106 @@ Coordinator.prototype.dependencyEvaluation = function(task) {
     };
 };
 
+Coordinator.prototype.dependencySignature = function(task) {
+    var self = this;
+
+    return JSON.stringify(
+        task.dependsOn.map(
+            function(taskId) {
+                return {
+                    id: taskId,
+                    state:
+                        self.tasks[taskId]
+                            ? self.tasks[taskId]
+                                .state
+                            : null,
+                    operationId:
+                        self.tasks[taskId]
+                            ? self.tasks[taskId]
+                                .operationId
+                            : null
+                };
+            }
+        )
+    );
+};
+
+Coordinator.prototype.reconsiderDerivedTasks = function() {
+    var self = this;
+    var changed = false;
+    var recomputableStates = [
+        "degraded",
+        "failed",
+        "timed-out"
+    ];
+
+    Object.keys(this.tasks).forEach(
+        function(taskId) {
+            var task =
+                self.tasks[taskId];
+            var evaluation;
+            var signature;
+
+            if (
+                !task.recomputeOnDependencyChange ||
+                recomputableStates.indexOf(
+                    task.state
+                ) < 0
+            ) {
+                return;
+            }
+
+            evaluation =
+                self.dependencyEvaluation(
+                    task
+                );
+
+            if (
+                evaluation.waiting.length > 0 ||
+                evaluation.rejected.length > 0
+            ) {
+                return;
+            }
+
+            signature =
+                self.dependencySignature(
+                    task
+                );
+
+            if (
+                signature ===
+                task.dependencySignature
+            ) {
+                return;
+            }
+
+            self.transition(
+                task,
+                "waiting",
+                {
+                    recomputeReason:
+                        "dependency-state-changed"
+                }
+            );
+
+            self.record(
+                "task-recompute-scheduled",
+                task.id,
+                {
+                    previousDependencySignature:
+                        task.dependencySignature,
+                    nextDependencySignature:
+                        signature
+                }
+            );
+
+            changed = true;
+        }
+    );
+
+    return changed;
+};
+
 Coordinator.prototype.startTask = function(task) {
     var self = this;
     var attempt;
@@ -326,6 +432,9 @@ Coordinator.prototype.startTask = function(task) {
     var completionSettled = false;
     var timeoutObserved = false;
     var returned;
+
+    task.dependencySignature =
+        this.dependencySignature(task);
 
     task.attempt += 1;
     attempt = task.attempt;
@@ -425,6 +534,7 @@ Coordinator.prototype.startTask = function(task) {
             );
 
             self.reconsiderBlockedTasks();
+            self.reconsiderDerivedTasks();
             self.schedule();
             return;
         }
@@ -442,6 +552,7 @@ Coordinator.prototype.startTask = function(task) {
             details
         );
 
+        self.reconsiderDerivedTasks();
         self.schedule();
     }
 
@@ -847,6 +958,7 @@ Coordinator.prototype.signal = function(
         );
 
         this.reconsiderBlockedTasks();
+        this.reconsiderDerivedTasks();
         this.schedule();
 
         return true;
@@ -882,6 +994,7 @@ Coordinator.prototype.signal = function(
         }
     );
 
+    this.reconsiderDerivedTasks();
     this.schedule();
 
     return true;
@@ -1008,6 +1121,8 @@ Coordinator.prototype.inspect = function() {
                 task.recoveryPolicy,
             external:
                 task.external,
+            recomputeOnDependencyChange:
+                task.recomputeOnDependencyChange,
             state:
                 task.state,
             result:
@@ -1023,7 +1138,9 @@ Coordinator.prototype.inspect = function() {
             signalCount:
                 task.signalCount,
             pendingSignal:
-                copy(task.pendingSignal)
+                copy(task.pendingSignal),
+            dependencySignature:
+                task.dependencySignature
         };
     });
 

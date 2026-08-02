@@ -1,3 +1,7 @@
+var coordinatorAdapter = require(
+    "./page-runtime-coordinator-adapter"
+);
+
 /*
  * Passive page-runtime diagnostics.
  *
@@ -74,6 +78,12 @@ var runtime = {
 };
 
 var updatingPageReadiness = false;
+var passiveCoordinator =
+    coordinatorAdapter.create({
+        maxEvents: MAX_EVENTS
+    });
+var lastReadinessComparisonSignature =
+    null;
 
 var readinessWatchdogs = {
     initialState: {
@@ -226,6 +236,79 @@ function transitionReadinessComponent(
         state,
         details
     );
+}
+
+function currentLegacyReadiness() {
+    return {
+        stateSynchronized:
+            runtime.components[
+                "state-synchronized"
+            ]
+                ? runtime.components[
+                    "state-synchronized"
+                ].state
+                : "waiting",
+        contentReady:
+            runtime.components[
+                "content-ready"
+            ]
+                ? runtime.components[
+                    "content-ready"
+                ].state
+                : "waiting",
+        interactionReady:
+            runtime.components[
+                "interaction-ready"
+            ]
+                ? runtime.components[
+                    "interaction-ready"
+                ].state
+                : "waiting",
+        pageReadiness:
+            runtime.components[
+                "page-readiness"
+            ]
+                ? runtime.components[
+                    "page-readiness"
+                ].state
+                : "waiting"
+    };
+}
+
+function updateReadinessComparison() {
+    var comparison =
+        coordinatorAdapter
+            .compareReadiness(
+                passiveCoordinator,
+                currentLegacyReadiness()
+            );
+    var signature =
+        JSON.stringify(comparison);
+
+    runtime.coordinatorReadiness =
+        copyValue(
+            comparison.coordinator
+        );
+    runtime.readinessComparison =
+        copyValue(comparison);
+
+    if (
+        !comparison.matches &&
+        signature !==
+            lastReadinessComparisonSignature
+    ) {
+        record(
+            "event",
+            "coordinator-readiness-mismatch",
+            undefined,
+            comparison
+        );
+    }
+
+    lastReadinessComparisonSignature =
+        signature;
+
+    return comparison;
 }
 
 function updatePageReadiness() {
@@ -465,6 +548,8 @@ function updatePageReadiness() {
     } finally {
         updatingPageReadiness = false;
     }
+
+    updateReadinessComparison();
 }
 
 function transition(collectionName, name, state, details) {
@@ -482,6 +567,14 @@ function transition(collectionName, name, state, details) {
 
     record(
         collectionName.slice(0, -1),
+        name,
+        state,
+        details
+    );
+
+    coordinatorAdapter.signalTransition(
+        passiveCoordinator,
+        collectionName,
         name,
         state,
         details
@@ -632,6 +725,11 @@ function startInitialStateReadinessWatchdog() {
                 watchdog.timedOutAtElapsedMs =
                     elapsedMs();
 
+                coordinatorAdapter.signalDeadline(
+                    passiveCoordinator,
+                    "initial-state"
+                );
+
                 record(
                     "event",
                     "readiness-deadline-exceeded",
@@ -705,6 +803,11 @@ function startInitialMathJaxReadinessWatchdog() {
                 watchdog.timedOut = true;
                 watchdog.timedOutAtElapsedMs =
                     elapsedMs();
+
+                coordinatorAdapter.signalDeadline(
+                    passiveCoordinator,
+                    "mathjax-initial-process"
+                );
 
                 record(
                     "event",
@@ -788,6 +891,11 @@ function startInitialInlineSageReadinessWatchdog() {
                 watchdog.timedOutAtElapsedMs =
                     elapsedMs();
 
+                coordinatorAdapter.signalDeadline(
+                    passiveCoordinator,
+                    "sage-inline-initial"
+                );
+
                 record(
                     "event",
                     "readiness-deadline-exceeded",
@@ -867,7 +975,38 @@ startInitialMathJaxReadinessWatchdog();
 startInitialInlineSageReadinessWatchdog();
 
 function inspect() {
-    return copyValue(runtime);
+    var report =
+        copyValue(runtime);
+
+    report.coordinator =
+        passiveCoordinator.inspect();
+
+    report.coordinatorReadiness =
+        coordinatorAdapter
+            .readinessSnapshot(
+                passiveCoordinator
+            );
+
+    report.readinessComparison =
+        coordinatorAdapter
+            .compareReadiness(
+                passiveCoordinator,
+                currentLegacyReadiness()
+            );
+
+    return report;
+}
+
+function inspectCoordinator() {
+    return passiveCoordinator.inspect();
+}
+
+function compareCoordinatorReadiness() {
+    return coordinatorAdapter
+        .compareReadiness(
+            passiveCoordinator,
+            currentLegacyReadiness()
+        );
 }
 
 var BENCHMARK_STORAGE_KEY =
@@ -2189,6 +2328,10 @@ var api = {
     operation: operation,
     component: component,
     inspect: inspect,
+    inspectCoordinator:
+        inspectCoordinator,
+    compareCoordinatorReadiness:
+        compareCoordinatorReadiness,
     benchmark: benchmark,
     recordBenchmark: recordBenchmark,
     benchmarkReport: benchmarkReport,
@@ -2198,6 +2341,10 @@ var api = {
 window.xronosPageRuntime = api;
 window.xronosRuntimeEvent = event;
 window.xronosInspectPageRuntime = inspect;
+window.xronosInspectPageRuntimeCoordinator =
+    inspectCoordinator;
+window.xronosComparePageRuntimeReadiness =
+    compareCoordinatorReadiness;
 window.xronosPageBenchmark = benchmark;
 window.xronosRecordPageBenchmark =
     recordBenchmark;

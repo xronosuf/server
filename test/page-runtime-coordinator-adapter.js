@@ -1,0 +1,319 @@
+"use strict";
+
+var assert = require("assert");
+var adapter = require(
+    "../public/javascripts/page-runtime-coordinator-adapter"
+);
+
+function flush() {
+    return Promise.resolve().then(
+        function() {
+            return Promise.resolve();
+        }
+    );
+}
+
+describe(
+    "page runtime coordinator passive adapter",
+    function() {
+        it("starts with all passive leaves waiting", function() {
+            var coordinator =
+                adapter.create();
+            var report =
+                coordinator.inspect();
+
+            adapter.leafTasks.forEach(
+                function(taskId) {
+                    assert.strictEqual(
+                        report.tasks[taskId]
+                            .state,
+                        "waiting"
+                    );
+                }
+            );
+
+            assert.strictEqual(
+                adapter.readinessSnapshot(
+                    coordinator
+                ).pageReadiness,
+                "waiting"
+            );
+        });
+
+        it("maps the successful legacy readiness path", async function() {
+            var coordinator =
+                adapter.create();
+
+            adapter.signalTransition(
+                coordinator,
+                "operations",
+                "initial-state",
+                "available"
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "operations",
+                "mathjax-pass",
+                "ended",
+                {
+                    passType:
+                        "process",
+                    generation:
+                        1
+                }
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "components",
+                "sage-initial",
+                "not-required"
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "components",
+                "sage-inline-initial",
+                "not-required"
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "components",
+                "activity",
+                "initialized"
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "components",
+                "initial-math-answers",
+                "not-required"
+            );
+
+            await flush();
+
+            assert.deepStrictEqual(
+                adapter.readinessSnapshot(
+                    coordinator
+                ),
+                {
+                    stateSynchronized:
+                        "ready",
+                    contentReady:
+                        "ready",
+                    interactionReady:
+                        "ready",
+                    pageReadiness:
+                        "ready"
+                }
+            );
+        });
+
+        it("maps degraded outcomes into degraded readiness", async function() {
+            var coordinator =
+                adapter.create();
+
+            adapter.signalTransition(
+                coordinator,
+                "operations",
+                "initial-state",
+                "failed"
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "operations",
+                "mathjax-pass",
+                "ended",
+                {
+                    passType:
+                        "process"
+                }
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "components",
+                "sage-initial",
+                "results-degraded"
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "components",
+                "sage-inline-initial",
+                "settled"
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "components",
+                "activity",
+                "initialized"
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "components",
+                "initial-math-answers",
+                "degraded"
+            );
+
+            await flush();
+
+            assert.deepStrictEqual(
+                adapter.readinessSnapshot(
+                    coordinator
+                ),
+                {
+                    stateSynchronized:
+                        "degraded",
+                    contentReady:
+                        "degraded",
+                    interactionReady:
+                        "degraded",
+                    pageReadiness:
+                        "degraded"
+                }
+            );
+        });
+
+        it("supports timeout followed by late recovery", async function() {
+            var coordinator =
+                adapter.create();
+
+            adapter.signalDeadline(
+                coordinator,
+                "initial-state"
+            );
+
+            await flush();
+
+            assert.strictEqual(
+                adapter.readinessSnapshot(
+                    coordinator
+                ).stateSynchronized,
+                "degraded"
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "operations",
+                "initial-state",
+                "available"
+            );
+
+            await flush();
+
+            assert.strictEqual(
+                adapter.readinessSnapshot(
+                    coordinator
+                ).stateSynchronized,
+                "ready"
+            );
+
+            assert.strictEqual(
+                coordinator.inspect().events.some(
+                    function(event) {
+                        return (
+                            event.type ===
+                                "task-recovered" &&
+                            event.taskId ===
+                                "initial-state"
+                        );
+                    }
+                ),
+                true
+            );
+        });
+
+        it("compares coordinator and legacy readiness", async function() {
+            var coordinator =
+                adapter.create();
+
+            adapter.signalTransition(
+                coordinator,
+                "operations",
+                "initial-state",
+                "available"
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "operations",
+                "mathjax-pass",
+                "ended",
+                {
+                    passType:
+                        "process"
+                }
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "components",
+                "sage-initial",
+                "not-required"
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "components",
+                "sage-inline-initial",
+                "not-required"
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "components",
+                "activity",
+                "initialized"
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "components",
+                "initial-math-answers",
+                "not-required"
+            );
+
+            await flush();
+
+            assert.strictEqual(
+                adapter.compareReadiness(
+                    coordinator,
+                    {
+                        stateSynchronized:
+                            "ready",
+                        contentReady:
+                            "ready",
+                        interactionReady:
+                            "ready",
+                        pageReadiness:
+                            "ready"
+                    }
+                ).matches,
+                true
+            );
+
+            assert.strictEqual(
+                adapter.compareReadiness(
+                    coordinator,
+                    {
+                        stateSynchronized:
+                            "ready",
+                        contentReady:
+                            "degraded",
+                        interactionReady:
+                            "ready",
+                        pageReadiness:
+                            "degraded"
+                    }
+                ).matches,
+                false
+            );
+        });
+    }
+);

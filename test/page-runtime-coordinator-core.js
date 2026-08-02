@@ -1258,4 +1258,101 @@ describe("page runtime coordinator core", function() {
         );
     });
 
+    it("recomputes a degraded derived task after dependency recovery", async function() {
+        var coordinator =
+            coordinatorCore.create();
+
+        coordinator.register({
+            id: "recovering-source",
+            external: true,
+            recoveryPolicy:
+                "allow-late-success"
+        });
+
+        coordinator.register({
+            id: "derived-readiness",
+            dependsOn: [
+                "recovering-source"
+            ],
+            accepts: {
+                "recovering-source": [
+                    "succeeded",
+                    "timed-out"
+                ]
+            },
+            recomputeOnDependencyChange:
+                true,
+            run: function() {
+                var source =
+                    coordinator.inspect()
+                        .tasks[
+                            "recovering-source"
+                        ];
+
+                return {
+                    state:
+                        source.state ===
+                            "succeeded"
+                            ? "succeeded"
+                            : "degraded"
+                };
+            }
+        });
+
+        coordinator.start();
+
+        coordinator.signal(
+            "recovering-source",
+            "timed-out"
+        );
+
+        await Promise.resolve();
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks[
+                    "derived-readiness"
+                ].state,
+            "degraded"
+        );
+
+        coordinator.signal(
+            "recovering-source",
+            "succeeded"
+        );
+
+        await Promise.resolve();
+        await Promise.resolve();
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks[
+                    "derived-readiness"
+                ].state,
+            "succeeded"
+        );
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks[
+                    "derived-readiness"
+                ].attempt,
+            2
+        );
+
+        assert.strictEqual(
+            coordinator.inspect().events.some(
+                function(event) {
+                    return (
+                        event.type ===
+                            "task-recompute-scheduled" &&
+                        event.taskId ===
+                            "derived-readiness"
+                    );
+                }
+            ),
+            true
+        );
+    });
+
 });

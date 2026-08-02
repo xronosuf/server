@@ -42,6 +42,7 @@ function Coordinator(options) {
     this.tasks = {};
     this.events = [];
     this.nextSequence = 1;
+    this.nextOperationId = 1;
     this.started = false;
     this.context = null;
 }
@@ -103,6 +104,17 @@ Coordinator.prototype.register = function(specification) {
         );
     }
 
+    if (
+        specification.recoveryPolicy !== undefined &&
+        specification.recoveryPolicy !== "reject-late" &&
+        specification.recoveryPolicy !== "allow-late-success"
+    ) {
+        throw new Error(
+            "Unsupported recoveryPolicy for task " +
+            specification.id
+        );
+    }
+
     task = {
         id: specification.id,
         dependsOn: (
@@ -115,13 +127,17 @@ Coordinator.prototype.register = function(specification) {
             typeof specification.timeoutMs === "number"
                 ? specification.timeoutMs
                 : null,
+        recoveryPolicy:
+            specification.recoveryPolicy ||
+            "reject-late",
         run: specification.run || null,
         state: "registered",
         result: undefined,
         error: null,
         blockedBy: [],
         timer: null,
-        attempt: 0
+        attempt: 0,
+        operationId: null
     };
 
     this.tasks[task.id] = task;
@@ -131,7 +147,9 @@ Coordinator.prototype.register = function(specification) {
         task.id,
         {
             dependsOn: task.dependsOn,
-            timeoutMs: task.timeoutMs
+            timeoutMs: task.timeoutMs,
+            recoveryPolicy:
+                task.recoveryPolicy
         }
     );
 
@@ -241,6 +259,8 @@ Coordinator.prototype.transition = function(
         task.id,
         {
             state: state,
+            operationId:
+                task.operationId,
             result: task.result,
             error: task.error,
             blockedBy: task.blockedBy
@@ -285,31 +305,114 @@ Coordinator.prototype.dependencyEvaluation = function(task) {
 Coordinator.prototype.startTask = function(task) {
     var self = this;
     var attempt;
-    var settled = false;
+    var operationId;
+    var completionSettled = false;
+    var timeoutObserved = false;
     var returned;
 
     task.attempt += 1;
     attempt = task.attempt;
+    operationId = this.nextOperationId;
+    this.nextOperationId += 1;
+    task.operationId = operationId;
 
     this.transition(
         task,
         "running"
     );
 
-    function settle(state, details) {
-        if (settled) {
-            self.record(
-                "stale-task-completion",
-                task.id,
-                {
-                    attemptedState: state,
-                    attempt: attempt
-                }
+    function recordStale(state, reason) {
+        self.record(
+            "stale-task-completion",
+            task.id,
+            {
+                attemptedState: state,
+                attempt: attempt,
+                operationId: operationId,
+                currentOperationId:
+                    task.operationId,
+                reason: reason
+            }
+        );
+    }
+
+    function settle(state, details, source) {
+        var recoverableStates = [
+            "succeeded",
+            "not-required",
+            "degraded"
+        ];
+
+        if (task.operationId !== operationId) {
+            recordStale(
+                state,
+                "operation-replaced"
             );
             return;
         }
 
-        settled = true;
+        if (completionSettled) {
+            recordStale(
+                state,
+                "already-settled"
+            );
+            return;
+        }
+
+        if (source === "timeout") {
+            timeoutObserved = true;
+            task.timer = null;
+
+            self.transition(
+                task,
+                "timed-out",
+                details
+            );
+
+            self.schedule();
+            return;
+        }
+
+        if (timeoutObserved) {
+            if (
+                task.recoveryPolicy !==
+                    "allow-late-success" ||
+                recoverableStates.indexOf(state) < 0
+            ) {
+                recordStale(
+                    state,
+                    "late-result-rejected"
+                );
+                return;
+            }
+
+            completionSettled = true;
+
+            self.transition(
+                task,
+                state,
+                details
+            );
+
+            self.record(
+                "task-recovered",
+                task.id,
+                {
+                    operationId:
+                        operationId,
+                    fromState:
+                        "timed-out",
+                    toState:
+                        state
+                }
+            );
+
+            self.reconsiderBlockedTasks();
+            self.schedule();
+            return;
+        }
+
+        completionSettled = true;
 
         if (task.timer !== null) {
             clearTimeout(task.timer);
@@ -338,7 +441,8 @@ Coordinator.prototype.startTask = function(task) {
                             "Task exceeded " +
                             task.timeoutMs +
                             " ms."
-                    }
+                    },
+                    "timeout"
                 );
             },
             task.timeoutMs
@@ -346,7 +450,11 @@ Coordinator.prototype.startTask = function(task) {
     }
 
     if (!task.run) {
-        settle("succeeded");
+        settle(
+            "succeeded",
+            undefined,
+            "completion"
+        );
         return;
     }
 
@@ -355,7 +463,9 @@ Coordinator.prototype.startTask = function(task) {
             this.context,
             {
                 taskId: task.id,
-                attempt: attempt
+                attempt: attempt,
+                operationId:
+                    operationId
             }
         );
     } catch (error) {
@@ -364,7 +474,8 @@ Coordinator.prototype.startTask = function(task) {
             {
                 error:
                     errorMessage(error)
-            }
+            },
+            "completion"
         );
         return;
     }
@@ -392,7 +503,8 @@ Coordinator.prototype.startTask = function(task) {
                         error:
                             "Task returned unsupported state " +
                             state
-                    }
+                    },
+                    "completion"
                 );
                 return;
             }
@@ -401,7 +513,8 @@ Coordinator.prototype.startTask = function(task) {
                 state,
                 {
                     result: value
-                }
+                },
+                "completion"
             );
         },
         function(error) {
@@ -410,10 +523,62 @@ Coordinator.prototype.startTask = function(task) {
                 {
                     error:
                         errorMessage(error)
-                }
+                },
+                "completion"
             );
         }
     );
+};
+
+Coordinator.prototype.reconsiderBlockedTasks = function() {
+    var self = this;
+    var changed = true;
+
+    while (changed) {
+        changed = false;
+
+        Object.keys(this.tasks).forEach(
+            function(taskId) {
+                var task =
+                    self.tasks[taskId];
+                var evaluation;
+
+                if (task.state !== "blocked") {
+                    return;
+                }
+
+                evaluation =
+                    self.dependencyEvaluation(
+                        task
+                    );
+
+                if (
+                    evaluation.rejected.length === 0
+                ) {
+                    self.transition(
+                        task,
+                        "waiting",
+                        {
+                            blockedBy: []
+                        }
+                    );
+
+                    self.record(
+                        "task-unblocked",
+                        task.id,
+                        {
+                            waitingFor:
+                                evaluation.waiting
+                        }
+                    );
+
+                    changed = true;
+                }
+            }
+        );
+    }
+
+    return this;
 };
 
 Coordinator.prototype.schedule = function() {
@@ -519,6 +684,8 @@ Coordinator.prototype.inspect = function() {
                 copy(task.accepts),
             timeoutMs:
                 task.timeoutMs,
+            recoveryPolicy:
+                task.recoveryPolicy,
             state:
                 task.state,
             result:
@@ -528,7 +695,9 @@ Coordinator.prototype.inspect = function() {
             blockedBy:
                 task.blockedBy.slice(),
             attempt:
-                task.attempt
+                task.attempt,
+            operationId:
+                task.operationId
         };
     });
 

@@ -514,4 +514,280 @@ describe("page runtime coordinator core", function() {
             "succeeded"
         );
     });
+    it("assigns a distinct operation ID to each started task", async function() {
+        var coordinator =
+            coordinatorCore.create();
+        var observed = [];
+
+        coordinator.register({
+            id: "first-operation",
+            run: function(context, metadata) {
+                observed.push(
+                    metadata.operationId
+                );
+            }
+        });
+
+        coordinator.register({
+            id: "second-operation",
+            run: function(context, metadata) {
+                observed.push(
+                    metadata.operationId
+                );
+            }
+        });
+
+        coordinator.start();
+        await Promise.resolve();
+
+        assert.strictEqual(
+            observed.length,
+            2
+        );
+
+        assert.notStrictEqual(
+            observed[0],
+            observed[1]
+        );
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks["first-operation"]
+                .operationId,
+            observed[0]
+        );
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks["second-operation"]
+                .operationId,
+            observed[1]
+        );
+    });
+
+    it("allows explicitly configured late success after timeout", async function() {
+        var coordinator =
+            coordinatorCore.create();
+
+        coordinator.register({
+            id: "recoverable-late",
+            timeoutMs: 2,
+            recoveryPolicy:
+                "allow-late-success",
+            run: function() {
+                return delay(
+                    10,
+                    "late-success"
+                );
+            }
+        });
+
+        coordinator.start();
+        await delay(5);
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks["recoverable-late"]
+                .state,
+            "timed-out"
+        );
+
+        await delay(10);
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks["recoverable-late"]
+                .state,
+            "succeeded"
+        );
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks["recoverable-late"]
+                .result,
+            "late-success"
+        );
+
+        assert.strictEqual(
+            coordinator.inspect().events.some(
+                function(event) {
+                    return (
+                        event.type ===
+                            "task-recovered" &&
+                        event.taskId ===
+                            "recoverable-late"
+                    );
+                }
+            ),
+            true
+        );
+    });
+
+    it("rejects unsupported recovery policies", function() {
+        var coordinator =
+            coordinatorCore.create();
+
+        assert.throws(
+            function() {
+                coordinator.register({
+                    id: "invalid-recovery",
+                    recoveryPolicy:
+                        "always-accept"
+                });
+            },
+            /Unsupported recoveryPolicy/
+        );
+    });
+
+    it("unblocks a strict descendant after allowed late recovery", async function() {
+        var coordinator =
+            coordinatorCore.create();
+        var descendantRuns = 0;
+
+        coordinator.register({
+            id: "recovering-parent",
+            timeoutMs: 2,
+            recoveryPolicy:
+                "allow-late-success",
+            run: function() {
+                return delay(
+                    10,
+                    "recovered"
+                );
+            }
+        });
+
+        coordinator.register({
+            id: "strict-child",
+            dependsOn: [
+                "recovering-parent"
+            ],
+            run: function() {
+                descendantRuns += 1;
+            }
+        });
+
+        coordinator.start();
+        await delay(5);
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks["recovering-parent"]
+                .state,
+            "timed-out"
+        );
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks["strict-child"]
+                .state,
+            "blocked"
+        );
+
+        await delay(10);
+        await Promise.resolve();
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks["recovering-parent"]
+                .state,
+            "succeeded"
+        );
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks["strict-child"]
+                .state,
+            "succeeded"
+        );
+
+        assert.strictEqual(
+            descendantRuns,
+            1
+        );
+
+        assert.strictEqual(
+            coordinator.inspect().events.some(
+                function(event) {
+                    return (
+                        event.type ===
+                            "task-unblocked" &&
+                        event.taskId ===
+                            "strict-child"
+                    );
+                }
+            ),
+            true
+        );
+    });
+
+    it("reconsiders transitively blocked descendants after recovery", async function() {
+        var coordinator =
+            coordinatorCore.create();
+        var order = [];
+
+        coordinator.register({
+            id: "recovering-root",
+            timeoutMs: 2,
+            recoveryPolicy:
+                "allow-late-success",
+            run: function() {
+                return delay(10);
+            }
+        });
+
+        coordinator.register({
+            id: "middle",
+            dependsOn: [
+                "recovering-root"
+            ],
+            run: function() {
+                order.push("middle");
+            }
+        });
+
+        coordinator.register({
+            id: "leaf",
+            dependsOn: [
+                "middle"
+            ],
+            run: function() {
+                order.push("leaf");
+            }
+        });
+
+        coordinator.start();
+        await delay(5);
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks.middle.state,
+            "blocked"
+        );
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks.leaf.state,
+            "blocked"
+        );
+
+        await delay(10);
+        await Promise.resolve();
+        await Promise.resolve();
+
+        assert.deepStrictEqual(
+            order,
+            [
+                "middle",
+                "leaf"
+            ]
+        );
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks.leaf.state,
+            "succeeded"
+        );
+    });
+
 });

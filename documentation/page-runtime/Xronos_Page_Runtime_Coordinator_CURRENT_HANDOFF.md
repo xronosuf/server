@@ -4,10 +4,9 @@
 **Current file:** `documentation/page-runtime/Xronos_Page_Runtime_Coordinator_CURRENT_HANDOFF.md`
 **Last updated:** 2026-08-03
 **Working branch:** `page-runtime-coordinator`
-**Last known local HEAD:** `efea315` — `Use one-shot storage for initial MathJax fault probe`
-**Previous local commit:** `c7575e5` — `Add initial MathJax processing fault probe`
-**Last known remote HEAD:** `efea315` — `Use one-shot storage for initial MathJax fault probe`
-**Last known branch state:** local and `origin/page-runtime-coordinator` are aligned at `efea315`. A separate uncommitted four-file MathJax failed-render interaction-block patch is under review and must not yet be treated as completed or pushed work.
+**Validated runtime implementation commit:** `785cd8a` — `Block interaction after failed initial MathJax render`
+**Previous documentation checkpoint:** `04bf796` — `Update MathJax coordinator handoff`
+**Branch publication state:** the failed-render runtime implementation and this follow-up documentation update are intended to be pushed together. Verify the current local and remote tips rather than relying only on this recorded checkpoint.
 
 > This file is an operational index and decision record. It does not replace the
 > authoritative design, pipeline, ownership, degraded-state, inventory, or TODO
@@ -53,23 +52,47 @@ Derived content, interaction, and page readiness may report `degraded` so the
 page can expose a bounded failure state instead of remaining indefinitely
 loading.
 
-### Current uncommitted work
+### Completed failed-render interaction work
 
-A four-file working-tree patch is currently being reviewed to implement the
-failed-render interaction block:
+Commit `785cd8a` implements the failed-render interaction policy in:
 
 - `public/javascripts/main.js`
 - `public/javascripts/page-runtime-coordinator-adapter.js`
 - `public/javascripts/page-runtime.js`
 - `test/page-runtime-coordinator-adapter.js`
 
-The current draft has passed focused automated tests and a container bundle
-build, but it is not yet authoritative completed work. It still requires code
-refinement, browser validation, documentation reconciliation, commit review,
-and an explicit push decision.
+The implementation:
 
-Do not restore, discard, commit, or push those files without first verifying
-the current working tree and the active session's intent.
+- reports the generation-bound initial MathJax task as `failed` when associated
+  processing errors are present;
+- propagates that failure into degraded content, interaction, and page
+  readiness;
+- presents a persistent, visible mathematical-rendering failure notice;
+- blocks mathematical coursework interaction for the remainder of the page
+  load;
+- disables existing and dynamically inserted matching controls;
+- preserves the page shell and does not leave the loading spinner active;
+- permits a clean reload to start a new lifecycle and restore ordinary
+  interaction when MathJax succeeds.
+
+Validation completed before commit:
+
+- focused coordinator and fault-probe tests: 72 passing;
+- browser bundle build succeeded inside `devximserver`;
+- an injected initial processing failure produced 11 recorded processing
+  errors and a failed initial MathJax task;
+- content, interaction, and page readiness became `degraded`;
+- the interaction block became `active`;
+- all surviving answer controls were disabled;
+- the failure notice was present and visible;
+- the one-shot fault request was consumed;
+- a normal reload returned all readiness tasks to `succeeded`, removed the
+  notice and block, and enabled all 42 controls;
+- a dynamically inserted root `.btn-ximera-submit` control was automatically
+  disabled and marked by the MutationObserver.
+
+A passive-media fixture such as an embedded YouTube video remains useful
+follow-up coverage, but it does not block this completed runtime change.
 
 ### Development environment reminder
 

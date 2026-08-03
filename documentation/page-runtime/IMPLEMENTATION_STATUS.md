@@ -96,7 +96,7 @@ late recovery.
 | Document references | `main.js` runner and references module | Control task | Active | Coordinator task/request | Explicit terminal result; guarded fallback | Implemented |
 | MathJax startup trigger | `main.js` runner and MathJax | Control task | Active | Coordinator task/request | Explicit terminal result; guarded fallback | Implemented |
 | MathJax Startup End UI | `main.js` runner | Control task | Active | Coordinator task/request | Explicit terminal result; guarded fallback | Implemented |
-| Initial MathJax Process | MathJax Begin/End Process hooks, `main.js`, and the coordinator adapter | Generation-bound external lifecycle leaf with coordinator-owned deadline | Hybrid coordinator lifecycle | Initial MathJax generation bound from authoritative Begin/End Process events | Coordinator-owned 15-second timeout; mismatched or stale completion rejected; permitted late completion retains operation history | Implemented through terminal metadata and one-shot browser fault injection; failed-render interaction policy remains under final implementation and browser validation |
+| Initial MathJax Process | MathJax Begin/End Process hooks, `main.js`, and the coordinator adapter | Generation-bound external lifecycle leaf with coordinator-owned deadline | Hybrid coordinator lifecycle | Initial MathJax generation bound from authoritative Begin/End Process events | Coordinator-owned 15-second timeout; mismatched or stale completion rejected; permitted late completion retains operation history | Implemented and browser-validated through failed-render interaction policy in `785cd8a`; initial errors fail the leaf task, degrade derived readiness, and block mathematical coursework interaction until reload |
 | Initial Sage manifest | Sage module before MathJax startup | Runtime component/diagnostic metadata | Passive metadata | Immutable pre-MathJax manifest, stable expression IDs | No separate coordinator task deadline | Model explicitly as input identity for initial MathJax/Sage operations |
 | Canonical initial Sage request | Sage module | External lifecycle leaf through `sage-initial` component states | Passive | Immutable manifest, stable IDs, request timing, compiled hash | Retryable operational failures; permanent eligibility fallbacks cached | Promote after initial MathJax Process contract |
 | Initial Sage result quality | Sage module | Included in canonical Sage leaf | Passive | Per-stable-ID result records and failure counts | Results may be available but degraded | Preserve separately from visible display settlement |
@@ -123,9 +123,10 @@ Completed committed capabilities include generation binding, coordinator-owned
 timeout, stale-generation rejection, initial-error association, terminal
 metadata, and one-shot browser fault injection.
 
-The remaining immediate work is to finish and browser-validate the policy that
-a failed initial mathematical render blocks coursework interaction while
-allowing clearly independent passive media to remain available.
+Commit `785cd8a` completes and browser-validates the immediate policy
+that a failed initial mathematical render blocks mathematical coursework
+interaction for the remainder of the page load. Clearly independent passive
+media remains an explicit follow-up fixture and compatibility check.
 
 The next migration should use a hybrid active/pass-observed contract:
 
@@ -236,8 +237,9 @@ that links:
 
 ### Phase 2: initial MathJax Process lifecycle
 
-**Status:** substantially implemented through `efea315`; failed-render
-interaction handling remains under review and browser validation.
+**Status:** completed through browser-validated failed-render handling in
+`785cd8a`. Additional passive-media fixture coverage remains useful
+but is not required for the lifecycle migration to proceed.
 
 - Introduce a coordinator-owned/hybrid initial Process contract.
 - Bind the first Begin/End Process pair to one generation.

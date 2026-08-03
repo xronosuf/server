@@ -341,6 +341,8 @@ the usual localized-degradation rule because allowing students to interact
 with incorrectly rendered mathematics may produce misleading instruction or
 invalid assessment behavior.
 
-The interaction-block implementation is still under review and browser
-validation. This section records the agreed policy, not completion of the
-current uncommitted patch.
+The interaction-block implementation is completed and browser-validated in
+commit `785cd8a`. Validation confirmed failed leaf state, degraded
+derived readiness, a visible failure notice, disabled existing and dynamically
+inserted controls, one-shot fault consumption, and clean recovery after an
+ordinary reload.

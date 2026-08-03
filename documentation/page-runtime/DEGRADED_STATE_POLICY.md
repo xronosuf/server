@@ -308,3 +308,39 @@ The intended support workflow is:
 
 Student UI, instructor support tools, and developer diagnostics should share
 the same error catalog and occurrence identifiers.
+
+## Initial MathJax processing errors as pedagogical failure
+
+An error during the authoritative initial MathJax Process is not treated as an
+ordinary isolated visual defect.
+
+In observed failure injection, one processing error commonly caused the page's
+mathematical rendering to collapse broadly into Math Processing Error output.
+Even when only one expression initially triggers the failure, the resulting
+page cannot be assumed to preserve the author's mathematical meaning.
+
+Accordingly:
+
+- the `mathjax-initial-process` coordinator task reports `failed` when one or
+  more processing or parse errors are associated with its bound generation;
+- derived content, interaction, and page readiness may report `degraded` so the
+  runtime presents a bounded failure state rather than an indefinite spinner;
+- mathematical coursework interaction must be blocked for the remainder of
+  that page load;
+- a later rerender must not silently restore coursework interaction during the
+  same failed page load;
+- reloading the page starts a new lifecycle and may restore ordinary behavior
+  when the initial MathJax Process completes cleanly;
+- clearly independent passive content, such as a remotely hosted video that
+  does not rely on the failed mathematical rendering, may remain available;
+- the failure notice must explain that mathematical content may be incomplete
+  or misleading and that answer checking has been disabled.
+
+This is a deliberate page-level pedagogical-safety policy. It is stronger than
+the usual localized-degradation rule because allowing students to interact
+with incorrectly rendered mathematics may produce misleading instruction or
+invalid assessment behavior.
+
+The interaction-block implementation is still under review and browser
+validation. This section records the agreed policy, not completion of the
+current uncommitted patch.

@@ -4,15 +4,83 @@
 **Current file:** `documentation/page-runtime/Xronos_Page_Runtime_Coordinator_CURRENT_HANDOFF.md`
 **Last updated:** 2026-08-03
 **Working branch:** `page-runtime-coordinator`
-**Last known local HEAD:** `23c2cb7` — `Add initial MathJax terminal metadata`
-**Previous local commit:** `9b80564` — `Update coordinator runtime handoff`
-**Last known remote HEAD:** `9b80564` — `Update coordinator runtime handoff`
-**Last known branch state:** local branch ahead of `origin/page-runtime-coordinator` by one commit; `23c2cb7` has not been pushed.
+**Last known local HEAD:** `efea315` — `Use one-shot storage for initial MathJax fault probe`
+**Previous local commit:** `c7575e5` — `Add initial MathJax processing fault probe`
+**Last known remote HEAD:** `efea315` — `Use one-shot storage for initial MathJax fault probe`
+**Last known branch state:** local and `origin/page-runtime-coordinator` are aligned at `efea315`. A separate uncommitted four-file MathJax failed-render interaction-block patch is under review and must not yet be treated as completed or pushed work.
 
 > This file is an operational index and decision record. It does not replace the
 > authoritative design, pipeline, ownership, degraded-state, inventory, or TODO
 > documents. Update it whenever the active branch, current milestone, next step,
 > or important constraint changes.
+
+---
+
+## Current milestone snapshot
+
+The initial MathJax Process lifecycle migration has progressed substantially
+beyond the earlier implementation-status snapshot.
+
+Committed work through `efea315` includes:
+
+- a reusable dependency-aware coordinator core;
+- external coordinator signals and operation recovery;
+- a passive coordinator adapter integrated with the existing runtime;
+- coordinator ownership of several startup control seams;
+- binding the authoritative initial MathJax `Begin Process` and `End Process`
+  lifecycle to one generation;
+- moving the initial MathJax readiness timeout into the coordinator task;
+- rejecting mismatched or stale initial MathJax completion;
+- associating initial MathJax parse and processing errors with the bound
+  generation;
+- recording initial MathJax terminal metadata;
+- a browser fault-injection probe for initial MathJax processing errors;
+- one-shot `sessionStorage` consumption for that probe.
+
+Browser fault-injection evidence established that an initial MathJax processing
+error commonly poisons the mathematical rendering across the page rather than
+remaining confined to one expression.
+
+The resulting policy decision is:
+
+> Any processing error during the authoritative initial MathJax Process makes
+> the authored mathematical coursework pedagogically untrustworthy for that
+> page load. The page shell and clearly independent passive media may remain
+> available, but student coursework interaction must be blocked until reload.
+
+The underlying initial MathJax coordinator task should report `failed`.
+Derived content, interaction, and page readiness may report `degraded` so the
+page can expose a bounded failure state instead of remaining indefinitely
+loading.
+
+### Current uncommitted work
+
+A four-file working-tree patch is currently being reviewed to implement the
+failed-render interaction block:
+
+- `public/javascripts/main.js`
+- `public/javascripts/page-runtime-coordinator-adapter.js`
+- `public/javascripts/page-runtime.js`
+- `test/page-runtime-coordinator-adapter.js`
+
+The current draft has passed focused automated tests and a container bundle
+build, but it is not yet authoritative completed work. It still requires code
+refinement, browser validation, documentation reconciliation, commit review,
+and an explicit push decision.
+
+Do not restore, discard, commit, or push those files without first verifying
+the current working tree and the active session's intent.
+
+### Development environment reminder
+
+The verified development container is `devximserver`.
+
+- Xronos Express listens on container port `2000`.
+- Podman publishes that port as host port `2022`.
+- Browser assets must be rebuilt inside the container at `/usr/var/server`.
+- A direct request to `/javascripts/main.min.js` is not a valid bundle
+  verification route in this application; Xronos may interpret `javascripts`
+  as a repository slug.
 
 ---
 

@@ -1223,6 +1223,80 @@ function requestMathJaxStartup(details) {
     }
 }
 
+function configureMathJaxStartupUi(runner) {
+    try {
+        passiveCoordinator
+            .setMathJaxStartupUiRunner(
+                runner
+            );
+
+        record(
+            "event",
+            "mathjax-startup-ui-owner-configured",
+            undefined,
+            {
+                owner: "coordinator"
+            }
+        );
+
+        return true;
+    } catch (err) {
+        record(
+            "event",
+            "mathjax-startup-ui-owner-configuration-failed",
+            undefined,
+            {
+                message:
+                    err && err.message
+                        ? err.message
+                        : String(err)
+            }
+        );
+
+        return false;
+    }
+}
+
+function requestMathJaxStartupUiFinalization(details) {
+    try {
+        var accepted =
+            passiveCoordinator
+                .requestMathJaxStartupUiFinalization(
+                    details
+                );
+
+        record(
+            "event",
+            accepted
+                ? "mathjax-startup-ui-owner-requested"
+                : "mathjax-startup-ui-owner-request-rejected",
+            undefined,
+            {
+                owner: "coordinator",
+                details:
+                    details || null
+            }
+        );
+
+        return accepted;
+    } catch (err) {
+        record(
+            "event",
+            "mathjax-startup-ui-owner-request-failed",
+            undefined,
+            {
+                owner: "coordinator",
+                message:
+                    err && err.message
+                        ? err.message
+                        : String(err)
+            }
+        );
+
+        return false;
+    }
+}
+
 function compareCoordinatorReadiness() {
     return coordinatorAdapter
         .compareReadiness(
@@ -2564,6 +2638,10 @@ var api = {
         configureMathJaxStartup,
     requestMathJaxStartup:
         requestMathJaxStartup,
+    configureMathJaxStartupUi:
+        configureMathJaxStartupUi,
+    requestMathJaxStartupUiFinalization:
+        requestMathJaxStartupUiFinalization,
     compareCoordinatorReadiness:
         compareCoordinatorReadiness,
     benchmark: benchmark,
@@ -2589,6 +2667,10 @@ window.xronosConfigureMathJaxStartup =
     configureMathJaxStartup;
 window.xronosRequestMathJaxStartup =
     requestMathJaxStartup;
+window.xronosConfigureMathJaxStartupUi =
+    configureMathJaxStartupUi;
+window.xronosRequestMathJaxStartupUiFinalization =
+    requestMathJaxStartupUiFinalization;
 window.xronosComparePageRuntimeReadiness =
     compareCoordinatorReadiness;
 window.xronosPageBenchmark = benchmark;

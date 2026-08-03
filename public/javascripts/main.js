@@ -588,34 +588,154 @@ pageRuntime.service(
     "startup-hook-registered"
 );
 
-MathJax.Hub.Register.StartupHook("End", function () {
-        pageRuntime.service(
-            "mathjax",
-            "startup-ended"
-        );
-    $(".accordion").each(function() {
-        var accordion = $(this);
-        var initiallyOpen =
-            accordion.hasClass(
-                "xronos-foldable-accordion"
-            );
+var mathJaxStartupUiFinalization = {
+    started: false,
+    owner: null,
+    completed: false
+};
 
-        accordion.accordion({
-            active: initiallyOpen ? 0 : false,
-            autoHeight: false,
-            collapsible: true,
-            heightStyle: "content"
-        });
-    });
-    $(".accordion").removeClass(
-        "hidden-out-of-view"
+function invokeMathJaxStartupUiFinalization(owner) {
+    if (mathJaxStartupUiFinalization.started) {
+        pageRuntime.event(
+            "mathjax-startup-ui-duplicate-invocation-ignored",
+            {
+                requestedOwner: owner,
+                activeOwner:
+                    mathJaxStartupUiFinalization.owner,
+                completed:
+                    mathJaxStartupUiFinalization.completed
+            }
+        );
+
+        return {
+            state: "not-required",
+            value: {
+                reason: "already-started",
+                owner:
+                    mathJaxStartupUiFinalization.owner
+            }
+        };
+    }
+
+    mathJaxStartupUiFinalization.started = true;
+    mathJaxStartupUiFinalization.owner = owner;
+
+    pageRuntime.operation(
+        "mathjax-startup-ui",
+        "invoked",
+        {
+            owner: owner
+        }
     );
 
-	$("#loadingSpinner").hide()
-	//$("#theActivity").removeClass('hidden') // Currently, the hidden class is not set
+    try {
+        $(".accordion").each(function() {
+            var accordion = $(this);
+            var initiallyOpen =
+                accordion.hasClass(
+                    "xronos-foldable-accordion"
+                );
 
-	references.highlightTarget(); // Scroll to target
- });
+            accordion.accordion({
+                active: initiallyOpen ? 0 : false,
+                autoHeight: false,
+                collapsible: true,
+                heightStyle: "content"
+            });
+        });
+
+        $(".accordion").removeClass(
+            "hidden-out-of-view"
+        );
+
+        $("#loadingSpinner").hide();
+
+        references.highlightTarget();
+
+        mathJaxStartupUiFinalization.completed =
+            true;
+
+        pageRuntime.operation(
+            "mathjax-startup-ui",
+            "completed",
+            {
+                owner: owner,
+                accordionCount:
+                    $(".accordion").length,
+                loadingSpinnerCount:
+                    $("#loadingSpinner").length
+            }
+        );
+
+        return {
+            state: "succeeded",
+            value: {
+                owner: owner,
+                accordionCount:
+                    $(".accordion").length,
+                loadingSpinnerCount:
+                    $("#loadingSpinner").length
+            }
+        };
+    } catch (err) {
+        pageRuntime.operation(
+            "mathjax-startup-ui",
+            "failed",
+            {
+                owner: owner,
+                message:
+                    err && err.message
+                        ? err.message
+                        : String(err)
+            }
+        );
+
+        throw err;
+    }
+}
+
+var mathJaxStartupUiOwnerConfigured =
+    pageRuntime.configureMathJaxStartupUi(
+        function() {
+            return invokeMathJaxStartupUiFinalization(
+                "coordinator"
+            );
+        }
+    );
+
+MathJax.Hub.Register.StartupHook("End", function () {
+    pageRuntime.service(
+        "mathjax",
+        "startup-ended"
+    );
+
+    var requested =
+        mathJaxStartupUiOwnerConfigured &&
+        pageRuntime
+            .requestMathJaxStartupUiFinalization(
+                {
+                    startupEnded: true,
+                    requestLocation:
+                        "mathjax-startup-end-hook"
+                }
+            );
+
+    if (!requested) {
+        pageRuntime.event(
+            "mathjax-startup-ui-legacy-fallback",
+            {
+                reason:
+                    mathJaxStartupUiOwnerConfigured
+                        ? "coordinator-request-rejected"
+                        : "coordinator-owner-not-configured"
+            }
+        );
+
+        invokeMathJaxStartupUiFinalization(
+            "legacy-fallback"
+        );
+    }
+});
 
 MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
     pageRuntime.service(

@@ -843,5 +843,159 @@ describe(
                 "failed"
             );
         });
+
+        it("runs the configured MathJax startup UI finalizer exactly once", async function() {
+            var coordinator =
+                adapter.create();
+            var calls = 0;
+
+            coordinator
+                .setMathJaxStartupUiRunner(
+                    function() {
+                        calls += 1;
+
+                        return {
+                            state:
+                                "succeeded",
+                            value: {
+                                owner:
+                                    "coordinator"
+                            }
+                        };
+                    }
+                );
+
+            assert.strictEqual(
+                coordinator
+                    .requestMathJaxStartupUiFinalization(
+                        {
+                            startupEnded:
+                                true
+                        }
+                    ),
+                true
+            );
+
+            await flush();
+
+            assert.strictEqual(
+                calls,
+                1
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "mathjax-startup-ended"
+                    ].state,
+                "succeeded"
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "mathjax-startup-ui-finalization"
+                    ].state,
+                "succeeded"
+            );
+
+            assert.deepStrictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "mathjax-startup-ui-finalization"
+                    ].result,
+                {
+                    owner:
+                        "coordinator"
+                }
+            );
+
+            coordinator
+                .requestMathJaxStartupUiFinalization(
+                    {
+                        startupEnded:
+                            true
+                    }
+                );
+
+            await flush();
+
+            assert.strictEqual(
+                calls,
+                1
+            );
+        });
+
+        it("keeps Startup End UI finalization separate from initial Process readiness", async function() {
+            var coordinator =
+                adapter.create();
+
+            coordinator
+                .setMathJaxStartupUiRunner(
+                    function() {
+                        return {
+                            state:
+                                "succeeded"
+                        };
+                    }
+                );
+
+            coordinator
+                .requestMathJaxStartupUiFinalization(
+                    {
+                        startupEnded:
+                            true
+                    }
+                );
+
+            await flush();
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "mathjax-startup-ui-finalization"
+                    ].state,
+                "succeeded"
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "mathjax-initial-process"
+                    ].state,
+                "waiting"
+            );
+
+            assert.strictEqual(
+                adapter.readinessSnapshot(
+                    coordinator
+                ).contentReady,
+                "waiting"
+            );
+        });
+
+        it("fails Startup End UI finalization when no runner is configured", async function() {
+            var coordinator =
+                adapter.create();
+
+            coordinator
+                .requestMathJaxStartupUiFinalization(
+                    {
+                        startupEnded:
+                            true
+                    }
+                );
+
+            await flush();
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "mathjax-startup-ui-finalization"
+                    ].state,
+                "failed"
+            );
+        });
+
     }
 );

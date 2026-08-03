@@ -19,7 +19,9 @@ var CONTROL_TASKS = [
     "activity-initialization-requested",
     "activity-initialization-release",
     "mathjax-startup-requested",
-    "mathjax-startup-trigger"
+    "mathjax-startup-trigger",
+    "mathjax-startup-ended",
+    "mathjax-startup-ui-finalization"
 ];
 
 var DIMENSION_TASKS = [
@@ -95,6 +97,7 @@ function createPassiveCoordinator(options) {
     var activityBootstrapRunner = null;
     var activityInitializationRunner = null;
     var mathJaxStartupRunner = null;
+    var mathJaxStartupUiRunner = null;
 
     LEAF_TASKS.forEach(function(taskId) {
         registerExternalLeaf(
@@ -191,6 +194,35 @@ function createPassiveCoordinator(options) {
             }
 
             return mathJaxStartupRunner();
+        }
+    });
+
+    coordinator.register({
+        id: "mathjax-startup-ended",
+        external: true
+    });
+
+    coordinator.register({
+        id: "mathjax-startup-ui-finalization",
+        dependsOn: [
+            "mathjax-startup-ended"
+        ],
+        accepts: {
+            "mathjax-startup-ended": [
+                "succeeded"
+            ]
+        },
+        run: function() {
+            if (
+                typeof mathJaxStartupUiRunner !==
+                    "function"
+            ) {
+                throw new Error(
+                    "MathJax startup UI runner is not configured."
+                );
+            }
+
+            return mathJaxStartupUiRunner();
         }
     });
 
@@ -490,6 +522,60 @@ function createPassiveCoordinator(options) {
 
             return coordinator.signal(
                 "mathjax-startup-requested",
+                "succeeded",
+                details
+            );
+        };
+
+    coordinator.setMathJaxStartupUiRunner =
+        function(runner) {
+            if (typeof runner !== "function") {
+                throw new Error(
+                    "MathJax startup UI runner must be a function."
+                );
+            }
+
+            mathJaxStartupUiRunner =
+                runner;
+
+            coordinator.record(
+                "mathjax-startup-ui-runner-configured",
+                "mathjax-startup-ui-finalization"
+            );
+
+            return true;
+        };
+
+    coordinator.requestMathJaxStartupUiFinalization =
+        function(details) {
+            var report =
+                coordinator.inspect();
+            var task =
+                report.tasks[
+                    "mathjax-startup-ui-finalization"
+                ];
+
+            if (
+                task &&
+                (
+                    task.state === "running" ||
+                    task.state === "succeeded" ||
+                    task.state === "not-required"
+                )
+            ) {
+                coordinator.record(
+                    "duplicate-mathjax-startup-ui-request-ignored",
+                    "mathjax-startup-ui-finalization",
+                    {
+                        state: task.state
+                    }
+                );
+
+                return true;
+            }
+
+            return coordinator.signal(
+                "mathjax-startup-ended",
                 "succeeded",
                 details
             );

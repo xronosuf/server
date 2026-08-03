@@ -587,17 +587,31 @@ Migration must be incremental.
 
 ### Phase 4: first active owner
 
-Status: the first active owner was implemented and validated across all eleven
-browser fixtures. The coordinator now owns the one-shot activity-bootstrap
-trigger, while the internal activity lifecycle remains legacy-owned.
+Status: active ownership now covers two bounded activity responsibilities.
+
+The first active owner controls the one-shot document-ready activity-bootstrap
+trigger. The second active owner controls release of the state-dependent
+activity initialization callback after initial state becomes available.
+
+The WebSocket transport, database construction, generic `fetchData()` queue,
+and the internal activity initialization body remain component-owned.
 
 Move one bounded startup responsibility under active coordinator control.
 
-The first ownership transfer is deliberately limited to the one-shot
+The first ownership transfer was deliberately limited to the one-shot
 document-ready trigger that invokes the existing `.activity()` bootstrap.
-The coordinator does not yet own the internal activity initialization sequence,
-the initial-state transport, MathJax startup, Sage execution, or parser-owned
-author JavaScript.
+
+The next bounded transfer moved authority over release of the activity's
+state-dependent initialization callback. The coordinator waits for both:
+
+- the activity initialization request; and
+- successful initial-state availability.
+
+The generic `fetchData()` queue remains owned by `database.js`, and unrelated
+consumers such as Sage seed setup and author random setup retain their existing
+delivery behavior. The coordinator does not yet own the WebSocket transport,
+database construction, MathJax startup, Sage execution, answer submission
+transactions, or parser-owned author JavaScript.
 
 The first owner should be selected for:
 

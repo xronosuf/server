@@ -249,7 +249,11 @@ The browser currently:
 2. sends `watch(learnerId, activityHash)`
 3. waits for the server to send `sync`
 4. initializes the browser database
-5. releases queued `fetchData()` callbacks
+5. records initial state as available
+6. releases queued `fetchData()` callbacks
+
+The availability signal now precedes callback delivery so coordinator tasks can
+become eligible while the callback batch is being released.
 
 The save-status UI currently becomes positive when the WebSocket opens, before
 initial saved-state synchronization has succeeded.
@@ -359,11 +363,20 @@ without fallback or recovery and were not terminal mismatches.
 In this codebase, `.activity()` is effectively the activity-page runtime
 bootstrapper rather than a small widget initializer.
 
-The first active ownership transfer controls only the one-shot document-ready
+The first active ownership transfer controls the one-shot document-ready
 invocation of this existing initializer. A guard prevents duplicate invocation,
 and a direct legacy fallback remains available if coordinator ownership cannot
-be configured or requested. The internal `fetchData()` wait and callback body
-remain unchanged during this phase.
+be configured or requested.
+
+The second bounded transfer controls release of the activity's state-dependent
+initialization callback. The activity still registers through `fetchData()`,
+but its callback now records availability and requests the coordinator-owned
+`activity-initialization-release` task. That task requires both initial-state
+success and an activity initialization request.
+
+The generic `fetchData()` queue remains owned by `database.js`; other consumers
+continue to receive initial state directly. The internal activity initialization
+body remains in `activity.js`.
 
 After initial state arrives, it initializes features including:
 

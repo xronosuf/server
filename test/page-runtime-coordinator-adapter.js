@@ -453,5 +453,173 @@ describe(
                 "failed"
             );
         });
+
+
+        it("waits for both initial state and an activity initialization request", async function() {
+            var coordinator =
+                adapter.create();
+            var calls = 0;
+
+            coordinator
+                .setActivityInitializationRunner(
+                    function() {
+                        calls += 1;
+
+                        return {
+                            state:
+                                "succeeded",
+                            value: {
+                                owner:
+                                    "coordinator"
+                            }
+                        };
+                    }
+                );
+
+            coordinator
+                .requestActivityInitialization(
+                    {
+                        activityCount:
+                            1
+                    }
+                );
+
+            await flush();
+
+            assert.strictEqual(
+                calls,
+                0
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "activity-initialization-release"
+                    ].state,
+                "waiting"
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "operations",
+                "initial-state",
+                "available"
+            );
+
+            await flush();
+
+            assert.strictEqual(
+                calls,
+                1
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "activity-initialization-release"
+                    ].state,
+                "succeeded"
+            );
+        });
+
+        it("releases activity initialization when initial state arrived first", async function() {
+            var coordinator =
+                adapter.create();
+            var calls = 0;
+
+            coordinator
+                .setActivityInitializationRunner(
+                    function() {
+                        calls += 1;
+
+                        return {
+                            state:
+                                "succeeded"
+                        };
+                    }
+                );
+
+            adapter.signalTransition(
+                coordinator,
+                "operations",
+                "initial-state",
+                "available"
+            );
+
+            await flush();
+
+            assert.strictEqual(
+                calls,
+                0
+            );
+
+            coordinator
+                .requestActivityInitialization(
+                    {
+                        activityCount:
+                            1
+                    }
+                );
+
+            await flush();
+
+            assert.strictEqual(
+                calls,
+                1
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "activity-initialization-release"
+                    ].state,
+                "succeeded"
+            );
+
+            coordinator
+                .requestActivityInitialization(
+                    {
+                        activityCount:
+                            1
+                    }
+                );
+
+            await flush();
+
+            assert.strictEqual(
+                calls,
+                1
+            );
+        });
+
+        it("fails activity initialization release when no runner is configured", async function() {
+            var coordinator =
+                adapter.create();
+
+            coordinator
+                .requestActivityInitialization(
+                    {
+                        activityCount:
+                            1
+                    }
+                );
+
+            adapter.signalTransition(
+                coordinator,
+                "operations",
+                "initial-state",
+                "available"
+            );
+
+            await flush();
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "activity-initialization-release"
+                    ].state,
+                "failed"
+            );
+        });
     }
 );

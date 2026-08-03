@@ -15,7 +15,9 @@ var LEAF_TASKS = [
 
 var CONTROL_TASKS = [
     "document-ready",
-    "activity-bootstrap-trigger"
+    "activity-bootstrap-trigger",
+    "activity-initialization-requested",
+    "activity-initialization-release"
 ];
 
 var DIMENSION_TASKS = [
@@ -89,6 +91,7 @@ function createPassiveCoordinator(options) {
     var coordinator =
         coordinatorCore.create(options);
     var activityBootstrapRunner = null;
+    var activityInitializationRunner = null;
 
     LEAF_TASKS.forEach(function(taskId) {
         registerExternalLeaf(
@@ -123,6 +126,39 @@ function createPassiveCoordinator(options) {
             }
 
             return activityBootstrapRunner();
+        }
+    });
+
+    coordinator.register({
+        id: "activity-initialization-requested",
+        external: true
+    });
+
+    coordinator.register({
+        id: "activity-initialization-release",
+        dependsOn: [
+            "initial-state",
+            "activity-initialization-requested"
+        ],
+        accepts: {
+            "initial-state": [
+                "succeeded"
+            ],
+            "activity-initialization-requested": [
+                "succeeded"
+            ]
+        },
+        run: function() {
+            if (
+                typeof activityInitializationRunner !==
+                    "function"
+            ) {
+                throw new Error(
+                    "Activity initialization runner is not configured."
+                );
+            }
+
+            return activityInitializationRunner();
         }
     });
 
@@ -314,6 +350,60 @@ function createPassiveCoordinator(options) {
 
             return coordinator.signal(
                 "document-ready",
+                "succeeded",
+                details
+            );
+        };
+
+    coordinator.setActivityInitializationRunner =
+        function(runner) {
+            if (typeof runner !== "function") {
+                throw new Error(
+                    "Activity initialization runner must be a function."
+                );
+            }
+
+            activityInitializationRunner =
+                runner;
+
+            coordinator.record(
+                "activity-initialization-runner-configured",
+                "activity-initialization-release"
+            );
+
+            return true;
+        };
+
+    coordinator.requestActivityInitialization =
+        function(details) {
+            var report =
+                coordinator.inspect();
+            var release =
+                report.tasks[
+                    "activity-initialization-release"
+                ];
+
+            if (
+                release &&
+                (
+                    release.state === "running" ||
+                    release.state === "succeeded" ||
+                    release.state === "not-required"
+                )
+            ) {
+                coordinator.record(
+                    "duplicate-activity-initialization-request-ignored",
+                    "activity-initialization-release",
+                    {
+                        state: release.state
+                    }
+                );
+
+                return true;
+            }
+
+            return coordinator.signal(
+                "activity-initialization-requested",
                 "succeeded",
                 details
             );

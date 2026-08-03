@@ -544,6 +544,16 @@ function connectToServer() {
 
         pageRuntime.operation(
             "initial-state",
+            "available",
+            {
+                delivery: "queued-callbacks",
+                callbackCount:
+                    fetcherCallbacks.length
+            }
+        );
+
+        pageRuntime.operation(
+            "initial-state-delivery",
             "releasing-callbacks",
             {
                 callbackCount:
@@ -570,15 +580,6 @@ function connectToServer() {
             );
 	    });
 
-        pageRuntime.operation(
-            "initial-state",
-            "available",
-            {
-                delivery: "queued-callbacks",
-                callbackCount:
-                    fetcherCallbacks.length
-            }
-        );
 	}
     };
 

@@ -1075,6 +1075,80 @@ function requestActivityBootstrap(details) {
     }
 }
 
+function configureActivityInitialization(runner) {
+    try {
+        passiveCoordinator
+            .setActivityInitializationRunner(
+                runner
+            );
+
+        record(
+            "event",
+            "activity-initialization-owner-configured",
+            undefined,
+            {
+                owner: "coordinator"
+            }
+        );
+
+        return true;
+    } catch (err) {
+        record(
+            "event",
+            "activity-initialization-owner-configuration-failed",
+            undefined,
+            {
+                message:
+                    err && err.message
+                        ? err.message
+                        : String(err)
+            }
+        );
+
+        return false;
+    }
+}
+
+function requestActivityInitialization(details) {
+    try {
+        var accepted =
+            passiveCoordinator
+                .requestActivityInitialization(
+                    details
+                );
+
+        record(
+            "event",
+            accepted
+                ? "activity-initialization-owner-requested"
+                : "activity-initialization-owner-request-rejected",
+            undefined,
+            {
+                owner: "coordinator",
+                details:
+                    details || null
+            }
+        );
+
+        return accepted;
+    } catch (err) {
+        record(
+            "event",
+            "activity-initialization-owner-request-failed",
+            undefined,
+            {
+                owner: "coordinator",
+                message:
+                    err && err.message
+                        ? err.message
+                        : String(err)
+            }
+        );
+
+        return false;
+    }
+}
+
 function compareCoordinatorReadiness() {
     return coordinatorAdapter
         .compareReadiness(
@@ -2408,6 +2482,10 @@ var api = {
         configureActivityBootstrap,
     requestActivityBootstrap:
         requestActivityBootstrap,
+    configureActivityInitialization:
+        configureActivityInitialization,
+    requestActivityInitialization:
+        requestActivityInitialization,
     compareCoordinatorReadiness:
         compareCoordinatorReadiness,
     benchmark: benchmark,
@@ -2425,6 +2503,10 @@ window.xronosConfigureActivityBootstrap =
     configureActivityBootstrap;
 window.xronosRequestActivityBootstrap =
     requestActivityBootstrap;
+window.xronosConfigureActivityInitialization =
+    configureActivityInitialization;
+window.xronosRequestActivityInitialization =
+    requestActivityInitialization;
 window.xronosComparePageRuntimeReadiness =
     compareCoordinatorReadiness;
 window.xronosPageBenchmark = benchmark;

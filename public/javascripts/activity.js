@@ -265,25 +265,12 @@ var installLegacyAccordionHints = function(activity) {
 };
 
 
-var createActivity = function() {
-	var activity = $(this);
+var activityInitializationEntries = [];
+var activityInitializationOwnerConfigured = false;
+var activityInitializationRequestScheduled = false;
 
-    pageRuntime.component(
-        "activity",
-        "waiting-for-initial-state",
-        {
-            path: activity.attr("data-path"),
-            hashAvailable:
-                activity.attr("data-hash") !== undefined
-        }
-    );
-	
-	$(".foldable", activity).foldable();
-	$(".accordion", activity).addClass('hidden-out-of-view')
+var initializeActivity = function(activity) {
 
-    //$('.activity-body', this).annotator();
-    
-    activity.fetchData( function() {
         pageRuntime.component(
             "activity",
             "initializing",
@@ -316,10 +303,10 @@ var createActivity = function() {
 	$(".select-all", activity).selectAll();
 	$(".word-choice", activity).wordChoice();
 	$(".hint", activity).hint();
-	
+
 	$(".free-response", activity).freeResponse();
-	$(".javascript-code", activity).coding();	
-	
+	$(".javascript-code", activity).coding();
+
 	$(".shuffle", activity).shuffle();
 	$(".feedback", activity).feedback();
         var validatorCount =
@@ -368,9 +355,9 @@ var createActivity = function() {
 	);
 
 	$('.youtube-player', activity).youtube();
-	
+
 	connectInteractives();
-	
+
 	$('.activity-card').activityCard();
 
         pageRuntime.component(
@@ -380,6 +367,230 @@ var createActivity = function() {
                 path: activity.attr("data-path")
             }
         );
+
+};
+
+var invokeActivityInitialization = function(owner) {
+    var initializedCount = 0;
+    var failedCount = 0;
+    var firstError = null;
+
+    activityInitializationEntries.forEach(
+        function(entry) {
+            if (
+                !entry.initialStateAvailable ||
+                entry.started
+            ) {
+                return;
+            }
+
+            entry.started = true;
+            entry.owner = owner;
+
+            pageRuntime.event(
+                "activity-initialization-invoked",
+                {
+                    owner: owner,
+                    path:
+                        entry.activity.attr(
+                            "data-path"
+                        )
+                }
+            );
+
+            try {
+                initializeActivity(
+                    entry.activity
+                );
+
+                entry.completed = true;
+                initializedCount += 1;
+
+                pageRuntime.event(
+                    "activity-initialization-completed",
+                    {
+                        owner: owner,
+                        path:
+                            entry.activity.attr(
+                                "data-path"
+                            )
+                    }
+                );
+            } catch (err) {
+                failedCount += 1;
+
+                if (!firstError) {
+                    firstError = err;
+                }
+
+                pageRuntime.component(
+                    "activity",
+                    "failed",
+                    {
+                        owner: owner,
+                        path:
+                            entry.activity.attr(
+                                "data-path"
+                            ),
+                        errorName:
+                            err && err.name
+                                ? err.name
+                                : undefined,
+                        errorMessage:
+                            err && err.message
+                                ? err.message
+                                : String(err)
+                    }
+                );
+            }
+        }
+    );
+
+    if (firstError) {
+        throw firstError;
+    }
+
+    return {
+        state: "succeeded",
+        value: {
+            owner: owner,
+            registeredCount:
+                activityInitializationEntries.length,
+            initializedCount:
+                initializedCount,
+            failedCount:
+                failedCount
+        }
+    };
+};
+
+var ensureActivityInitializationOwner =
+    function() {
+        if (
+            activityInitializationOwnerConfigured
+        ) {
+            return true;
+        }
+
+        activityInitializationOwnerConfigured =
+            pageRuntime
+                .configureActivityInitialization(
+                    function() {
+                        return invokeActivityInitialization(
+                            "coordinator"
+                        );
+                    }
+                );
+
+        return activityInitializationOwnerConfigured;
+    };
+
+var scheduleActivityInitializationRequest =
+    function() {
+        if (
+            activityInitializationRequestScheduled
+        ) {
+            return;
+        }
+
+        activityInitializationRequestScheduled =
+            true;
+
+        /*
+         * Defer until all fetchData callbacks released by the same initial
+         * sync have marked their activity entries available.
+         */
+        _.defer(function() {
+            var requested =
+                ensureActivityInitializationOwner() &&
+                pageRuntime
+                    .requestActivityInitialization(
+                        {
+                            activityCount:
+                                activityInitializationEntries
+                                    .length,
+                            availableCount:
+                                activityInitializationEntries
+                                    .filter(
+                                        function(entry) {
+                                            return entry
+                                                .initialStateAvailable;
+                                        }
+                                    ).length
+                        }
+                    );
+
+            if (!requested) {
+                pageRuntime.event(
+                    "activity-initialization-legacy-fallback",
+                    {
+                        reason:
+                            activityInitializationOwnerConfigured
+                                ? "coordinator-request-rejected"
+                                : "coordinator-owner-not-configured",
+                        activityCount:
+                            activityInitializationEntries
+                                .length
+                    }
+                );
+
+                invokeActivityInitialization(
+                    "legacy-fallback"
+                );
+            }
+        });
+    };
+
+var createActivity = function() {
+
+	var activity = $(this);
+
+    pageRuntime.component(
+        "activity",
+        "waiting-for-initial-state",
+        {
+            path: activity.attr("data-path"),
+            hashAvailable:
+                activity.attr("data-hash") !== undefined
+        }
+    );
+
+	$(".foldable", activity).foldable();
+	$(".accordion", activity).addClass('hidden-out-of-view')
+
+    //$('.activity-body', this).annotator();
+
+
+    var entry = {
+        activity: activity,
+        initialStateAvailable: false,
+        started: false,
+        completed: false,
+        owner: null
+    };
+
+    activityInitializationEntries.push(
+        entry
+    );
+
+    ensureActivityInitializationOwner();
+
+    activity.fetchData(function() {
+        entry.initialStateAvailable = true;
+
+        pageRuntime.operation(
+            "initial-state-consumer:activity",
+            "coordinator-release-requested",
+            {
+                path:
+                    activity.attr("data-path"),
+                registeredCount:
+                    activityInitializationEntries
+                        .length
+            }
+        );
+
+        scheduleActivityInitializationRequest();
     }, "activity");
 };
 

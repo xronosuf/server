@@ -100,6 +100,7 @@ var readinessWatchdogs = {
         timedOut: false,
         timedOutAtElapsedMs: null,
         completed: false,
+        errorCount: 0,
         completedAtElapsedMs: null,
         generation: null
     },
@@ -344,7 +345,12 @@ function updatePageReadiness() {
         readinessWatchdogs.initialMathJax;
     var initialMathJaxObservedState =
         initialMathJaxWatchdog.completed
-            ? "completed"
+            ? (
+                initialMathJaxWatchdog
+                    .errorCount > 0
+                    ? "failed"
+                    : "completed"
+            )
             : null;
 
     if (
@@ -421,6 +427,20 @@ function updatePageReadiness() {
         ]);
     var interactionReady =
         readinessSummary([
+            /*
+             * Do not report interaction readiness when the initial
+             * mathematical rendering failed.
+             */
+            readinessDependency(
+                "mathjax-initial-process",
+                initialMathJaxObservedState,
+                ["completed"],
+                [
+                    "failed",
+                    "degraded",
+                    "timed-out"
+                ]
+            ),
             readinessDependency(
                 "activity",
                 activity && activity.state,
@@ -493,7 +513,9 @@ function updatePageReadiness() {
             initialMathJaxWatchdog
                 .completedAtElapsedMs,
         generation:
-            initialMathJaxWatchdog.generation
+            initialMathJaxWatchdog.generation,
+        errorCount:
+            initialMathJaxWatchdog.errorCount
     };
     contentReady.details
         .legacyStandaloneSageOutputs =
@@ -1291,6 +1313,14 @@ function observeInitialMathJaxProcessError(
                 .observeInitialMathJaxProcessError(
                     details
                 );
+
+        if (accepted) {
+            readinessWatchdogs
+                .initialMathJax
+                .errorCount += 1;
+
+            updatePageReadiness();
+        }
 
         record(
             "event",

@@ -1028,6 +1028,241 @@ var mathJaxStartupUiFinalization = {
     completed: false
 };
 
+/*
+ * An initial MathJax processing error makes the mathematical presentation
+ * unsafe for coursework interaction for the remainder of this page load.
+ */
+var initialMathJaxInteractionBlock = {
+    active:
+        false,
+    observer:
+        null
+};
+
+
+function disableMathJaxDependentInteraction(root) {
+    var scope =
+        root && root.nodeType
+            ? $(root)
+            : $(document);
+
+    var selector =
+        [
+            ".mathjaxed-input input",
+            ".mathjaxed-input textarea",
+            ".mathjaxed-input select",
+            ".mathjaxed-input button",
+            ".validator input",
+            ".validator textarea",
+            ".validator select",
+            ".validator button",
+            ".btn-ximera-submit",
+            ".btn-ximera-show-answer",
+            ".show-answer-small",
+            ".show-answer-large"
+        ].join(", ");
+
+    scope.find(selector)
+        .add(scope.filter(selector))
+        .prop("disabled", true)
+        .attr("aria-disabled", "true")
+        .addClass(
+            "xronos-mathjax-render-failure-disabled"
+        );
+}
+
+
+function activateInitialMathJaxInteractionBlock(details) {
+    if (initialMathJaxInteractionBlock.active) {
+        return;
+    }
+
+    initialMathJaxInteractionBlock.active =
+        true;
+
+    $("body")
+        .addClass(
+            "xronos-mathjax-render-failure"
+        )
+        .attr(
+            "data-xronos-mathjax-render-failure",
+            "true"
+        );
+
+    if (
+        $("#xronos-mathjax-render-failure-notice")
+            .length === 0
+    ) {
+        var notice =
+            $("<div/>", {
+                id:
+                    "xronos-mathjax-render-failure-notice",
+                class:
+                    "alert alert-danger",
+                role:
+                    "alert",
+                tabindex:
+                    "-1"
+            });
+
+        notice.append(
+            $("<h2/>", {
+                class:
+                    "h4"
+            }).text(
+                "Mathematical content failed to render"
+            )
+        );
+
+        notice.append(
+            $("<p/>").text(
+                "Some or all mathematical content on this page could not be rendered correctly. Answer checking has been disabled because the page may be incomplete or misleading."
+            )
+        );
+
+        notice.append(
+            $("<p/>").text(
+                "Reload the page. If the problem continues, report this page to your instructor or course support."
+            )
+        );
+
+        var destination =
+            $("main").first();
+
+        if (destination.length === 0) {
+            destination =
+                $("#content").first();
+        }
+
+        if (destination.length === 0) {
+            destination =
+                $(".container").first();
+        }
+
+        if (destination.length === 0) {
+            destination =
+                $("body");
+        }
+
+        destination.prepend(notice);
+    }
+
+    disableMathJaxDependentInteraction(
+        document
+    );
+
+    document.addEventListener(
+        "click",
+        function(event) {
+            var target =
+                event.target;
+
+            if (
+                !initialMathJaxInteractionBlock.active ||
+                !target ||
+                typeof target.closest !==
+                    "function"
+            ) {
+                return;
+            }
+
+            if (
+                target.closest(
+                    [
+                        ".mathjaxed-input",
+                        ".validator",
+                        ".btn-ximera-submit",
+                        ".btn-ximera-show-answer",
+                        ".show-answer-small",
+                        ".show-answer-large"
+                    ].join(", ")
+                )
+            ) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+            }
+        },
+        true
+    );
+
+    document.addEventListener(
+        "keydown",
+        function(event) {
+            var target =
+                event.target;
+
+            if (
+                initialMathJaxInteractionBlock.active &&
+                target &&
+                typeof target.closest ===
+                    "function" &&
+                target.closest(
+                    ".mathjaxed-input, .validator"
+                )
+            ) {
+                event.preventDefault();
+                event.stopImmediatePropagation();
+            }
+        },
+        true
+    );
+
+    if (
+        typeof window.MutationObserver ===
+            "function"
+    ) {
+        initialMathJaxInteractionBlock
+            .observer =
+                new window.MutationObserver(
+                    function(mutations) {
+                        mutations.forEach(
+                            function(mutation) {
+                                Array.prototype
+                                    .forEach.call(
+                                        mutation.addedNodes ||
+                                            [],
+                                        function(node) {
+                                            if (
+                                                node &&
+                                                node.nodeType ===
+                                                    1
+                                            ) {
+                                                disableMathJaxDependentInteraction(
+                                                    node
+                                                );
+                                            }
+                                        }
+                                    );
+                            }
+                        );
+                    }
+                );
+
+        initialMathJaxInteractionBlock
+            .observer.observe(
+                document.documentElement,
+                {
+                    childList:
+                        true,
+                    subtree:
+                        true
+                }
+            );
+    }
+
+    pageRuntime.component(
+        "mathjax-interaction-block",
+        "active",
+        details || {}
+    );
+
+    pageRuntime.event(
+        "initial-mathjax-interaction-block-activated",
+        details || {}
+    );
+}
+
+
 function invokeMathJaxStartupUiFinalization(owner) {
     if (mathJaxStartupUiFinalization.started) {
         pageRuntime.event(
@@ -2639,7 +2874,8 @@ function endMathJaxPass(passType, message) {
         var inlineSageDetails =
             initialInlineSageDetails();
 
-        pageRuntime.completeInitialMathJaxProcess({
+        var initialMathJaxCompletionAccepted =
+            pageRuntime.completeInitialMathJaxProcess({
             generation:
                 pass.generation,
             passType:
@@ -2681,6 +2917,31 @@ function endMathJaxPass(passType, message) {
             inlineSage:
                 inlineSageDetails
         });
+
+        if (initialMathJaxCompletionAccepted) {
+            var initialMathJaxTask =
+                pageRuntime
+                    .inspectCoordinator()
+                    .tasks[
+                        "mathjax-initial-process"
+                    ];
+
+            if (
+                initialMathJaxTask &&
+                initialMathJaxTask.state ===
+                    "failed"
+            ) {
+                activateInitialMathJaxInteractionBlock({
+                    generation:
+                        pass.generation,
+                    errorCount:
+                        initialMathJaxTask.result
+                            .errorCount,
+                    policy:
+                        "block-math-dependent-interaction-until-reload"
+                });
+            }
+        }
     }
 
     if (pass.passType === "rerender") {

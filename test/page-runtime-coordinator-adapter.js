@@ -240,11 +240,19 @@ describe(
 
             await flush();
 
-            var result =
+            var task =
                 coordinator.inspect()
                     .tasks[
                         "mathjax-initial-process"
-                    ].result;
+                    ];
+
+            assert.strictEqual(
+                task.state,
+                "failed"
+            );
+
+            var result =
+                task.result;
 
             assert.strictEqual(
                 result.errorCount,
@@ -255,6 +263,64 @@ describe(
                 result.errors[0]
                     .errorType,
                 "tex-parse-error"
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "operations",
+                "initial-state",
+                "available"
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "components",
+                "sage-initial",
+                "not-required"
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "components",
+                "sage-inline-initial",
+                "not-required"
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "components",
+                "activity",
+                "initialized"
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "components",
+                "initial-math-answers",
+                "not-required"
+            );
+
+            await flush();
+
+            assert.strictEqual(
+                adapter.readinessSnapshot(
+                    coordinator
+                ).contentReady,
+                "degraded"
+            );
+
+            assert.strictEqual(
+                adapter.readinessSnapshot(
+                    coordinator
+                ).interactionReady,
+                "degraded"
+            );
+
+            assert.strictEqual(
+                adapter.readinessSnapshot(
+                    coordinator
+                ).pageReadiness,
+                "degraded"
             );
         });
 

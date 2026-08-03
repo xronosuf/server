@@ -474,10 +474,18 @@ function createPassiveCoordinator(options) {
     coordinator.register({
         id: "interaction-ready",
         dependsOn: [
+            "mathjax-initial-process",
             "activity",
             "initial-math-answers"
         ],
         accepts: {
+            "mathjax-initial-process": [
+                "succeeded",
+                "not-required",
+                "degraded",
+                "failed",
+                "timed-out"
+            ],
             activity: [
                 "succeeded",
                 "not-required",
@@ -499,6 +507,7 @@ function createPassiveCoordinator(options) {
             return dependencyResult(
                 coordinator,
                 [
+                    "mathjax-initial-process",
                     "activity",
                     "initial-math-answers"
                 ]
@@ -989,16 +998,28 @@ function createPassiveCoordinator(options) {
                 return true;
             }
 
+            var errorCount =
+                initialMathJaxProcess
+                    .errors.length;
+
+            /*
+             * Any error during the initial MathJax Process means the
+             * mathematical presentation cannot be trusted as authored.
+             */
+            var terminalState =
+                errorCount > 0
+                    ? "failed"
+                    : "succeeded";
+
             var accepted =
                 coordinator.signal(
                     "mathjax-initial-process",
-                    "succeeded",
+                    terminalState,
                     {
                         generation:
                             generation,
                         errorCount:
-                            initialMathJaxProcess
-                                .errors.length,
+                            errorCount,
                         errors:
                             initialMathJaxProcess
                                 .errors.slice(),
@@ -1018,8 +1039,9 @@ function createPassiveCoordinator(options) {
                         generation:
                             generation,
                         errorCount:
-                            initialMathJaxProcess
-                                .errors.length
+                            errorCount,
+                        terminalState:
+                            terminalState
                     }
                 );
             }

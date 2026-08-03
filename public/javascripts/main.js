@@ -81,6 +81,8 @@ syntaxHighlighter.registerBrush(require('brush-javascript'));
 syntaxHighlighter.registerBrush( require('brush-python'));
 
 var MathJax = require('./mathjax');
+var mathJaxInitialFaultProbe =
+    require('./mathjax-initial-fault-probe');
 
 var activity = require('./activity');
 var mathAnswer = require('./math-answer');
@@ -1187,6 +1189,24 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
 	TEXDEF = TEX.Definitions,
 	MML = MathJax.ElementJax.mml,
 	HTML = MathJax.HTML;
+
+    /*
+     * Development-only initial-load MathJax fault probe.
+     *
+     * The URL fragment is used rather than the query string because the
+     * legacy cache-bust module removes query parameters during page startup.
+     *
+     * Example:
+     * #xronosMathJaxInitialFault=processing-error&scriptIndex=0
+     */
+    mathJaxInitialFaultProbe.install({
+        MathJax:
+            MathJax,
+        pageRuntime:
+            pageRuntime,
+        fragment:
+            window.location.hash
+    });
 
     TEXDEF.macros.answer = "answer";
     TEXDEF.macros.graph = "graph";

@@ -621,5 +621,227 @@ describe(
                 "failed"
             );
         });
+
+
+        it("runs the configured MathJax startup trigger exactly once", async function() {
+            var coordinator =
+                adapter.create();
+            var calls = 0;
+
+            coordinator
+                .setMathJaxStartupRunner(
+                    function() {
+                        calls += 1;
+
+                        return {
+                            state:
+                                "succeeded",
+                            value: {
+                                owner:
+                                    "coordinator"
+                            }
+                        };
+                    }
+                );
+
+            assert.strictEqual(
+                coordinator
+                    .requestMathJaxStartup(
+                        {
+                            documentReady:
+                                true
+                        }
+                    ),
+                true
+            );
+
+            await flush();
+
+            assert.strictEqual(
+                calls,
+                1
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "mathjax-startup-trigger"
+                    ].state,
+                "succeeded"
+            );
+
+            assert.deepStrictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "mathjax-startup-trigger"
+                    ].result,
+                {
+                    owner:
+                        "coordinator"
+                }
+            );
+
+            coordinator
+                .requestMathJaxStartup(
+                    {
+                        documentReady:
+                            true
+                    }
+                );
+
+            await flush();
+
+            assert.strictEqual(
+                calls,
+                1
+            );
+        });
+
+        it("does not release activity bootstrap when MathJax startup is requested", async function() {
+            var coordinator =
+                adapter.create();
+            var mathJaxCalls = 0;
+            var activityCalls = 0;
+
+            coordinator
+                .setMathJaxStartupRunner(
+                    function() {
+                        mathJaxCalls += 1;
+
+                        return {
+                            state:
+                                "succeeded"
+                        };
+                    }
+                );
+
+            coordinator
+                .setActivityBootstrapRunner(
+                    function() {
+                        activityCalls += 1;
+
+                        return {
+                            state:
+                                "succeeded"
+                        };
+                    }
+                );
+
+            coordinator
+                .requestMathJaxStartup(
+                    {
+                        requestLocation:
+                            "document-ready-mathjax-seam"
+                    }
+                );
+
+            await flush();
+
+            assert.strictEqual(
+                mathJaxCalls,
+                1
+            );
+
+            assert.strictEqual(
+                activityCalls,
+                0
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "mathjax-startup-trigger"
+                    ].state,
+                "succeeded"
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "document-ready"
+                    ].state,
+                "waiting"
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "activity-bootstrap-trigger"
+                    ].state,
+                "waiting"
+            );
+        });
+
+
+        it("keeps initial MathJax processing separate from startup invocation", async function() {
+            var coordinator =
+                adapter.create();
+
+            coordinator
+                .setMathJaxStartupRunner(
+                    function() {
+                        return {
+                            state:
+                                "succeeded"
+                        };
+                    }
+                );
+
+            coordinator
+                .requestMathJaxStartup(
+                    {
+                        documentReady:
+                            true
+                    }
+                );
+
+            await flush();
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "mathjax-startup-trigger"
+                    ].state,
+                "succeeded"
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "mathjax-initial-process"
+                    ].state,
+                "waiting"
+            );
+
+            assert.strictEqual(
+                adapter.readinessSnapshot(
+                    coordinator
+                ).contentReady,
+                "waiting"
+            );
+        });
+
+        it("fails the MathJax startup trigger when no runner is configured", async function() {
+            var coordinator =
+                adapter.create();
+
+            coordinator
+                .requestMathJaxStartup(
+                    {
+                        documentReady:
+                            true
+                    }
+                );
+
+            await flush();
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "mathjax-startup-trigger"
+                    ].state,
+                "failed"
+            );
+        });
     }
 );

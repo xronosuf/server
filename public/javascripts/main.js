@@ -85,6 +85,92 @@ var MathJax = require('./mathjax');
 var activity = require('./activity');
 var mathAnswer = require('./math-answer');
 
+var mathJaxStartupInvocation = {
+    started: false,
+    owner: null,
+    completed: false
+};
+
+function invokeMathJaxStartup(owner) {
+    if (mathJaxStartupInvocation.started) {
+        pageRuntime.event(
+            "mathjax-startup-duplicate-invocation-ignored",
+            {
+                requestedOwner: owner,
+                activeOwner:
+                    mathJaxStartupInvocation.owner,
+                completed:
+                    mathJaxStartupInvocation.completed
+            }
+        );
+
+        return {
+            state: "not-required",
+            value: {
+                reason: "already-started",
+                owner:
+                    mathJaxStartupInvocation.owner
+            }
+        };
+    }
+
+    mathJaxStartupInvocation.started = true;
+    mathJaxStartupInvocation.owner = owner;
+
+    pageRuntime.operation(
+        "mathjax-startup",
+        "invoked",
+        {
+            owner: owner
+        }
+    );
+
+    try {
+        MathJax.Hub.Startup.onload();
+
+        mathJaxStartupInvocation.completed =
+            true;
+
+        pageRuntime.operation(
+            "mathjax-startup",
+            "completed",
+            {
+                owner: owner
+            }
+        );
+
+        return {
+            state: "succeeded",
+            value: {
+                owner: owner
+            }
+        };
+    } catch (err) {
+        pageRuntime.operation(
+            "mathjax-startup",
+            "failed",
+            {
+                owner: owner,
+                message:
+                    err && err.message
+                        ? err.message
+                        : String(err)
+            }
+        );
+
+        throw err;
+    }
+}
+
+var mathJaxStartupOwnerConfigured =
+    pageRuntime.configureMathJaxStartup(
+        function() {
+            return invokeMathJaxStartup(
+                "coordinator"
+            );
+        }
+    );
+
 var activityBootstrapInvocation = {
     started: false,
     owner: null,
@@ -2369,7 +2455,32 @@ $(document).ready(function() {
      */
     sagemath.captureInitialSagePageManifestSnapshot();
 
-	MathJax.Hub.Startup.onload();
+    var mathJaxStartupRequested =
+        mathJaxStartupOwnerConfigured &&
+        pageRuntime.requestMathJaxStartup(
+            {
+                requestLocation:
+                    "document-ready-after-sage-manifest",
+                documentReady:
+                    true
+            }
+        );
+
+    if (!mathJaxStartupRequested) {
+        pageRuntime.event(
+            "mathjax-startup-legacy-fallback",
+            {
+                reason:
+                    mathJaxStartupOwnerConfigured
+                        ? "coordinator-request-rejected"
+                        : "coordinator-owner-not-configured"
+            }
+        );
+
+        invokeMathJaxStartup(
+            "legacy-fallback"
+        );
+    }
 
     // BADBAD: This seems like the wrong thing---why is default here?
     syntaxHighlighter.default.highlight();

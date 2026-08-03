@@ -17,7 +17,9 @@ var CONTROL_TASKS = [
     "document-ready",
     "activity-bootstrap-trigger",
     "activity-initialization-requested",
-    "activity-initialization-release"
+    "activity-initialization-release",
+    "mathjax-startup-requested",
+    "mathjax-startup-trigger"
 ];
 
 var DIMENSION_TASKS = [
@@ -92,6 +94,7 @@ function createPassiveCoordinator(options) {
         coordinatorCore.create(options);
     var activityBootstrapRunner = null;
     var activityInitializationRunner = null;
+    var mathJaxStartupRunner = null;
 
     LEAF_TASKS.forEach(function(taskId) {
         registerExternalLeaf(
@@ -159,6 +162,35 @@ function createPassiveCoordinator(options) {
             }
 
             return activityInitializationRunner();
+        }
+    });
+
+    coordinator.register({
+        id: "mathjax-startup-requested",
+        external: true
+    });
+
+    coordinator.register({
+        id: "mathjax-startup-trigger",
+        dependsOn: [
+            "mathjax-startup-requested"
+        ],
+        accepts: {
+            "mathjax-startup-requested": [
+                "succeeded"
+            ]
+        },
+        run: function() {
+            if (
+                typeof mathJaxStartupRunner !==
+                    "function"
+            ) {
+                throw new Error(
+                    "MathJax startup runner is not configured."
+                );
+            }
+
+            return mathJaxStartupRunner();
         }
     });
 
@@ -404,6 +436,60 @@ function createPassiveCoordinator(options) {
 
             return coordinator.signal(
                 "activity-initialization-requested",
+                "succeeded",
+                details
+            );
+        };
+
+    coordinator.setMathJaxStartupRunner =
+        function(runner) {
+            if (typeof runner !== "function") {
+                throw new Error(
+                    "MathJax startup runner must be a function."
+                );
+            }
+
+            mathJaxStartupRunner =
+                runner;
+
+            coordinator.record(
+                "mathjax-startup-runner-configured",
+                "mathjax-startup-trigger"
+            );
+
+            return true;
+        };
+
+    coordinator.requestMathJaxStartup =
+        function(details) {
+            var report =
+                coordinator.inspect();
+            var trigger =
+                report.tasks[
+                    "mathjax-startup-trigger"
+                ];
+
+            if (
+                trigger &&
+                (
+                    trigger.state === "running" ||
+                    trigger.state === "succeeded" ||
+                    trigger.state === "not-required"
+                )
+            ) {
+                coordinator.record(
+                    "duplicate-mathjax-startup-request-ignored",
+                    "mathjax-startup-trigger",
+                    {
+                        state: trigger.state
+                    }
+                );
+
+                return true;
+            }
+
+            return coordinator.signal(
+                "mathjax-startup-requested",
                 "succeeded",
                 details
             );

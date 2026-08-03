@@ -1149,6 +1149,80 @@ function requestActivityInitialization(details) {
     }
 }
 
+function configureMathJaxStartup(runner) {
+    try {
+        passiveCoordinator
+            .setMathJaxStartupRunner(
+                runner
+            );
+
+        record(
+            "event",
+            "mathjax-startup-owner-configured",
+            undefined,
+            {
+                owner: "coordinator"
+            }
+        );
+
+        return true;
+    } catch (err) {
+        record(
+            "event",
+            "mathjax-startup-owner-configuration-failed",
+            undefined,
+            {
+                message:
+                    err && err.message
+                        ? err.message
+                        : String(err)
+            }
+        );
+
+        return false;
+    }
+}
+
+function requestMathJaxStartup(details) {
+    try {
+        var accepted =
+            passiveCoordinator
+                .requestMathJaxStartup(
+                    details
+                );
+
+        record(
+            "event",
+            accepted
+                ? "mathjax-startup-owner-requested"
+                : "mathjax-startup-owner-request-rejected",
+            undefined,
+            {
+                owner: "coordinator",
+                details:
+                    details || null
+            }
+        );
+
+        return accepted;
+    } catch (err) {
+        record(
+            "event",
+            "mathjax-startup-owner-request-failed",
+            undefined,
+            {
+                owner: "coordinator",
+                message:
+                    err && err.message
+                        ? err.message
+                        : String(err)
+            }
+        );
+
+        return false;
+    }
+}
+
 function compareCoordinatorReadiness() {
     return coordinatorAdapter
         .compareReadiness(
@@ -2486,6 +2560,10 @@ var api = {
         configureActivityInitialization,
     requestActivityInitialization:
         requestActivityInitialization,
+    configureMathJaxStartup:
+        configureMathJaxStartup,
+    requestMathJaxStartup:
+        requestMathJaxStartup,
     compareCoordinatorReadiness:
         compareCoordinatorReadiness,
     benchmark: benchmark,
@@ -2507,6 +2585,10 @@ window.xronosConfigureActivityInitialization =
     configureActivityInitialization;
 window.xronosRequestActivityInitialization =
     requestActivityInitialization;
+window.xronosConfigureMathJaxStartup =
+    configureMathJaxStartup;
+window.xronosRequestMathJaxStartup =
+    requestMathJaxStartup;
 window.xronosComparePageRuntimeReadiness =
     compareCoordinatorReadiness;
 window.xronosPageBenchmark = benchmark;

@@ -1,73 +1,22 @@
 "use strict";
 
 
-function decodeFragmentValue(value) {
-    try {
-        return decodeURIComponent(
-            String(value || "")
-                .replace(/\+/g, " ")
-        );
-    } catch (error) {
-        return String(value || "");
-    }
-}
+var STORAGE_KEY =
+    "xronosMathJaxInitialFault";
 
 
-function parseFragment(fragment) {
-    var text =
-        String(fragment || "")
-            .replace(/^#/, "");
-
-    var result = {};
-
-    if (!text) {
-        return result;
-    }
-
-    text.split("&").forEach(function(part) {
-        var separator =
-            part.indexOf("=");
-
-        var rawKey =
-            separator === -1
-                ? part
-                : part.slice(0, separator);
-
-        var rawValue =
-            separator === -1
-                ? ""
-                : part.slice(separator + 1);
-
-        var key =
-            decodeFragmentValue(rawKey);
-
-        if (!key) {
-            return;
-        }
-
-        result[key] =
-            decodeFragmentValue(rawValue);
-    });
-
-    return result;
-}
-
-
-function requestedProbe(fragment) {
-    var parameters =
-        parseFragment(fragment);
-
+function normalizeRequest(value) {
     if (
-        parameters
-            .xronosMathJaxInitialFault !==
-        "processing-error"
+        !value ||
+        value.faultType !==
+            "processing-error"
     ) {
         return null;
     }
 
     var scriptIndex =
         parseInt(
-            parameters.scriptIndex || "0",
+            value.scriptIndex,
             10
         );
 
@@ -87,6 +36,103 @@ function requestedProbe(fragment) {
 }
 
 
+function consumeRequest(storage) {
+    if (
+        !storage ||
+        typeof storage.getItem !==
+            "function" ||
+        typeof storage.removeItem !==
+            "function"
+    ) {
+        return {
+            probe:
+                null,
+            reason:
+                "storage-unavailable"
+        };
+    }
+
+    var serialized;
+
+    try {
+        serialized =
+            storage.getItem(
+                STORAGE_KEY
+            );
+    } catch (error) {
+        return {
+            probe:
+                null,
+            reason:
+                "storage-read-failed"
+        };
+    }
+
+    if (serialized === null) {
+        return {
+            probe:
+                null,
+            reason:
+                "not-requested"
+        };
+    }
+
+    /*
+     * Consume before parsing or injecting. A malformed request, processing
+     * exception, or later page reload must not repeat the controlled fault.
+     */
+    try {
+        storage.removeItem(
+            STORAGE_KEY
+        );
+    } catch (error) {
+        return {
+            probe:
+                null,
+            reason:
+                "storage-remove-failed"
+        };
+    }
+
+    var parsed;
+
+    try {
+        parsed =
+            JSON.parse(
+                serialized
+            );
+    } catch (error) {
+        return {
+            probe:
+                null,
+            reason:
+                "invalid-json"
+        };
+    }
+
+    var probe =
+        normalizeRequest(
+            parsed
+        );
+
+    if (!probe) {
+        return {
+            probe:
+                null,
+            reason:
+                "invalid-request"
+        };
+    }
+
+    return {
+        probe:
+            probe,
+        reason:
+            "consumed"
+    };
+}
+
+
 function install(options) {
     options = options || {};
 
@@ -96,18 +142,20 @@ function install(options) {
     var pageRuntime =
         options.pageRuntime;
 
-    var fragment =
-        options.fragment;
+    var consumed =
+        consumeRequest(
+            options.storage
+        );
 
     var probe =
-        requestedProbe(fragment);
+        consumed.probe;
 
     if (!probe) {
         return {
             armed:
                 false,
             reason:
-                "not-requested"
+                consumed.reason
         };
     }
 
@@ -249,7 +297,11 @@ function install(options) {
             faultType:
                 probe.faultType,
             scriptIndex:
-                probe.scriptIndex
+                probe.scriptIndex,
+            requestSource:
+                "session-storage",
+            oneShot:
+                true
         }
     );
 
@@ -265,10 +317,12 @@ function install(options) {
 
 
 module.exports = {
-    parseFragment:
-        parseFragment,
-    requestedProbe:
-        requestedProbe,
+    storageKey:
+        STORAGE_KEY,
+    normalizeRequest:
+        normalizeRequest,
+    consumeRequest:
+        consumeRequest,
     install:
         install
 };

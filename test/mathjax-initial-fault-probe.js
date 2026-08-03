@@ -9,34 +9,137 @@ var probe =
     );
 
 
+function createStorage(initialValue) {
+    var values = {};
+
+    if (initialValue !== undefined) {
+        values[
+            probe.storageKey
+        ] = initialValue;
+    }
+
+    return {
+        getItem:
+            function(key) {
+                return Object.prototype
+                    .hasOwnProperty.call(
+                        values,
+                        key
+                    )
+                    ? values[key]
+                    : null;
+            },
+
+        removeItem:
+            function(key) {
+                delete values[key];
+            },
+
+        has:
+            function(key) {
+                return Object.prototype
+                    .hasOwnProperty.call(
+                        values,
+                        key
+                    );
+            }
+    };
+}
+
+
 describe(
     "initial MathJax fault probe",
     function() {
         it(
-            "ignores an unrelated fragment",
+            "does nothing when no one-shot request exists",
             function() {
+                var consumed =
+                    probe.consumeRequest(
+                        createStorage()
+                    );
+
                 assert.strictEqual(
-                    probe.requestedProbe(
-                        "#other=value"
-                    ),
+                    consumed.probe,
                     null
+                );
+
+                assert.strictEqual(
+                    consumed.reason,
+                    "not-requested"
                 );
             }
         );
 
         it(
-            "parses the controlled processing-error request",
+            "consumes and normalizes a processing-error request",
             function() {
+                var storage =
+                    createStorage(
+                        JSON.stringify({
+                            faultType:
+                                "processing-error",
+                            scriptIndex:
+                                4
+                        })
+                    );
+
+                var consumed =
+                    probe.consumeRequest(
+                        storage
+                    );
+
                 assert.deepStrictEqual(
-                    probe.requestedProbe(
-                        "#xronosMathJaxInitialFault=processing-error&scriptIndex=4"
-                    ),
+                    consumed.probe,
                     {
                         faultType:
                             "processing-error",
                         scriptIndex:
                             4
                     }
+                );
+
+                assert.strictEqual(
+                    consumed.reason,
+                    "consumed"
+                );
+
+                assert.strictEqual(
+                    storage.has(
+                        probe.storageKey
+                    ),
+                    false
+                );
+            }
+        );
+
+        it(
+            "removes malformed requests without arming",
+            function() {
+                var storage =
+                    createStorage(
+                        "{not-json"
+                    );
+
+                var consumed =
+                    probe.consumeRequest(
+                        storage
+                    );
+
+                assert.strictEqual(
+                    consumed.probe,
+                    null
+                );
+
+                assert.strictEqual(
+                    consumed.reason,
+                    "invalid-json"
+                );
+
+                assert.strictEqual(
+                    storage.has(
+                        probe.storageKey
+                    ),
+                    false
                 );
             }
         );
@@ -45,9 +148,12 @@ describe(
             "defaults an invalid script index to zero",
             function() {
                 assert.deepStrictEqual(
-                    probe.requestedProbe(
-                        "#xronosMathJaxInitialFault=processing-error&scriptIndex=-8"
-                    ),
+                    probe.normalizeRequest({
+                        faultType:
+                            "processing-error",
+                        scriptIndex:
+                            -8
+                    }),
                     {
                         faultType:
                             "processing-error",
@@ -59,10 +165,20 @@ describe(
         );
 
         it(
-            "injects once and restores before throwing",
+            "injects once, restores, and consumes the request",
             function() {
                 var calls = [];
                 var originalCalls = 0;
+
+                var storage =
+                    createStorage(
+                        JSON.stringify({
+                            faultType:
+                                "processing-error",
+                            scriptIndex:
+                                1
+                        })
+                    );
 
                 var tex = {
                     Process:
@@ -95,13 +211,20 @@ describe(
                         },
                         pageRuntime:
                             runtime,
-                        fragment:
-                            "#xronosMathJaxInitialFault=processing-error&scriptIndex=1"
+                        storage:
+                            storage
                     });
 
                 assert.strictEqual(
                     result.armed,
                     true
+                );
+
+                assert.strictEqual(
+                    storage.has(
+                        probe.storageKey
+                    ),
+                    false
                 );
 
                 assert.strictEqual(
@@ -164,6 +287,18 @@ describe(
                 assert.strictEqual(
                     originalCalls,
                     2
+                );
+
+                assert.strictEqual(
+                    calls.filter(
+                        function(entry) {
+                            return (
+                                entry.name ===
+                                "mathjax-initial-fault-probe-armed"
+                            );
+                        }
+                    ).length,
+                    1
                 );
 
                 assert.strictEqual(

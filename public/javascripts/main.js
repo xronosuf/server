@@ -1191,21 +1191,19 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
 	HTML = MathJax.HTML;
 
     /*
-     * Development-only initial-load MathJax fault probe.
+     * Development-only, one-shot initial-load MathJax fault probe.
      *
-     * The URL fragment is used rather than the query string because the
-     * legacy cache-bust module removes query parameters during page startup.
-     *
-     * Example:
-     * #xronosMathJaxInitialFault=processing-error&scriptIndex=0
+     * The request is consumed from sessionStorage before initial processing.
+     * URL fragments cannot be used because Xronos treats them as authored
+     * page targets, while query strings trigger the legacy cache-bust reload.
      */
     mathJaxInitialFaultProbe.install({
         MathJax:
             MathJax,
         pageRuntime:
             pageRuntime,
-        fragment:
-            window.location.hash
+        storage:
+            window.sessionStorage
     });
 
     TEXDEF.macros.answer = "answer";

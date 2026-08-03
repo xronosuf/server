@@ -688,6 +688,7 @@ var documentReadyStaticUiOwnerConfigured =
 var supervision = require('./supervision');
 
 var references = require('./references');
+var bootstrapUi = require('./bootstrap-ui');
 
 var documentReadyReferencesOwnerConfigured =
     pageRuntime.configureDocumentReadyReferences(
@@ -3097,9 +3098,16 @@ $(document).ready(function() {
 	// }
     // });
 
-    $(".dropdown-toggle").dropdown();
+    var bootstrapUiResult =
+        bootstrapUi.install(
+            document
+        );
 
-    $('[data-toggle="tooltip"]').tooltip();
+    pageRuntime.operation(
+        "document-ready-bootstrap-ui",
+        "completed",
+        bootstrapUiResult
+    );
 
     var activityBootstrapRequested =
         activityBootstrapOwnerConfigured &&

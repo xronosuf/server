@@ -804,9 +804,23 @@ function startInitialMathJaxReadinessWatchdog() {
                 watchdog.timedOutAtElapsedMs =
                     elapsedMs();
 
-                coordinatorAdapter.signalDeadline(
-                    passiveCoordinator,
-                    "mathjax-initial-process"
+                passiveCoordinator.record(
+                    "legacy-mathjax-readiness-deadline-observed",
+                    "mathjax-initial-process",
+                    {
+                        deadlineMilliseconds:
+                            watchdog
+                                .deadlineMilliseconds,
+                        timedOutAtElapsedMs:
+                            watchdog
+                                .timedOutAtElapsedMs,
+                        coordinatorState:
+                            passiveCoordinator
+                                .inspect()
+                                .tasks[
+                                    "mathjax-initial-process"
+                                ].state
+                    }
                 );
 
                 record(

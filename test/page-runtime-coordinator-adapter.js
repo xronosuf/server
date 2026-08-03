@@ -1811,5 +1811,417 @@ describe(
             );
         });
 
+
+        it("owns the initial MathJax timeout before Process begin", async function() {
+            var coordinator =
+                adapter.create({
+                    initialMathJaxTimeoutMs: 2
+                });
+
+            await new Promise(
+                function(resolve) {
+                    setTimeout(resolve, 5);
+                }
+            );
+
+            var report =
+                coordinator.inspect();
+            var task =
+                report.tasks[
+                    "mathjax-initial-process"
+                ];
+
+            assert.strictEqual(
+                task.state,
+                "timed-out"
+            );
+
+            assert.strictEqual(
+                task.result.code,
+                "XR-MATHJAX-INITIAL-101"
+            );
+
+            assert.strictEqual(
+                task.result.deadlineMilliseconds,
+                2
+            );
+
+            assert.strictEqual(
+                task.result.phase,
+                "waiting-for-process"
+            );
+
+            assert.strictEqual(
+                task.result.generation,
+                null
+            );
+
+            assert.strictEqual(
+                task.result.begun,
+                false
+            );
+
+            assert.strictEqual(
+                task.result.completed,
+                false
+            );
+
+            assert.strictEqual(
+                task.result.operationId,
+                task.operationId
+            );
+        });
+
+        it("records bound generation metadata when initial MathJax times out", async function() {
+            var coordinator =
+                adapter.create({
+                    initialMathJaxTimeoutMs: 2
+                });
+
+            assert.strictEqual(
+                coordinator
+                    .beginInitialMathJaxProcess({
+                        generation: 7
+                    }),
+                true
+            );
+
+            await new Promise(
+                function(resolve) {
+                    setTimeout(resolve, 5);
+                }
+            );
+
+            var task =
+                coordinator.inspect()
+                    .tasks[
+                        "mathjax-initial-process"
+                    ];
+
+            assert.strictEqual(
+                task.state,
+                "timed-out"
+            );
+
+            assert.strictEqual(
+                task.result.phase,
+                "process-running"
+            );
+
+            assert.strictEqual(
+                task.result.generation,
+                7
+            );
+
+            assert.strictEqual(
+                task.result.begun,
+                true
+            );
+
+            assert.strictEqual(
+                task.result.observedErrorCount,
+                0
+            );
+        });
+
+        it("recovers a timed-out initial MathJax task for the bound generation", async function() {
+            var coordinator =
+                adapter.create({
+                    initialMathJaxTimeoutMs: 2
+                });
+
+            coordinator
+                .beginInitialMathJaxProcess({
+                    generation: 8
+                });
+
+            await new Promise(
+                function(resolve) {
+                    setTimeout(resolve, 5);
+                }
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "mathjax-initial-process"
+                    ].state,
+                "timed-out"
+            );
+
+            assert.strictEqual(
+                coordinator
+                    .completeInitialMathJaxProcess({
+                        generation: 8
+                    }),
+                true
+            );
+
+            await flush();
+
+            var recoveredTask =
+                coordinator.inspect()
+                    .tasks[
+                        "mathjax-initial-process"
+                    ];
+
+            assert.strictEqual(
+                recoveredTask.state,
+                "succeeded"
+            );
+
+            assert.strictEqual(
+                recoveredTask.error,
+                null
+            );
+
+            assert.strictEqual(
+                recoveredTask.result.generation,
+                8
+            );
+
+            assert.strictEqual(
+                recoveredTask
+                    .lastTimeout
+                    .result
+                    .code,
+                "XR-MATHJAX-INITIAL-101"
+            );
+
+            assert.strictEqual(
+                recoveredTask
+                    .lastTimeout
+                    .result
+                    .generation,
+                8
+            );
+
+            assert.strictEqual(
+                recoveredTask
+                    .lastTimeout
+                    .result
+                    .phase,
+                "process-running"
+            );
+
+            assert.strictEqual(
+                coordinator.inspect().events.some(
+                    function(event) {
+                        return (
+                            event.type ===
+                                "task-recovered" &&
+                            event.taskId ===
+                                "mathjax-initial-process"
+                        );
+                    }
+                ),
+                true
+            );
+
+            assert.strictEqual(
+                coordinator.inspect().events.some(
+                    function(event) {
+                        return (
+                            event.type ===
+                                "task-state" &&
+                            event.taskId ===
+                                "mathjax-initial-process" &&
+                            event.details.state ===
+                                "timed-out"
+                        );
+                    }
+                ),
+                true
+            );
+        });
+
+        it("rejects mismatched completion after initial MathJax timeout", async function() {
+            var coordinator =
+                adapter.create({
+                    initialMathJaxTimeoutMs: 2
+                });
+
+            coordinator
+                .beginInitialMathJaxProcess({
+                    generation: 11
+                });
+
+            await new Promise(
+                function(resolve) {
+                    setTimeout(resolve, 5);
+                }
+            );
+
+            assert.strictEqual(
+                coordinator
+                    .completeInitialMathJaxProcess({
+                        generation: 12
+                    }),
+                false
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "mathjax-initial-process"
+                    ].state,
+                "timed-out"
+            );
+
+            assert.strictEqual(
+                coordinator.inspect().events.some(
+                    function(event) {
+                        return (
+                            event.type ===
+                                "initial-mathjax-process-completion-rejected" &&
+                            event.taskId ===
+                                "mathjax-initial-process" &&
+                            event.details.reason ===
+                                "generation-mismatch"
+                        );
+                    }
+                ),
+                true
+            );
+        });
+
+        it("recovers derived readiness after late initial MathJax completion", async function() {
+            var coordinator =
+                adapter.create({
+                    initialMathJaxTimeoutMs: 2
+                });
+
+            adapter.signalTransition(
+                coordinator,
+                "operations",
+                "initial-state",
+                "available"
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "components",
+                "sage-initial",
+                "not-required"
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "components",
+                "sage-inline-initial",
+                "not-required"
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "components",
+                "activity",
+                "initialized"
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "components",
+                "initial-math-answers",
+                "not-required"
+            );
+
+            coordinator
+                .beginInitialMathJaxProcess({
+                    generation: 15
+                });
+
+            await new Promise(
+                function(resolve) {
+                    setTimeout(resolve, 5);
+                }
+            );
+
+            await flush();
+
+            assert.strictEqual(
+                adapter.readinessSnapshot(
+                    coordinator
+                ).contentReady,
+                "degraded"
+            );
+
+            assert.strictEqual(
+                adapter.readinessSnapshot(
+                    coordinator
+                ).pageReadiness,
+                "degraded"
+            );
+
+            assert.strictEqual(
+                coordinator
+                    .completeInitialMathJaxProcess({
+                        generation: 15
+                    }),
+                true
+            );
+
+            await flush();
+
+            assert.strictEqual(
+                adapter.readinessSnapshot(
+                    coordinator
+                ).contentReady,
+                "ready"
+            );
+
+            assert.strictEqual(
+                adapter.readinessSnapshot(
+                    coordinator
+                ).pageReadiness,
+                "ready"
+            );
+        });
+
+        it("rejects an initial MathJax error without the bound generation", function() {
+            var coordinator =
+                adapter.create({
+                    initialMathJaxTimeoutMs: 1000
+                });
+
+            coordinator
+                .beginInitialMathJaxProcess({
+                    generation: 13
+                });
+
+            assert.strictEqual(
+                coordinator
+                    .observeInitialMathJaxProcessError({
+                        message:
+                            "missing generation"
+                    }),
+                false
+            );
+
+            assert.strictEqual(
+                coordinator.inspect().events.some(
+                    function(event) {
+                        return (
+                            event.type ===
+                                "initial-mathjax-process-error-rejected" &&
+                            event.taskId ===
+                                "mathjax-initial-process" &&
+                            event.details.reason ===
+                                "missing-generation"
+                        );
+                    }
+                ),
+                true
+            );
+
+            assert.strictEqual(
+                coordinator
+                    .completeInitialMathJaxProcess({
+                        generation: 13
+                    }),
+                true
+            );
+        });
+
     }
 );

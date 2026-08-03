@@ -13,6 +13,10 @@ var LEAF_TASKS = [
     "initial-math-answers"
 ];
 
+var INITIAL_MATHJAX_TIMEOUT_MS = 15000;
+var INITIAL_MATHJAX_TIMEOUT_CODE =
+    "XR-MATHJAX-INITIAL-101";
+
 var CONTROL_TASKS = [
     "document-ready",
     "activity-bootstrap-trigger",
@@ -87,17 +91,39 @@ function dependencyResult(
 
 function registerExternalLeaf(
     coordinator,
-    id
+    id,
+    options
 ) {
-    coordinator.register({
+    var specification = {
         id: id,
         external: true,
         recoveryPolicy:
             "allow-late-success"
-    });
+    };
+
+    options = options || {};
+
+    if (
+        typeof options.timeoutMs === "number"
+    ) {
+        specification.timeoutMs =
+            options.timeoutMs;
+    }
+
+    if (
+        typeof options.timeoutDetails ===
+            "function"
+    ) {
+        specification.timeoutDetails =
+            options.timeoutDetails;
+    }
+
+    coordinator.register(specification);
 }
 
 function createPassiveCoordinator(options) {
+    options = options || {};
+
     var coordinator =
         coordinatorCore.create(options);
     var activityBootstrapRunner = null;
@@ -115,9 +141,56 @@ function createPassiveCoordinator(options) {
     var documentReadyReferencesRunner = null;
 
     LEAF_TASKS.forEach(function(taskId) {
+        var leafOptions = {};
+
+        if (
+            taskId ===
+            "mathjax-initial-process"
+        ) {
+            leafOptions.timeoutMs =
+                typeof options
+                    .initialMathJaxTimeoutMs ===
+                    "number"
+                    ? options
+                        .initialMathJaxTimeoutMs
+                    : INITIAL_MATHJAX_TIMEOUT_MS;
+
+            leafOptions.timeoutDetails =
+                function(context, operation) {
+                    return {
+                        code:
+                            INITIAL_MATHJAX_TIMEOUT_CODE,
+                        deadlineMilliseconds:
+                            leafOptions.timeoutMs,
+                        phase:
+                            initialMathJaxProcess
+                                .generation === null
+                                ? "waiting-for-process"
+                                : "process-running",
+                        generation:
+                            initialMathJaxProcess
+                                .generation,
+                        begun:
+                            initialMathJaxProcess
+                                .begun,
+                        completed:
+                            initialMathJaxProcess
+                                .completed,
+                        observedErrorCount:
+                            initialMathJaxProcess
+                                .errors.length,
+                        attempt:
+                            operation.attempt,
+                        operationId:
+                            operation.operationId
+                    };
+                };
+        }
+
         registerExternalLeaf(
             coordinator,
-            taskId
+            taskId,
+            leafOptions
         );
     });
 
@@ -738,8 +811,31 @@ function createPassiveCoordinator(options) {
             }
 
             if (
-                generation !== undefined &&
-                generation !== null &&
+                generation === undefined ||
+                generation === null
+            ) {
+                coordinator.record(
+                    "initial-mathjax-process-error-rejected",
+                    "mathjax-initial-process",
+                    {
+                        reason:
+                            "missing-generation",
+                        boundGeneration:
+                            initialMathJaxProcess
+                                .generation,
+                        attemptedGeneration:
+                            generation === undefined
+                                ? null
+                                : generation,
+                        details:
+                            details
+                    }
+                );
+
+                return false;
+            }
+
+            if (
                 generation !==
                     initialMathJaxProcess
                         .generation

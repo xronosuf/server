@@ -1355,4 +1355,114 @@ describe("page runtime coordinator core", function() {
         );
     });
 
+
+    it("records configured timeout details for an external task", async function() {
+        var coordinator =
+            coordinatorCore.create();
+
+        coordinator.register({
+            id: "external-timeout-details",
+            external: true,
+            timeoutMs: 2,
+            recoveryPolicy:
+                "allow-late-success",
+            timeoutDetails:
+                function(context, operation) {
+                    return {
+                        code:
+                            "XR-TEST-TIMEOUT",
+                        operationId:
+                            operation.operationId,
+                        attempt:
+                            operation.attempt
+                    };
+                }
+        });
+
+        coordinator.start();
+        await delay(5);
+
+        var report =
+            coordinator.inspect();
+        var task =
+            report.tasks[
+                "external-timeout-details"
+            ];
+
+        assert.strictEqual(
+            task.state,
+            "timed-out"
+        );
+
+        assert.strictEqual(
+            task.result.code,
+            "XR-TEST-TIMEOUT"
+        );
+
+        assert.strictEqual(
+            task.result.operationId,
+            task.operationId
+        );
+
+        assert.strictEqual(
+            task.result.attempt,
+            1
+        );
+
+        assert.strictEqual(
+            task.hasTimeoutDetails,
+            true
+        );
+
+        assert.strictEqual(
+            coordinator.signal(
+                "external-timeout-details",
+                "succeeded",
+                {
+                    recovered: true
+                }
+            ),
+            true
+        );
+
+        task =
+            coordinator.inspect()
+                .tasks[
+                    "external-timeout-details"
+                ];
+
+        assert.strictEqual(
+            task.state,
+            "succeeded"
+        );
+
+        assert.strictEqual(
+            task.error,
+            null
+        );
+
+        assert.deepStrictEqual(
+            task.result,
+            {
+                recovered: true
+            }
+        );
+
+        assert.strictEqual(
+            task.lastTimeout.result.code,
+            "XR-TEST-TIMEOUT"
+        );
+
+        assert.strictEqual(
+            task.lastTimeout.operationId,
+            task.operationId
+        );
+
+        assert.strictEqual(
+            task.lastTimeout.error,
+            "Task exceeded 2 ms."
+        );
+    });
+
+
 });

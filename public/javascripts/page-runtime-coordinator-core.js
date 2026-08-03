@@ -116,6 +116,17 @@ Coordinator.prototype.register = function(specification) {
     }
 
     if (
+        specification.timeoutDetails !== undefined &&
+        typeof specification.timeoutDetails !==
+            "function"
+    ) {
+        throw new Error(
+            "timeoutDetails must be a function for task " +
+            specification.id
+        );
+    }
+
+    if (
         specification.recoveryPolicy !== undefined &&
         specification.recoveryPolicy !== "reject-late" &&
         specification.recoveryPolicy !== "allow-late-success"
@@ -138,6 +149,8 @@ Coordinator.prototype.register = function(specification) {
             typeof specification.timeoutMs === "number"
                 ? specification.timeoutMs
                 : null,
+        timeoutDetails:
+            specification.timeoutDetails || null,
         recoveryPolicy:
             specification.recoveryPolicy ||
             "reject-late",
@@ -150,6 +163,7 @@ Coordinator.prototype.register = function(specification) {
         state: "registered",
         result: undefined,
         error: null,
+        lastTimeout: null,
         blockedBy: [],
         timer: null,
         attempt: 0,
@@ -167,6 +181,8 @@ Coordinator.prototype.register = function(specification) {
         {
             dependsOn: task.dependsOn,
             timeoutMs: task.timeoutMs,
+            hasTimeoutDetails:
+                task.timeoutDetails !== null,
             recoveryPolicy:
                 task.recoveryPolicy,
             external:
@@ -425,6 +441,68 @@ Coordinator.prototype.reconsiderDerivedTasks = function() {
     return changed;
 };
 
+Coordinator.prototype.timeoutTransitionDetails =
+function(task, attempt, operationId) {
+    var result = null;
+    var details = {
+        error:
+            "Task exceeded " +
+            task.timeoutMs +
+            " ms."
+    };
+
+    if (task.timeoutDetails !== null) {
+        try {
+            result = task.timeoutDetails(
+                this.context,
+                {
+                    taskId: task.id,
+                    attempt: attempt,
+                    operationId:
+                        operationId,
+                    timeoutMs:
+                        task.timeoutMs
+                }
+            );
+        } catch (error) {
+            result = {
+                timeoutDetailsError:
+                    errorMessage(error)
+            };
+
+            this.record(
+                "task-timeout-details-failed",
+                task.id,
+                {
+                    attempt: attempt,
+                    operationId:
+                        operationId,
+                    error:
+                        errorMessage(error)
+                }
+            );
+        }
+    }
+
+    if (result !== undefined && result !== null) {
+        details.result = result;
+    }
+
+    task.lastTimeout = {
+        attempt: attempt,
+        operationId:
+            operationId,
+        timeoutMs:
+            task.timeoutMs,
+        error:
+            details.error,
+        result:
+            copy(details.result)
+    };
+
+    return details;
+};
+
 Coordinator.prototype.startTask = function(task) {
     var self = this;
     var attempt;
@@ -517,7 +595,14 @@ Coordinator.prototype.startTask = function(task) {
             self.transition(
                 task,
                 state,
-                details
+                {
+                    result:
+                        details &&
+                        details.result !== undefined
+                            ? details.result
+                            : undefined,
+                    error: null
+                }
             );
 
             self.record(
@@ -564,17 +649,23 @@ Coordinator.prototype.startTask = function(task) {
             function() {
                 settle(
                     "timed-out",
-                    {
-                        error:
-                            "Task exceeded " +
-                            task.timeoutMs +
-                            " ms."
-                    },
+                    self.timeoutTransitionDetails(
+                        task,
+                        attempt,
+                        operationId
+                    ),
                     "timeout"
                 );
             },
             task.timeoutMs
         );
+
+        if (
+            task.timer &&
+            typeof task.timer.unref === "function"
+        ) {
+            task.timer.unref();
+        }
     }
 
     if (!task.run) {
@@ -787,18 +878,24 @@ Coordinator.prototype.armExternalTask = function(task) {
                 self.transition(
                     task,
                     "timed-out",
-                    {
-                        error:
-                            "Task exceeded " +
-                            task.timeoutMs +
-                            " ms."
-                    }
+                    self.timeoutTransitionDetails(
+                        task,
+                        task.attempt,
+                        operationId
+                    )
                 );
 
                 self.schedule();
             },
             task.timeoutMs
         );
+
+        if (
+            task.timer &&
+            typeof task.timer.unref === "function"
+        ) {
+            task.timer.unref();
+        }
     }
 };
 
@@ -938,7 +1035,8 @@ Coordinator.prototype.signal = function(
             task,
             state,
             {
-                result: value
+                result: value,
+                error: null
             }
         );
 
@@ -1117,6 +1215,8 @@ Coordinator.prototype.inspect = function() {
                 copy(task.accepts),
             timeoutMs:
                 task.timeoutMs,
+            hasTimeoutDetails:
+                task.timeoutDetails !== null,
             recoveryPolicy:
                 task.recoveryPolicy,
             external:
@@ -1129,6 +1229,8 @@ Coordinator.prototype.inspect = function() {
                 copy(task.result),
             error:
                 task.error,
+            lastTimeout:
+                copy(task.lastTimeout),
             blockedBy:
                 task.blockedBy.slice(),
             attempt:

@@ -1178,5 +1178,212 @@ describe(
             );
         });
 
+
+        it("runs the configured kinetic navigation owner exactly once", async function() {
+            var coordinator =
+                adapter.create();
+            var calls = 0;
+
+            coordinator
+                .setDocumentReadyKineticNavigationRunner(
+                    function() {
+                        calls += 1;
+
+                        return {
+                            state:
+                                "succeeded",
+                            value: {
+                                owner:
+                                    "coordinator",
+                                horizontalContainers:
+                                    1,
+                                verticalContainers:
+                                    1,
+                                activeCards:
+                                    1,
+                                linkHandlersInstalled:
+                                    12
+                            }
+                        };
+                    }
+                );
+
+            assert.strictEqual(
+                coordinator
+                    .requestDocumentReadyKineticNavigation(
+                        {
+                            documentReady:
+                                true
+                        }
+                    ),
+                true
+            );
+
+            await flush();
+
+            assert.strictEqual(
+                calls,
+                1
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "document-ready-kinetic-navigation-requested"
+                    ].state,
+                "succeeded"
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "document-ready-kinetic-navigation"
+                    ].state,
+                "succeeded"
+            );
+
+            assert.deepStrictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "document-ready-kinetic-navigation"
+                    ].result,
+                {
+                    owner:
+                        "coordinator",
+                    horizontalContainers:
+                        1,
+                    verticalContainers:
+                        1,
+                    activeCards:
+                        1,
+                    linkHandlersInstalled:
+                        12
+                }
+            );
+
+            coordinator
+                .requestDocumentReadyKineticNavigation(
+                    {
+                        documentReady:
+                            true
+                    }
+                );
+
+            await flush();
+
+            assert.strictEqual(
+                calls,
+                1
+            );
+        });
+
+        it("keeps kinetic navigation separate from static UI and activity bootstrap", async function() {
+            var coordinator =
+                adapter.create();
+            var kineticCalls = 0;
+            var staticCalls = 0;
+            var activityCalls = 0;
+
+            coordinator
+                .setDocumentReadyKineticNavigationRunner(
+                    function() {
+                        kineticCalls += 1;
+
+                        return {
+                            state:
+                                "succeeded"
+                        };
+                    }
+                );
+
+            coordinator
+                .setDocumentReadyStaticUiRunner(
+                    function() {
+                        staticCalls += 1;
+
+                        return {
+                            state:
+                                "succeeded"
+                        };
+                    }
+                );
+
+            coordinator
+                .setActivityBootstrapRunner(
+                    function() {
+                        activityCalls += 1;
+
+                        return {
+                            state:
+                                "succeeded"
+                        };
+                    }
+                );
+
+            coordinator
+                .requestDocumentReadyKineticNavigation(
+                    {
+                        documentReady:
+                            true
+                    }
+                );
+
+            await flush();
+
+            assert.strictEqual(
+                kineticCalls,
+                1
+            );
+
+            assert.strictEqual(
+                staticCalls,
+                0
+            );
+
+            assert.strictEqual(
+                activityCalls,
+                0
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "document-ready-static-ui"
+                    ].state,
+                "waiting"
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "activity-bootstrap-trigger"
+                    ].state,
+                "waiting"
+            );
+        });
+
+        it("fails kinetic navigation when no runner is configured", async function() {
+            var coordinator =
+                adapter.create();
+
+            coordinator
+                .requestDocumentReadyKineticNavigation(
+                    {
+                        documentReady:
+                            true
+                    }
+                );
+
+            await flush();
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "document-ready-kinetic-navigation"
+                    ].state,
+                "failed"
+            );
+        });
+
     }
 );

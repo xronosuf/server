@@ -1371,6 +1371,80 @@ function requestDocumentReadyStaticUi(details) {
     }
 }
 
+function configureDocumentReadyKineticNavigation(runner) {
+    try {
+        passiveCoordinator
+            .setDocumentReadyKineticNavigationRunner(
+                runner
+            );
+
+        record(
+            "event",
+            "document-ready-kinetic-navigation-owner-configured",
+            undefined,
+            {
+                owner: "coordinator"
+            }
+        );
+
+        return true;
+    } catch (err) {
+        record(
+            "event",
+            "document-ready-kinetic-navigation-owner-configuration-failed",
+            undefined,
+            {
+                message:
+                    err && err.message
+                        ? err.message
+                        : String(err)
+            }
+        );
+
+        return false;
+    }
+}
+
+function requestDocumentReadyKineticNavigation(details) {
+    try {
+        var accepted =
+            passiveCoordinator
+                .requestDocumentReadyKineticNavigation(
+                    details
+                );
+
+        record(
+            "event",
+            accepted
+                ? "document-ready-kinetic-navigation-owner-requested"
+                : "document-ready-kinetic-navigation-owner-request-rejected",
+            undefined,
+            {
+                owner: "coordinator",
+                details:
+                    details || null
+            }
+        );
+
+        return accepted;
+    } catch (err) {
+        record(
+            "event",
+            "document-ready-kinetic-navigation-owner-request-failed",
+            undefined,
+            {
+                owner: "coordinator",
+                message:
+                    err && err.message
+                        ? err.message
+                        : String(err)
+            }
+        );
+
+        return false;
+    }
+}
+
 function compareCoordinatorReadiness() {
     return coordinatorAdapter
         .compareReadiness(
@@ -2720,6 +2794,10 @@ var api = {
         configureDocumentReadyStaticUi,
     requestDocumentReadyStaticUi:
         requestDocumentReadyStaticUi,
+    configureDocumentReadyKineticNavigation:
+        configureDocumentReadyKineticNavigation,
+    requestDocumentReadyKineticNavigation:
+        requestDocumentReadyKineticNavigation,
     compareCoordinatorReadiness:
         compareCoordinatorReadiness,
     benchmark: benchmark,
@@ -2753,6 +2831,10 @@ window.xronosConfigureDocumentReadyStaticUi =
     configureDocumentReadyStaticUi;
 window.xronosRequestDocumentReadyStaticUi =
     requestDocumentReadyStaticUi;
+window.xronosConfigureDocumentReadyKineticNavigation =
+    configureDocumentReadyKineticNavigation;
+window.xronosRequestDocumentReadyKineticNavigation =
+    requestDocumentReadyKineticNavigation;
 window.xronosComparePageRuntimeReadiness =
     compareCoordinatorReadiness;
 window.xronosPageBenchmark = benchmark;

@@ -382,6 +382,173 @@ function invokeDocumentReadyStaticUi(owner) {
     }
 }
 
+var documentReadyKineticNavigationInvocation = {
+    started: false,
+    owner: null,
+    completed: false
+};
+
+function invokeDocumentReadyKineticNavigation(owner) {
+    var horizontalContainers;
+    var verticalContainers;
+    var activeCards;
+    var linkHandlers;
+
+    if (documentReadyKineticNavigationInvocation.started) {
+        pageRuntime.event(
+            "document-ready-kinetic-navigation-duplicate-invocation-ignored",
+            {
+                requestedOwner: owner,
+                activeOwner:
+                    documentReadyKineticNavigationInvocation.owner,
+                completed:
+                    documentReadyKineticNavigationInvocation.completed
+            }
+        );
+
+        return {
+            state: "not-required",
+            value: {
+                reason: "already-started",
+                owner:
+                    documentReadyKineticNavigationInvocation.owner
+            }
+        };
+    }
+
+    documentReadyKineticNavigationInvocation.started =
+        true;
+    documentReadyKineticNavigationInvocation.owner =
+        owner;
+
+    pageRuntime.operation(
+        "document-ready-kinetic-navigation",
+        "invoked",
+        {
+            owner: owner
+        }
+    );
+
+    try {
+        horizontalContainers =
+            $(".kinetic");
+        verticalContainers =
+            $(".main-toc");
+        activeCards =
+            $(".activity-card.active");
+        linkHandlers =
+            $(".activity-card a");
+
+        horizontalContainers.kinetic({});
+
+        if (activeCards.length > 0) {
+            var activeCard =
+                activeCards.first();
+            var left =
+                activeCard.position().left;
+            var cardWidth =
+                activeCard.width();
+            var horizontalWindowWidth =
+                horizontalContainers.first().width();
+
+            if (horizontalContainers.length > 0) {
+                horizontalContainers.scrollLeft(
+                    left -
+                    horizontalWindowWidth / 2 +
+                    cardWidth / 2
+                );
+            }
+        }
+
+        verticalContainers.kinetic({});
+
+        if (activeCards.length > 0) {
+            var verticalActiveCard =
+                activeCards.first();
+            var top =
+                verticalActiveCard.position().top;
+            var cardHeight =
+                verticalActiveCard.height();
+            var verticalWindowHeight =
+                verticalContainers.first().height();
+
+            if (verticalContainers.length > 0) {
+                verticalContainers.scrollTop(
+                    top -
+                    verticalWindowHeight / 2 +
+                    cardHeight / 2
+                );
+            }
+        }
+
+        linkHandlers
+            .off(
+                "mouseup.xronosKineticNavigation"
+            )
+            .on(
+                "mouseup.xronosKineticNavigation",
+                function(event) {
+                    if (
+                        $(".kinetic-moving-left").length >
+                            0 ||
+                        $(".kinetic-moving-right").length >
+                            0
+                    ) {
+                        event.preventDefault();
+                    }
+                }
+            );
+
+        documentReadyKineticNavigationInvocation.completed =
+            true;
+
+        pageRuntime.operation(
+            "document-ready-kinetic-navigation",
+            "completed",
+            {
+                owner: owner,
+                horizontalContainers:
+                    horizontalContainers.length,
+                verticalContainers:
+                    verticalContainers.length,
+                activeCards:
+                    activeCards.length,
+                linkHandlersInstalled:
+                    linkHandlers.length
+            }
+        );
+
+        return {
+            state: "succeeded",
+            value: {
+                owner: owner,
+                horizontalContainers:
+                    horizontalContainers.length,
+                verticalContainers:
+                    verticalContainers.length,
+                activeCards:
+                    activeCards.length,
+                linkHandlersInstalled:
+                    linkHandlers.length
+            }
+        };
+    } catch (err) {
+        pageRuntime.operation(
+            "document-ready-kinetic-navigation",
+            "failed",
+            {
+                owner: owner,
+                message:
+                    err && err.message
+                        ? err.message
+                        : String(err)
+            }
+        );
+
+        throw err;
+    }
+}
+
 var ProgressBar = require('./progress-bar');
 
 var userProfile = require('./profile');
@@ -394,6 +561,15 @@ var imageEnvironment = require('./image-environment');
 var instructor = require('./instructor');
 
 var rowclick = require('./rowclick');
+
+var documentReadyKineticNavigationOwnerConfigured =
+    pageRuntime.configureDocumentReadyKineticNavigation(
+        function() {
+            return invokeDocumentReadyKineticNavigation(
+                "coordinator"
+            );
+        }
+    );
 
 var documentReadyStaticUiOwnerConfigured =
     pageRuntime.configureDocumentReadyStaticUi(
@@ -2729,32 +2905,32 @@ $(document).ready(function() {
         );
     }
 
-    // Scroll to correct item in (old) top card-list
-    $('.kinetic').kinetic({});
-    var active = $('.activity-card.active');
-    if (active.length > 0) {
-	var left = $('.activity-card.active').position().left;
-	var cardWidth = $('.activity-card.active').width();
-	var windowWidth = $('.kinetic').width();
-	$('.kinetic').scrollLeft( left - windowWidth / 2 + cardWidth / 2 );
-    }
+    var documentReadyKineticNavigationRequested =
+        documentReadyKineticNavigationOwnerConfigured &&
+        pageRuntime
+            .requestDocumentReadyKineticNavigation(
+                {
+                    documentReady: true,
+                    requestLocation:
+                        "main-document-ready"
+                }
+            );
 
-    // Scroll to correct item in (new) nav menu
-    $('.main-toc').kinetic({});
-    var active = $('.activity-card.active');
-    if (active.length > 0) {
-		var top = $('.activity-card.active').position().top;
-		var cardHeight = $('.activity-card.active').height();
-		var windowHeight = $('.main-toc').height();
-		$('.main-toc').scrollTop( top - windowHeight / 2 + cardHeight / 2 );
-    }
+    if (!documentReadyKineticNavigationRequested) {
+        pageRuntime.event(
+            "document-ready-kinetic-navigation-legacy-fallback",
+            {
+                reason:
+                    documentReadyKineticNavigationOwnerConfigured
+                        ? "coordinator-request-rejected"
+                        : "coordinator-owner-not-configured"
+            }
+        );
 
-    // This is both mouseup for desktop
-    $('.activity-card a').bind( "mouseup", function(event){
-	if (( $('.kinetic-moving-left').length > 0 ) || ( $('.kinetic-moving-right').length > 0 )) {
-	    event.preventDefault();
-	}
-    });
+        invokeDocumentReadyKineticNavigation(
+            "legacy-fallback"
+        );
+    }
 
     // This handles touchscreens; moving less than 100 pixels in less
     // than 500 ms should count as a click

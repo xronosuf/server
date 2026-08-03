@@ -23,7 +23,9 @@ var CONTROL_TASKS = [
     "mathjax-startup-ended",
     "mathjax-startup-ui-finalization",
     "document-ready-static-ui-requested",
-    "document-ready-static-ui"
+    "document-ready-static-ui",
+    "document-ready-kinetic-navigation-requested",
+    "document-ready-kinetic-navigation"
 ];
 
 var DIMENSION_TASKS = [
@@ -101,6 +103,7 @@ function createPassiveCoordinator(options) {
     var mathJaxStartupRunner = null;
     var mathJaxStartupUiRunner = null;
     var documentReadyStaticUiRunner = null;
+    var documentReadyKineticNavigationRunner = null;
 
     LEAF_TASKS.forEach(function(taskId) {
         registerExternalLeaf(
@@ -255,6 +258,35 @@ function createPassiveCoordinator(options) {
             }
 
             return documentReadyStaticUiRunner();
+        }
+    });
+
+    coordinator.register({
+        id: "document-ready-kinetic-navigation-requested",
+        external: true
+    });
+
+    coordinator.register({
+        id: "document-ready-kinetic-navigation",
+        dependsOn: [
+            "document-ready-kinetic-navigation-requested"
+        ],
+        accepts: {
+            "document-ready-kinetic-navigation-requested": [
+                "succeeded"
+            ]
+        },
+        run: function() {
+            if (
+                typeof documentReadyKineticNavigationRunner !==
+                    "function"
+            ) {
+                throw new Error(
+                    "Document-ready kinetic navigation runner is not configured."
+                );
+            }
+
+            return documentReadyKineticNavigationRunner();
         }
     });
 
@@ -662,6 +694,60 @@ function createPassiveCoordinator(options) {
 
             return coordinator.signal(
                 "document-ready-static-ui-requested",
+                "succeeded",
+                details
+            );
+        };
+
+    coordinator.setDocumentReadyKineticNavigationRunner =
+        function(runner) {
+            if (typeof runner !== "function") {
+                throw new Error(
+                    "Document-ready kinetic navigation runner must be a function."
+                );
+            }
+
+            documentReadyKineticNavigationRunner =
+                runner;
+
+            coordinator.record(
+                "document-ready-kinetic-navigation-runner-configured",
+                "document-ready-kinetic-navigation"
+            );
+
+            return true;
+        };
+
+    coordinator.requestDocumentReadyKineticNavigation =
+        function(details) {
+            var report =
+                coordinator.inspect();
+            var task =
+                report.tasks[
+                    "document-ready-kinetic-navigation"
+                ];
+
+            if (
+                task &&
+                (
+                    task.state === "running" ||
+                    task.state === "succeeded" ||
+                    task.state === "not-required"
+                )
+            ) {
+                coordinator.record(
+                    "duplicate-document-ready-kinetic-navigation-request-ignored",
+                    "document-ready-kinetic-navigation",
+                    {
+                        state: task.state
+                    }
+                );
+
+                return true;
+            }
+
+            return coordinator.signal(
+                "document-ready-kinetic-navigation-requested",
                 "succeeded",
                 details
             );

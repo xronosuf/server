@@ -4,9 +4,10 @@
 **Current file:** `documentation/page-runtime/Xronos_Page_Runtime_Coordinator_CURRENT_HANDOFF.md`
 **Last updated:** 2026-08-03
 **Working branch:** `page-runtime-coordinator`
-**Validated runtime implementation commit:** `785cd8a` — `Block interaction after failed initial MathJax render`
-**Previous documentation checkpoint:** `04bf796` — `Update MathJax coordinator handoff`
-**Branch publication state:** the failed-render runtime implementation and this follow-up documentation update are intended to be pushed together. Verify the current local and remote tips rather than relying only on this recorded checkpoint.
+**Last known local HEAD:** `efbdced` — `Record failed-render browser validation`
+**Previous runtime commit:** `785cd8a` — `Block interaction after failed initial MathJax render`
+**Last known remote HEAD:** `efbdced` — `Record failed-render browser validation`
+**Last known branch state:** local and `origin/page-runtime-coordinator` were aligned at `efbdced` with a clean working tree after the failed-render implementation and validation documentation were pushed.
 
 > This file is an operational index and decision record. It does not replace the
 > authoritative design, pipeline, ownership, degraded-state, inventory, or TODO
@@ -584,7 +585,7 @@ These commits were pushed as part of the synchronized `9b80564` checkpoint.
 
 ### 7.6 Initial MathJax terminal metadata
 
-Current local commit:
+Historical milestone commit:
 
 ```text
 23c2cb7 Add initial MathJax terminal metadata
@@ -617,14 +618,15 @@ This commit does not change:
 - inline Sage readiness classification;
 - MathJax error terminal policy.
 
-Last known branch state:
+Historical branch state at that milestone:
 
 ```text
 23c2cb7 (HEAD -> page-runtime-coordinator)
 9b80564 (origin/page-runtime-coordinator)
 ```
 
-`23c2cb7` is intentionally unpushed pending this handoff update.
+This historical divergence was later resolved and is retained only to explain
+the sequence of implementation and documentation checkpoints.
 
 ---
 
@@ -1172,7 +1174,7 @@ entrypoint, which launched Redis, MongoDB, a full build, and the application
 server. The named container was stopped, and subsequent focused validation used
 `--entrypoint /bin/bash`. The real checkout was unchanged.
 
-### 13.5 Validated result for `23c2cb7`
+### 13.6 Validated result for `23c2cb7`
 
 Focused test command covered:
 
@@ -1225,7 +1227,7 @@ relative dependency path during `gulp js`. Revalidating in the image’s expecte
 `/usr/var/server` layout resolved that environmental issue. The real checkout
 remained unchanged throughout validation.
 
-### 13.6 Full recursive test warning
+### 13.7 Full recursive test warning
 
 Do not run the full recursive suite in a bare temporary application container
 without required services.
@@ -1268,103 +1270,106 @@ Before changing anything, verify:
 hostname -f
 git branch --show-current
 git rev-parse --short HEAD
+git rev-parse --short origin/page-runtime-coordinator
 git status --short --branch
-git --no-pager log -3 --oneline --decorate
+git --no-pager log -5 --oneline --decorate
 ```
 
-Expected from the last session, but do not assume:
+Expected from the completed failed-render milestone, but do not assume:
 
 ```text
 branch: page-runtime-coordinator
-HEAD: 23c2cb7
-parent: 9b80564
-origin/page-runtime-coordinator: 9b80564
+HEAD: efbdced
+origin/page-runtime-coordinator: efbdced
 working tree: clean
-ahead: 1
 ```
 
-### 14.2 Review relevant files
+### 14.2 Immediate architectural target
 
-For the next MathJax error-classification investigation, inspect:
+The next substantive lifecycle migration is the canonical initial Sage
+operation.
 
-- `public/javascripts/main.js`;
-- `public/javascripts/page-runtime.js`;
-- `public/javascripts/page-runtime-coordinator-adapter.js`;
-- MathJax error hooks and Process signal handling;
-- browser diagnostics for the initial Process task;
-- representative pages that can produce localized TeX parse errors;
-- representative pages or controlled fixtures for `Math Processing Error`;
-- relevant MathJax sections in:
-  - `COORDINATOR_DESIGN.md`;
-  - `CURRENT_PIPELINE.md`;
-  - `RUNTIME_OWNERSHIP_MATRIX.md`;
-  - `DEGRADED_STATE_POLICY.md`;
-  - `IMPLEMENTATION_STATUS.md`.
+Inspect the existing Sage implementation before proposing a patch, especially:
 
-### 14.3 Intended next patch
+- immutable pre-MathJax manifest capture;
+- stable expression and answer-key IDs;
+- seed waiting;
+- manifest compilation and compiled-size validation;
+- request submission;
+- authorization, network, and response-parse failures;
+- result and expression-failure counts;
+- permanent fallback versus retryable failure;
+- the deduplicated canonical `initialPromise`;
+- current `canonical-sage` coordinator translation;
+- the separate `sage-inline-initial` visible-settlement lifecycle.
 
-Do not begin with a policy-changing patch. First collect browser evidence about
-how each MathJax error class affects the bound initial Process and its dependent
-content.
+### 14.3 Intended next patch boundary
 
-The investigation should establish:
+Design the smallest patch that binds the canonical initial Sage request state
+machine to one stable coordinator operation identity.
 
-- whether `End Process` still occurs;
-- whether the bound generation remains correct;
-- whether answer discovery completes;
-- whether initial answers attach or remain unresolved;
-- whether inline Sage discovery completes;
-- whether the page remains usable despite a localized error;
-- whether current coordinator success, degraded readiness, or failure best
-  represents the observed outcome.
+The patch should:
 
-Only after that evidence should a narrow error-classification patch be designed.
-Timeout ownership, late recovery, and the new terminal metadata shape should
-remain unchanged during the investigation.
+- preserve the immutable manifest and stable-ID mapping;
+- retain the Sage module as owner of compilation and request execution;
+- carry one stable operation identity through waiting, compilation, request,
+  response, parsing, and terminal classification;
+- distinguish `not-required`, success, degraded result quality, retryable
+  failure, and permanent fallback;
+- reject duplicate or stale terminal completion;
+- expose privacy-safe operation metadata;
+- keep canonical computation separate from visible placeholder settlement;
+- avoid moving the inline-Sage display deadline in the same patch unless source
+  inventory proves the boundaries cannot be separated;
+- add focused tests before browser validation.
 
----
+Do not combine `canonical-sage` and `sage-inline-initial` into one lifecycle.
 
 ## 15. Recommended subsequent sequence
 
-After initial MathJax generation binding, timeout ownership, and terminal
-metadata:
+1. **Canonical initial Sage operation**
+   - inventory the current request state machine;
+   - bind it to one stable coordinator operation;
+   - preserve immutable manifest and stable IDs;
+   - preserve retryable versus permanent failure classification;
+   - keep result quality distinct from visible settlement.
 
-1. **MathJax error classification evidence**
-   - collect browser evidence for TeX parse errors and Math Processing Error;
-   - determine callback ordering and whether `End Process` still occurs;
-   - compare answer and inline Sage readiness after each error class;
-   - define diagnostic-only, degraded, and failed policy only after evidence.
+2. **Initial Sage visible components**
+   - register initial placeholders with stable component identity;
+   - link each placeholder to the manifest and canonical operation;
+   - move the inline-Sage deadline into coordinator ownership;
+   - preserve fallback UI and safe late recovery;
+   - prove no required placeholder remains indefinitely nonterminal.
 
-2. **Inline Sage timeout ownership**
-   - move deadline into the coordinator;
-   - bind visible placeholder settlement;
-   - preserve late recovery and fallback evidence.
+3. **Initial math-answer attachment**
+   - bind discovery and attachment to the initial MathJax generation;
+   - preserve logical answer identity across DOM replacement;
+   - reject stale and duplicate attachment;
+   - preserve later-pass repair without redefining initial history.
 
-3. **Initial-state timeout ownership**
-   - define exact start point and degraded interaction policy;
-   - move deadline into coordinator;
-   - validate late state reconciliation.
+4. **Initial-state lifecycle**
+   - distinguish found, empty, unauthorized, unavailable, failed, timed-out, and
+     permitted-fallback outcomes;
+   - bind WebSocket/database events to one initial-state operation;
+   - move deadline ownership into the coordinator;
+   - define interaction and persistence policy before state is available.
 
-4. **Activity/internal initialization reconciliation**
-   - distinguish request, release, initialization, and component completion;
-   - carry operation identity through callbacks;
-   - prevent duplicate starts and stale completion.
+5. **Support contract**
+   - reconcile current inspectors into one stable privacy-safe report;
+   - include graph state, operation identity, components, blocking, deadlines,
+     recovery history, and diagnostic codes.
 
-5. **Legacy comparison and removal**
-   - compare coordinator and legacy outcomes on the representative browser
-     fixture set;
-   - remove duplicated timers/flags one dependency at a time;
+6. **Legacy comparison and removal**
+   - compare coordinator and legacy behavior on representative fixtures;
+   - remove duplicated timers and flags one lifecycle at a time;
    - retain rollback capability during observation.
 
-6. **Feature-gated rollout**
-   - diagnostics;
-   - shadow mode;
+7. **Feature-gated rollout**
+   - diagnostics and shadow comparison;
    - controlled development fixtures;
    - selected repositories;
    - limited production allowlist;
    - broader rollout only after evidence.
-
----
 
 ## 16. Open design decisions
 
@@ -1372,10 +1377,12 @@ These remain unresolved or intentionally deferred.
 
 ### MathJax
 
-- Which parse/processing errors should degrade the initial Process?
-- Can an initial Process reach a useful terminal success with localized errors?
-- Which MathJax callbacks are guaranteed after each error class?
-- Should an orphan `End Process` ever recover a timed-out initial task?
+- When is it safe to remove the legacy MathJax watchdog?
+- Which representative passive-media fixture should verify that independent
+  passive content remains usable during a failed mathematical render?
+- Should future evidence identify any narrowly localized initial MathJax error
+  class that remains pedagogically trustworthy, or should the current
+  page-level failure policy remain universal?
 
 ### State
 
@@ -1496,41 +1503,70 @@ Do not accidentally:
 
 ## 20. Immediate “do not accidentally” list
 
-- Do not push `23c2cb7` without checking whether this handoff update should be
-  committed with it as one remote checkpoint.
 - Do not assume the coordinator fully owns a lifecycle merely because a task
   exists.
+- Do not weaken the failed-initial-MathJax interaction block without new
+  browser evidence and an explicit pedagogical-policy decision.
 - Do not let the legacy `mathjax-pass: ended` path bypass bound-generation
   validation.
 - Do not reintroduce legacy deadline settlement for
   `mathjax-initial-process`.
-- Do not remove the legacy MathJax watchdog before browser comparison confirms
-  parity or intentional improvement.
-- Do not make every MathJax error terminal without policy evidence.
-- Do not conflate canonical Sage success with visible placeholder success.
-- Do not combine canonical Sage and inline visible Sage into one leaf.
+- Do not remove the legacy MathJax watchdog before comparison confirms parity
+  or an intentional documented improvement.
+- Do not conflate canonical Sage request success with visible placeholder
+  success.
+- Do not combine `canonical-sage` and `sage-inline-initial` into one leaf.
+- Do not reconstruct the immutable initial Sage manifest from MathJax-mutated
+  DOM.
+- Do not cache retryable network, authorization, or response-parse failures as
+  permanent eligibility failures.
+- Do not expose Sage authorization values, full author code, student answers,
+  or other sensitive values in diagnostics.
 - Do not treat activity bootstrap invocation as activity completion.
 - Do not run the full recursive test suite in an unprovisioned container.
-- Do not modernize Node, MathJax, or the dependency stack as part of this
-  coordinator reconciliation.
-- Do not expose sensitive runtime values in diagnostics.
+- Do not modernize Node, MathJax, or the dependency stack as part of the
+  coordinator migration.
 - Do not assume production uses the same Node version as the available test
   image; verify it.
 
----
-
 ## 21. One-paragraph recovery summary
 
-The project is incrementally replacing Xronos’s loosely coupled browser startup
-callbacks with an explicit Page Runtime Coordinator while preserving existing
-content and mature service implementations. The initial MathJax Process is now
-bound to its first generation, owns a coordinator-managed 15-second deadline,
-supports generation-safe late recovery, and exposes structured timeout history.
-Commit `23c2cb7` adds richer successful terminal metadata under
-`task.result.details`: compatibility pass counters, a nested pass summary,
-initial answer readiness details, and initial inline Sage discovery/settlement
-details. Adapter-owned `errorCount` and `errors` remain separate, and no
-readiness or error terminal policy changed. Focused coordinator tests report 67
-passing and the JavaScript build succeeds. The next work is browser evidence
-collection for MathJax error classification, not further metadata plumbing or
-dependency modernization.
+The project is incrementally replacing Xronos's loosely coupled browser
+startup callbacks with an explicit Page Runtime Coordinator while preserving
+published content and mature component implementations. The coordinator core,
+derived readiness model, several startup ownership seams, and the authoritative
+initial MathJax Process lifecycle are implemented. Commit `785cd8a` makes
+initial MathJax processing errors fail the generation-bound leaf task, degrade
+content, interaction, and page readiness, present a visible failure notice, and
+block mathematical coursework interaction for the failed page load. Browser
+validation confirmed 11 injected processing errors, disabled existing and
+dynamic controls, one-shot fault consumption, no persistent spinner, and full
+recovery after an ordinary reload. Commit `efbdced` records that validation.
+The next major phase is the canonical initial Sage operation: bind the existing
+request state machine to one stable coordinator operation while preserving the
+immutable manifest, stable IDs, retryable/permanent failure distinctions, and
+the separation between computation and visible placeholder settlement.
+
+## Immediate next milestone
+
+The next substantive lifecycle migration is the canonical initial Sage
+operation.
+
+Before changing code:
+
+1. inventory the existing canonical Sage request state machine;
+2. identify the immutable initial manifest and stable expression identities;
+3. distinguish request execution, result quality, and visible placeholder
+   settlement;
+4. design the smallest coordinator operation binding that preserves current
+   retry and permanent-fallback behavior;
+5. keep `canonical-sage` separate from `sage-inline-initial`;
+6. add focused tests before transferring deadline or terminal-state ownership.
+
+Do not combine canonical Sage request success with visible Sage display
+success. A successful computation or mapped response does not prove that every
+initial placeholder reached a usable visible terminal state.
+
+The optional passive-media fixture for failed MathJax pages remains useful
+follow-up coverage, but it is not a prerequisite for beginning the canonical
+Sage operation migration.

@@ -128,7 +128,7 @@ that a failed initial mathematical render blocks mathematical coursework
 interaction for the remainder of the page load. Clearly independent passive
 media remains an explicit follow-up fixture and compatibility check.
 
-The next migration should use a hybrid active/pass-observed contract:
+The implemented hybrid active/pass-observed contract is:
 
 1. The coordinator owns the expectation that an initial Process pass must
    occur after the MathJax startup trigger.
@@ -299,14 +299,22 @@ The next migration should not:
 - perform unrelated Bootstrap or formatting cleanup in the same commit;
 - declare the overall coordinator migration complete.
 
-## Immediate next action after this document
+## Immediate next action
 
-After this document is reviewed and committed, inspect and design the smallest
-initial-MathJax lifecycle patch that:
+Begin Phase 3 by inventorying and designing the canonical initial Sage
+operation boundary.
 
-- introduces explicit coordinator APIs for initial Process begin, error, and
-  matching completion;
-- binds the coordinator task to the existing MathJax generation;
-- moves timeout ownership without changing browser-visible behavior;
-- leaves the legacy runtime readiness calculation in parallel for comparison;
-- adds unit tests before browser fixture validation.
+The next patch should:
+
+- bind the existing canonical initial Sage request state machine to one stable
+  coordinator operation identity;
+- preserve the immutable pre-MathJax manifest and stable expression IDs;
+- preserve the distinction between retryable request failure and permanent
+  eligibility fallback;
+- record result quality without treating it as proof of visible display
+  settlement;
+- keep `canonical-sage` and `sage-inline-initial` as separate dependencies;
+- avoid moving the visible-placeholder deadline until the canonical request
+  boundary is understood and tested.
+
+The first step is source and browser inventory, not a broad Sage rewrite.

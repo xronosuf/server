@@ -2616,6 +2616,11 @@ function endMathJaxPass(passType, message) {
         reportInitialMathAnswerReadiness();
         completeInitialInlineSageDiscovery();
 
+        var initialAnswerDetails =
+            initialMathAnswerDetails();
+        var inlineSageDetails =
+            initialInlineSageDetails();
+
         pageRuntime.completeInitialMathJaxProcess({
             generation:
                 pass.generation,
@@ -2623,6 +2628,12 @@ function endMathJaxPass(passType, message) {
                 pass.passType,
             durationMilliseconds:
                 pass.durationMilliseconds,
+
+            /*
+             * Preserve the existing flat pass counters for compatibility while
+             * also exposing an explicit pass summary beside the richer
+             * answer-readiness and inline-Sage discovery summaries.
+             */
             newMathMessages:
                 pass.newMathMessages,
             discoveredAnswerInstances:
@@ -2632,7 +2643,25 @@ function endMathJaxPass(passType, message) {
             missingAnswerModels:
                 pass.missingAnswerModels,
             uniqueAnswersAdded:
-                pass.uniqueAnswersAdded
+                pass.uniqueAnswersAdded,
+
+            pass: {
+                newMathMessages:
+                    pass.newMathMessages,
+                discoveredAnswerInstances:
+                    pass.discoveredAnswerInstances,
+                answerConnectionAttempts:
+                    pass.answerConnectionAttempts,
+                missingAnswerModels:
+                    pass.missingAnswerModels,
+                uniqueAnswersAdded:
+                    pass.uniqueAnswersAdded
+            },
+
+            answers:
+                initialAnswerDetails,
+            inlineSage:
+                inlineSageDetails
         });
     }
 

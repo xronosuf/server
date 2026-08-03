@@ -69,7 +69,21 @@ describe(
                         {
                             generation: 7,
                             durationMilliseconds:
-                                125
+                                125,
+                            pass: {
+                                newMathMessages: 3,
+                                discoveredAnswerInstances: 4
+                            },
+                            answers: {
+                                expectedAnswers: 2,
+                                attachedAnswers: 1,
+                                unresolvedAnswers: 1
+                            },
+                            inlineSage: {
+                                expected: 2,
+                                discovered: 2,
+                                settled: 1
+                            }
                         }
                     ),
                 true
@@ -97,6 +111,32 @@ describe(
                 task.result.details
                     .durationMilliseconds,
                 125
+            );
+
+            assert.deepStrictEqual(
+                task.result.details.pass,
+                {
+                    newMathMessages: 3,
+                    discoveredAnswerInstances: 4
+                }
+            );
+
+            assert.deepStrictEqual(
+                task.result.details.answers,
+                {
+                    expectedAnswers: 2,
+                    attachedAnswers: 1,
+                    unresolvedAnswers: 1
+                }
+            );
+
+            assert.deepStrictEqual(
+                task.result.details.inlineSage,
+                {
+                    expected: 2,
+                    discovered: 2,
+                    settled: 1
+                }
             );
         });
 

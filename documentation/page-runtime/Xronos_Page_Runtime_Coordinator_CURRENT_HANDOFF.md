@@ -4,10 +4,10 @@
 **Current file:** `documentation/page-runtime/Xronos_Page_Runtime_Coordinator_CURRENT_HANDOFF.md`
 **Last updated:** 2026-08-03
 **Working branch:** `page-runtime-coordinator`
-**Last known local HEAD:** `60c053f` — `Move initial MathJax timeout into coordinator`
-**Previous local commit:** `20b2e7b` — `Bind coordinator to initial MathJax process generation`
-**Last known remote HEAD:** `91cc8b6` — `Handoff reference file`
-**Last known branch state:** local branch ahead of `origin/page-runtime-coordinator` by two commits; neither local commit has been pushed.
+**Last known local HEAD:** `23c2cb7` — `Add initial MathJax terminal metadata`
+**Previous local commit:** `9b80564` — `Update coordinator runtime handoff`
+**Last known remote HEAD:** `9b80564` — `Update coordinator runtime handoff`
+**Last known branch state:** local branch ahead of `origin/page-runtime-coordinator` by one commit; `23c2cb7` has not been pushed.
 
 > This file is an operational index and decision record. It does not replace the
 > authoritative design, pipeline, ownership, degraded-state, inventory, or TODO
@@ -489,7 +489,51 @@ Last known branch state:
 91cc8b6 (origin/page-runtime-coordinator)
 ```
 
-Both local commits remain intentionally unpushed.
+These commits were pushed as part of the synchronized `9b80564` checkpoint.
+
+### 7.6 Initial MathJax terminal metadata
+
+Current local commit:
+
+```text
+23c2cb7 Add initial MathJax terminal metadata
+```
+
+This is a metadata-only extension of the initial MathJax Process completion
+payload.
+
+It adds:
+
+- a nested `pass` summary containing the existing Process-pass counters;
+- an `answers` summary from `initialMathAnswerDetails()`;
+- an `inlineSage` summary from `initialInlineSageDetails()`;
+- preservation of the existing flat pass counters for compatibility;
+- adapter passthrough tests proving the richer payload remains available under
+  `task.result.details`.
+
+The adapter continues to own the top-level terminal error metadata:
+
+- `errorCount`;
+- `errors`.
+
+This commit does not change:
+
+- Process generation binding;
+- timeout ownership;
+- late-recovery policy;
+- derived readiness;
+- answer readiness classification;
+- inline Sage readiness classification;
+- MathJax error terminal policy.
+
+Last known branch state:
+
+```text
+23c2cb7 (HEAD -> page-runtime-coordinator)
+9b80564 (origin/page-runtime-coordinator)
+```
+
+`23c2cb7` is intentionally unpushed pending this handoff update.
 
 ---
 
@@ -619,22 +663,68 @@ The legacy initial MathJax watchdog remains temporarily in
 `page-runtime.js`. It records the legacy deadline and readiness evidence for
 comparison but no longer owns or double-settles the coordinator task.
 
-### 8.7 Remaining MathJax reconcile work
+### 8.7 Current MathJax terminal metadata
 
-The next MathJax patch should improve terminal metadata and error
-classification without prematurely making every observed MathJax error
-terminal.
+The successful initial Process result now exposes three related views under
+`task.result.details`.
+
+The compatibility fields remain flat:
+
+- `generation`;
+- `passType`;
+- `durationMilliseconds`;
+- `newMathMessages`;
+- `discoveredAnswerInstances`;
+- `answerConnectionAttempts`;
+- `missingAnswerModels`;
+- `uniqueAnswersAdded`.
+
+The nested `pass` summary repeats the Process-pass counters in an explicit
+sub-object for clearer inspection.
+
+The nested `answers` summary comes from `initialMathAnswerDetails()` and
+includes:
+
+- generation;
+- expected answers;
+- model-resolved answers;
+- attached answers;
+- unresolved answer count and IDs;
+- connection attempts;
+- Process duration;
+- Process-complete state.
+
+The nested `inlineSage` summary comes from `initialInlineSageDetails()` and
+includes:
+
+- expected and discovered placeholders;
+- started requests;
+- MML-applied count;
+- rerender-completed count;
+- failed and settled counts;
+- Process-complete state.
+
+The adapter adds top-level `errorCount` and `errors` beside `details`. This keeps
+MathJax error association owned by the generation-safe adapter rather than
+duplicating it in `main.js`.
+
+### 8.8 Remaining MathJax reconcile work
+
+The terminal metadata collection step is complete. The next MathJax work is
+evidence-based error classification.
 
 Likely work:
 
-1. refine the successful initial Process result shape;
-2. expose answer-discovery and answer-attachment counts;
-3. expose inline Sage discovery and settlement counts relevant to that Process;
-4. preserve observed MathJax errors with generation and error class;
-5. distinguish localized parse errors from Process-wide processing failure;
-6. document which error classes are diagnostic-only, degraded, or failed;
-7. retain the current generation-safe timeout and late-recovery behavior;
-8. use browser fixtures or injected failures before changing terminal policy.
+1. inventory real callback ordering for localized TeX parse errors;
+2. inventory real callback ordering for `Math Processing Error`;
+3. determine whether `End Process` still occurs for each error class;
+4. determine whether answer discovery, answer attachment, and inline Sage
+   discovery remain usable after each error class;
+5. define diagnostic-only, degraded, and failed classifications;
+6. add browser fixtures or controlled fault injection before changing policy;
+7. retain current successful completion semantics until evidence supports a
+   stricter terminal outcome;
+8. retain generation-safe timeout and late recovery unchanged.
 
 Do not remove the legacy watchdog until representative browser comparison shows
 parity or an intentional, documented improvement.
@@ -991,7 +1081,60 @@ entrypoint, which launched Redis, MongoDB, a full build, and the application
 server. The named container was stopped, and subsequent focused validation used
 `--entrypoint /bin/bash`. The real checkout was unchanged.
 
-### 13.5 Full recursive test warning
+### 13.5 Validated result for `23c2cb7`
+
+Focused test command covered:
+
+- `test/page-runtime-coordinator-adapter.js`;
+- `test/page-runtime-coordinator-core.js`.
+
+Validation used an isolated application copy at `/usr/var/server` with
+`node_modules` linked to the image’s prebuilt dependency tree:
+
+```text
+/usr/var/server.base/node_modules
+```
+
+Toolchain:
+
+```text
+Node 12.22.12
+npm 6.14.16
+Mocha 10.0.0
+Gulp CLI 2.2.0
+Gulp local 4.0.2
+```
+
+Focused result:
+
+```text
+67 passing
+```
+
+JavaScript build:
+
+```text
+gulp js
+```
+
+Result:
+
+```text
+successful
+```
+
+Static `node --check` validation passed for:
+
+- `public/javascripts/main.js`;
+- `test/page-runtime-coordinator-adapter.js`.
+
+A direct `/workspace` mount with `NODE_PATH` pointed at the external prebuilt
+tree allowed the tests to run but caused Browserify to resolve an invalid
+relative dependency path during `gulp js`. Revalidating in the image’s expected
+`/usr/var/server` layout resolved that environmental issue. The real checkout
+remained unchanged throughout validation.
+
+### 13.6 Full recursive test warning
 
 Do not run the full recursive suite in a bare temporary application container
 without required services.
@@ -1042,61 +1185,64 @@ Expected from the last session, but do not assume:
 
 ```text
 branch: page-runtime-coordinator
-HEAD: 60c053f
-parent: 20b2e7b
-origin/page-runtime-coordinator: 91cc8b6
+HEAD: 23c2cb7
+parent: 9b80564
+origin/page-runtime-coordinator: 9b80564
 working tree: clean
-ahead: 2
+ahead: 1
 ```
 
 ### 14.2 Review relevant files
 
-For the next MathJax terminal-metadata patch, inspect:
+For the next MathJax error-classification investigation, inspect:
 
-- `public/javascripts/main.js`
-- `public/javascripts/math-answer.js`
-- `public/javascripts/sagemath.js`
-- `public/javascripts/page-runtime.js`
-- `public/javascripts/page-runtime-coordinator-adapter.js`
-- `test/page-runtime-coordinator-adapter.js`
+- `public/javascripts/main.js`;
+- `public/javascripts/page-runtime.js`;
+- `public/javascripts/page-runtime-coordinator-adapter.js`;
+- MathJax error hooks and Process signal handling;
+- browser diagnostics for the initial Process task;
+- representative pages that can produce localized TeX parse errors;
+- representative pages or controlled fixtures for `Math Processing Error`;
 - relevant MathJax sections in:
-  - `COORDINATOR_DESIGN.md`
-  - `CURRENT_PIPELINE.md`
-  - `RUNTIME_OWNERSHIP_MATRIX.md`
-  - `DEGRADED_STATE_POLICY.md`
-  - `IMPLEMENTATION_STATUS.md`
+  - `COORDINATOR_DESIGN.md`;
+  - `CURRENT_PIPELINE.md`;
+  - `RUNTIME_OWNERSHIP_MATRIX.md`;
+  - `DEGRADED_STATE_POLICY.md`;
+  - `IMPLEMENTATION_STATUS.md`.
 
 ### 14.3 Intended next patch
 
-Refine initial MathJax Process terminal metadata and document error
-classification while preserving the current successful-render behavior.
+Do not begin with a policy-changing patch. First collect browser evidence about
+how each MathJax error class affects the bound initial Process and its dependent
+content.
 
-The patch should likely:
+The investigation should establish:
 
-- retain the bound initial Process generation as the lifecycle identity;
-- include answer discovery, connection, unresolved-model, and attachment counts;
-- include inline Sage discovery/finalization counts relevant to the Process;
-- preserve observed MathJax errors with generation and error type;
-- distinguish observed errors from terminal-state policy;
-- keep successful Process completion successful unless evidence supports
-  degradation or failure;
-- add focused tests for terminal result shape and error association;
-- avoid changing timeout ownership, late recovery, or legacy comparison;
-- avoid removing the legacy watchdog in this metadata-only patch.
+- whether `End Process` still occurs;
+- whether the bound generation remains correct;
+- whether answer discovery completes;
+- whether initial answers attach or remain unresolved;
+- whether inline Sage discovery completes;
+- whether the page remains usable despite a localized error;
+- whether current coordinator success, degraded readiness, or failure best
+  represents the observed outcome.
 
-Do not classify every MathJax parse or processing error as terminal without
-browser evidence and an explicit degraded-state rule.
+Only after that evidence should a narrow error-classification patch be designed.
+Timeout ownership, late recovery, and the new terminal metadata shape should
+remain unchanged during the investigation.
 
 ---
 
 ## 15. Recommended subsequent sequence
 
-After coordinator-owned initial MathJax timeout:
+After initial MathJax generation binding, timeout ownership, and terminal
+metadata:
 
-1. **MathJax terminal metadata**
-   - refine result shape;
-   - include answer/Sage discovery counts and observed errors;
-   - document error classification without prematurely failing the task.
+1. **MathJax error classification evidence**
+   - collect browser evidence for TeX parse errors and Math Processing Error;
+   - determine callback ordering and whether `End Process` still occurs;
+   - compare answer and inline Sage readiness after each error class;
+   - define diagnostic-only, degraded, and failed policy only after evidence.
 
 2. **Inline Sage timeout ownership**
    - move deadline into the coordinator;
@@ -1259,8 +1405,8 @@ Do not accidentally:
 
 ## 20. Immediate “do not accidentally” list
 
-- Do not push `20b2e7b` or `60c053f` without checking the current desired
-  checkpoint policy.
+- Do not push `23c2cb7` without checking whether this handoff update should be
+  committed with it as one remote checkpoint.
 - Do not assume the coordinator fully owns a lifecycle merely because a task
   exists.
 - Do not let the legacy `mathjax-pass: ended` path bypass bound-generation
@@ -1286,14 +1432,14 @@ Do not accidentally:
 
 The project is incrementally replacing Xronos’s loosely coupled browser startup
 callbacks with an explicit Page Runtime Coordinator while preserving existing
-content and mature service implementations. A passive coordinator, readiness
-dimensions, diagnostics, core dependency engine, and several bounded ownership
-transfers are already implemented. Local commits `20b2e7b` and `60c053f` now
-bind the initial MathJax Process to its first generation and transfer its
-15-second deadline into the coordinator. Matching late completion recovers
-readiness, mismatched completion is rejected, the current timeout error clears
-after recovery, and `lastTimeout` preserves structured timeout history. The
-legacy MathJax watchdog remains comparison-only. Focused coordinator tests
-report 67 passing and the JavaScript build succeeds. The next intended patch is
-richer MathJax terminal metadata and evidence-based error classification; this
-project must not expand into Node/MathJax modernization or a framework rewrite.
+content and mature service implementations. The initial MathJax Process is now
+bound to its first generation, owns a coordinator-managed 15-second deadline,
+supports generation-safe late recovery, and exposes structured timeout history.
+Commit `23c2cb7` adds richer successful terminal metadata under
+`task.result.details`: compatibility pass counters, a nested pass summary,
+initial answer readiness details, and initial inline Sage discovery/settlement
+details. Adapter-owned `errorCount` and `errors` remain separate, and no
+readiness or error terminal policy changed. Focused coordinator tests report 67
+passing and the JavaScript build succeeds. The next work is browser evidence
+collection for MathJax error classification, not further metadata plumbing or
+dependency modernization.

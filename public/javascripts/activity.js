@@ -27,6 +27,7 @@ var connectInteractives = require('./interactives').connectInteractives;
 
 var database = require('./database');
 var pageRuntime = require('./page-runtime');
+var bootstrapUi = require('./bootstrap-ui');
 
 var annotator = require('./annotator');
 var pageRuntime = require('./page-runtime');
@@ -359,6 +360,34 @@ var initializeActivity = function(activity) {
 	connectInteractives();
 
 	$('.activity-card').activityCard();
+
+        var bootstrapUiResult =
+            bootstrapUi.install(
+                activity
+            );
+
+        pageRuntime.operation(
+            "activity-bootstrap-ui",
+            "completed",
+            {
+                path:
+                    activity.attr(
+                        "data-path"
+                    ),
+                dropdownsMatched:
+                    bootstrapUiResult
+                        .dropdownsMatched,
+                dropdownsInstalled:
+                    bootstrapUiResult
+                        .dropdownsInstalled,
+                tooltipsMatched:
+                    bootstrapUiResult
+                        .tooltipsMatched,
+                tooltipsInstalled:
+                    bootstrapUiResult
+                        .tooltipsInstalled
+            }
+        );
 
         pageRuntime.component(
             "activity",

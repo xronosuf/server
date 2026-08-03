@@ -21,7 +21,9 @@ var CONTROL_TASKS = [
     "mathjax-startup-requested",
     "mathjax-startup-trigger",
     "mathjax-startup-ended",
-    "mathjax-startup-ui-finalization"
+    "mathjax-startup-ui-finalization",
+    "document-ready-static-ui-requested",
+    "document-ready-static-ui"
 ];
 
 var DIMENSION_TASKS = [
@@ -98,6 +100,7 @@ function createPassiveCoordinator(options) {
     var activityInitializationRunner = null;
     var mathJaxStartupRunner = null;
     var mathJaxStartupUiRunner = null;
+    var documentReadyStaticUiRunner = null;
 
     LEAF_TASKS.forEach(function(taskId) {
         registerExternalLeaf(
@@ -223,6 +226,35 @@ function createPassiveCoordinator(options) {
             }
 
             return mathJaxStartupUiRunner();
+        }
+    });
+
+    coordinator.register({
+        id: "document-ready-static-ui-requested",
+        external: true
+    });
+
+    coordinator.register({
+        id: "document-ready-static-ui",
+        dependsOn: [
+            "document-ready-static-ui-requested"
+        ],
+        accepts: {
+            "document-ready-static-ui-requested": [
+                "succeeded"
+            ]
+        },
+        run: function() {
+            if (
+                typeof documentReadyStaticUiRunner !==
+                    "function"
+            ) {
+                throw new Error(
+                    "Document-ready static UI runner is not configured."
+                );
+            }
+
+            return documentReadyStaticUiRunner();
         }
     });
 
@@ -576,6 +608,60 @@ function createPassiveCoordinator(options) {
 
             return coordinator.signal(
                 "mathjax-startup-ended",
+                "succeeded",
+                details
+            );
+        };
+
+    coordinator.setDocumentReadyStaticUiRunner =
+        function(runner) {
+            if (typeof runner !== "function") {
+                throw new Error(
+                    "Document-ready static UI runner must be a function."
+                );
+            }
+
+            documentReadyStaticUiRunner =
+                runner;
+
+            coordinator.record(
+                "document-ready-static-ui-runner-configured",
+                "document-ready-static-ui"
+            );
+
+            return true;
+        };
+
+    coordinator.requestDocumentReadyStaticUi =
+        function(details) {
+            var report =
+                coordinator.inspect();
+            var task =
+                report.tasks[
+                    "document-ready-static-ui"
+                ];
+
+            if (
+                task &&
+                (
+                    task.state === "running" ||
+                    task.state === "succeeded" ||
+                    task.state === "not-required"
+                )
+            ) {
+                coordinator.record(
+                    "duplicate-document-ready-static-ui-request-ignored",
+                    "document-ready-static-ui",
+                    {
+                        state: task.state
+                    }
+                );
+
+                return true;
+            }
+
+            return coordinator.signal(
+                "document-ready-static-ui-requested",
                 "succeeded",
                 details
             );

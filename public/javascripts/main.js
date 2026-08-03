@@ -290,6 +290,98 @@ var activityBootstrapOwnerConfigured =
             );
         }
     );
+var documentReadyStaticUiInvocation = {
+    started: false,
+    owner: null,
+    completed: false
+};
+
+function invokeDocumentReadyStaticUi(owner) {
+    var clickableRows;
+
+    if (documentReadyStaticUiInvocation.started) {
+        pageRuntime.event(
+            "document-ready-static-ui-duplicate-invocation-ignored",
+            {
+                requestedOwner: owner,
+                activeOwner:
+                    documentReadyStaticUiInvocation.owner,
+                completed:
+                    documentReadyStaticUiInvocation.completed
+            }
+        );
+
+        return {
+            state: "not-required",
+            value: {
+                reason: "already-started",
+                owner:
+                    documentReadyStaticUiInvocation.owner
+            }
+        };
+    }
+
+    documentReadyStaticUiInvocation.started = true;
+    documentReadyStaticUiInvocation.owner = owner;
+
+    pageRuntime.operation(
+        "document-ready-static-ui",
+        "invoked",
+        {
+            owner: owner
+        }
+    );
+
+    try {
+        syntaxHighlighter.default.highlight();
+
+        clickableRows =
+            rowclick.addClickableTableRows();
+
+        documentReadyStaticUiInvocation.completed =
+            true;
+
+        pageRuntime.operation(
+            "document-ready-static-ui",
+            "completed",
+            {
+                owner: owner,
+                syntaxHighlighted: true,
+                clickableRowsMatched:
+                    clickableRows.matchedCount,
+                clickableRowsInstalled:
+                    clickableRows.installedCount
+            }
+        );
+
+        return {
+            state: "succeeded",
+            value: {
+                owner: owner,
+                syntaxHighlighted: true,
+                clickableRowsMatched:
+                    clickableRows.matchedCount,
+                clickableRowsInstalled:
+                    clickableRows.installedCount
+            }
+        };
+    } catch (err) {
+        pageRuntime.operation(
+            "document-ready-static-ui",
+            "failed",
+            {
+                owner: owner,
+                message:
+                    err && err.message
+                        ? err.message
+                        : String(err)
+            }
+        );
+
+        throw err;
+    }
+}
+
 var ProgressBar = require('./progress-bar');
 
 var userProfile = require('./profile');
@@ -302,6 +394,15 @@ var imageEnvironment = require('./image-environment');
 var instructor = require('./instructor');
 
 var rowclick = require('./rowclick');
+
+var documentReadyStaticUiOwnerConfigured =
+    pageRuntime.configureDocumentReadyStaticUi(
+        function() {
+            return invokeDocumentReadyStaticUi(
+                "coordinator"
+            );
+        }
+    );
 var supervision = require('./supervision');
 
 var references = require('./references');
@@ -2602,10 +2703,31 @@ $(document).ready(function() {
         );
     }
 
-    // BADBAD: This seems like the wrong thing---why is default here?
-    syntaxHighlighter.default.highlight();
+    var documentReadyStaticUiRequested =
+        documentReadyStaticUiOwnerConfigured &&
+        pageRuntime.requestDocumentReadyStaticUi(
+            {
+                documentReady: true,
+                requestLocation:
+                    "main-document-ready"
+            }
+        );
 
-    rowclick.addClickableTableRows();
+    if (!documentReadyStaticUiRequested) {
+        pageRuntime.event(
+            "document-ready-static-ui-legacy-fallback",
+            {
+                reason:
+                    documentReadyStaticUiOwnerConfigured
+                        ? "coordinator-request-rejected"
+                        : "coordinator-owner-not-configured"
+            }
+        );
+
+        invokeDocumentReadyStaticUi(
+            "legacy-fallback"
+        );
+    }
 
     // Scroll to correct item in (old) top card-list
     $('.kinetic').kinetic({});

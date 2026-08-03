@@ -997,5 +997,186 @@ describe(
             );
         });
 
+
+        it("runs the configured document-ready static UI owner exactly once", async function() {
+            var coordinator =
+                adapter.create();
+            var calls = 0;
+
+            coordinator
+                .setDocumentReadyStaticUiRunner(
+                    function() {
+                        calls += 1;
+
+                        return {
+                            state:
+                                "succeeded",
+                            value: {
+                                owner:
+                                    "coordinator",
+                                syntaxHighlighted:
+                                    true,
+                                clickableRowsInstalled:
+                                    2
+                            }
+                        };
+                    }
+                );
+
+            assert.strictEqual(
+                coordinator
+                    .requestDocumentReadyStaticUi(
+                        {
+                            documentReady:
+                                true
+                        }
+                    ),
+                true
+            );
+
+            await flush();
+
+            assert.strictEqual(
+                calls,
+                1
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "document-ready-static-ui-requested"
+                    ].state,
+                "succeeded"
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "document-ready-static-ui"
+                    ].state,
+                "succeeded"
+            );
+
+            assert.deepStrictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "document-ready-static-ui"
+                    ].result,
+                {
+                    owner:
+                        "coordinator",
+                    syntaxHighlighted:
+                        true,
+                    clickableRowsInstalled:
+                        2
+                }
+            );
+
+            coordinator
+                .requestDocumentReadyStaticUi(
+                    {
+                        documentReady:
+                            true
+                    }
+                );
+
+            await flush();
+
+            assert.strictEqual(
+                calls,
+                1
+            );
+        });
+
+        it("does not release activity bootstrap from the static UI request", async function() {
+            var coordinator =
+                adapter.create();
+            var staticCalls = 0;
+            var activityCalls = 0;
+
+            coordinator
+                .setDocumentReadyStaticUiRunner(
+                    function() {
+                        staticCalls += 1;
+
+                        return {
+                            state:
+                                "succeeded"
+                        };
+                    }
+                );
+
+            coordinator
+                .setActivityBootstrapRunner(
+                    function() {
+                        activityCalls += 1;
+
+                        return {
+                            state:
+                                "succeeded"
+                        };
+                    }
+                );
+
+            coordinator
+                .requestDocumentReadyStaticUi(
+                    {
+                        documentReady:
+                            true
+                    }
+                );
+
+            await flush();
+
+            assert.strictEqual(
+                staticCalls,
+                1
+            );
+
+            assert.strictEqual(
+                activityCalls,
+                0
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "document-ready"
+                    ].state,
+                "waiting"
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "activity-bootstrap-trigger"
+                    ].state,
+                "waiting"
+            );
+        });
+
+        it("fails the static UI task when no runner is configured", async function() {
+            var coordinator =
+                adapter.create();
+
+            coordinator
+                .requestDocumentReadyStaticUi(
+                    {
+                        documentReady:
+                            true
+                    }
+                );
+
+            await flush();
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "document-ready-static-ui"
+                    ].state,
+                "failed"
+            );
+        });
+
     }
 );

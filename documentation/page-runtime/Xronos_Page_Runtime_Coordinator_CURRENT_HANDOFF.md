@@ -1,12 +1,13 @@
 # Xronos Page Runtime Coordinator — Current Handoff
 
-**Purpose:** living operational handoff for recovering the project’s full context in a new chat or after a long pause.  
-**Canonical location:** `documentation/page-runtime/CURRENT_HANDOFF.md`  
-**Last reconstructed:** 2026-08-03  
-**Working branch:** `page-runtime-coordinator`  
-**Last known local HEAD:** `ba32fea` — `Bind coordinator to initial MathJax process generation`  
-**Last known remote HEAD:** `a2b88ba` — `Document coordinator implementation status`  
-**Last known branch state:** local branch ahead of `origin/page-runtime-coordinator` by one commit; `ba32fea` intentionally not pushed yet.
+**Purpose:** living operational handoff for recovering the project’s full context in a new chat or after a long pause.
+**Current file:** `documentation/page-runtime/Xronos_Page_Runtime_Coordinator_CURRENT_HANDOFF.md`
+**Last updated:** 2026-08-03
+**Working branch:** `page-runtime-coordinator`
+**Last known local HEAD:** `60c053f` — `Move initial MathJax timeout into coordinator`
+**Previous local commit:** `20b2e7b` — `Bind coordinator to initial MathJax process generation`
+**Last known remote HEAD:** `91cc8b6` — `Handoff reference file`
+**Last known branch state:** local branch ahead of `origin/page-runtime-coordinator` by two commits; neither local commit has been pushed.
 
 > This file is an operational index and decision record. It does not replace the
 > authoritative design, pipeline, ownership, degraded-state, inventory, or TODO
@@ -32,8 +33,10 @@ At the start of a new work session:
 
 Suggested prompt for a future chat:
 
-> Read `documentation/page-runtime/CURRENT_HANDOFF.md` and the authoritative
-> documents it references. Verify the current branch and commits. Then summarize
+> Read
+> `documentation/page-runtime/Xronos_Page_Runtime_Coordinator_CURRENT_HANDOFF.md`
+> and the authoritative documents it references. Verify the current branch and
+> commits. Then summarize
 > the project’s big-picture goal, current implementation state, unresolved
 > reconciliation work, and the safest next patch before changing code.
 
@@ -424,14 +427,13 @@ At the time it was pushed, local and remote were synchronized at `a2b88ba`.
 
 ### 7.4 Initial MathJax Process generation binding
 
-Current local commit:
+Commit:
 
 ```text
-ba32fea Bind coordinator to initial MathJax process generation
+20b2e7b Bind coordinator to initial MathJax process generation
 ```
 
-This commit is the first reconcile patch for the initial MathJax Process
-lifecycle. It is intentionally narrower than the complete timeout transfer.
+This is the first reconcile patch for the initial MathJax Process lifecycle.
 
 It adds:
 
@@ -444,14 +446,50 @@ It adds:
   generation has been bound;
 - focused tests for all of the above.
 
+This commit is the rebased equivalent of the earlier local commit `ba32fea`.
+
+### 7.5 Coordinator-owned initial MathJax timeout
+
+Current local commit:
+
+```text
+60c053f Move initial MathJax timeout into coordinator
+```
+
+This transfers ownership of the initial MathJax Process deadline into the
+coordinator while retaining the legacy watchdog for independent comparison.
+
+It adds:
+
+- a 15-second timeout on the external `mathjax-initial-process` task;
+- timeout start at coordinator/module initialization, preserving the legacy
+  boundary and allowing timeout before `Begin Process`;
+- diagnostic code `XR-MATHJAX-INITIAL-101`;
+- timeout metadata containing phase, bound generation, begun/completed flags,
+  observed error count, attempt, and coordinator operation ID;
+- generation-safe late recovery;
+- rejection of mismatched late completion;
+- recomputation of derived readiness after matching late completion;
+- generic coordinator timeout-detail callbacks;
+- persistent `lastTimeout` inspection data after recovery;
+- clearing of the current timeout error after successful recovery;
+- Node-only timer `unref()` support without changing browser timer behavior;
+- stricter rejection of MathJax error observations that omit the bound
+  generation.
+
+The legacy MathJax watchdog remains active, records its own deadline event, and
+continues to drive legacy readiness comparison. It no longer signals or
+double-settles the coordinator task.
+
 Last known branch state:
 
 ```text
-ba32fea (HEAD -> page-runtime-coordinator)
-a2b88ba (origin/page-runtime-coordinator)
+60c053f (HEAD -> page-runtime-coordinator)
+20b2e7b Bind coordinator to initial MathJax process generation
+91cc8b6 (origin/page-runtime-coordinator)
 ```
 
-`ba32fea` was intentionally not pushed before the pause.
+Both local commits remain intentionally unpushed.
 
 ---
 
@@ -545,27 +583,61 @@ This is intentional pending policy work because:
 - terminal policy should be based on observed MathJax behavior and degraded-state
   design, not on the mere presence of an error hook.
 
-### 8.6 Remaining MathJax reconcile work
+### 8.6 Current MathJax timeout ownership
 
-The legacy initial MathJax watchdog still owns the 15-second timer in
-`page-runtime.js`.
+The coordinator now owns the 15-second deadline for
+`mathjax-initial-process`.
 
-Next intended reconcile step:
+The timeout is armed when the dependency-free external task is armed during
+coordinator creation. This matches the legacy watchdog’s module-evaluation
+boundary and intentionally permits timeout before an initial Process generation
+has been bound.
 
-1. configure the `mathjax-initial-process` external task with a coordinator-owned
-   timeout;
-2. preserve diagnostic code `XR-MATHJAX-INITIAL-101`;
-3. bind timeout and late recovery to the initial operation/generation;
-4. accept late success only for the bound generation;
-5. preserve timeout history after recovery;
-6. expose richer terminal metadata through inspection;
-7. compare coordinator behavior with the legacy watchdog;
-8. remove or demote the legacy timer only after evidence shows parity or
-   intentional improvement.
+On timeout, inspection exposes:
 
-Do not remove the legacy watchdog in the same patch that first introduces
-coordinator timeout ownership unless the comparison and rollback story are
-clear.
+- diagnostic code `XR-MATHJAX-INITIAL-101`;
+- deadline milliseconds;
+- phase: `waiting-for-process` or `process-running`;
+- bound generation, if any;
+- begun and completed flags;
+- observed initial-generation error count;
+- coordinator attempt and operation ID.
+
+A matching late completion may recover the task because its recovery policy
+remains `allow-late-success`. A mismatched generation is rejected before it can
+signal the coordinator.
+
+After recovery:
+
+- the current task state and result describe the successful completion;
+- the current error is cleared;
+- `lastTimeout` preserves the earlier timeout error and structured metadata;
+- the original timeout transition remains in coordinator event history;
+- derived readiness is recomputed.
+
+The legacy initial MathJax watchdog remains temporarily in
+`page-runtime.js`. It records the legacy deadline and readiness evidence for
+comparison but no longer owns or double-settles the coordinator task.
+
+### 8.7 Remaining MathJax reconcile work
+
+The next MathJax patch should improve terminal metadata and error
+classification without prematurely making every observed MathJax error
+terminal.
+
+Likely work:
+
+1. refine the successful initial Process result shape;
+2. expose answer-discovery and answer-attachment counts;
+3. expose inline Sage discovery and settlement counts relevant to that Process;
+4. preserve observed MathJax errors with generation and error class;
+5. distinguish localized parse errors from Process-wide processing failure;
+6. document which error classes are diagnostic-only, degraded, or failed;
+7. retain the current generation-safe timeout and late-recovery behavior;
+8. use browser fixtures or injected failures before changing terminal policy.
+
+Do not remove the legacy watchdog until representative browser comparison shows
+parity or an intentional, documented improvement.
 
 ---
 
@@ -834,14 +906,14 @@ Relevant observations:
 - `start.sh` links that tree rather than installing at startup;
 - modernization of these dependencies is outside this project.
 
-### 13.4 Validated result for `ba32fea`
+### 13.4 Validated result for `20b2e7b`
 
 Focused test command covered:
 
 - `test/page-runtime-coordinator-adapter.js`
 - `test/page-runtime-coordinator-core.js`
 
-Result after the legacy bypass guard:
+Result after the generation-binding and legacy-bypass guard:
 
 ```text
 60 passing
@@ -861,6 +933,63 @@ successful
 
 Static `node --check` validation also passed for the touched JavaScript and test
 files.
+
+### 13.5 Validated result for `60c053f`
+
+Focused test command covered:
+
+- `test/page-runtime-coordinator-adapter.js`
+- `test/page-runtime-coordinator-core.js`
+
+Validation used the prebuilt legacy-compatible image with its default entrypoint
+explicitly bypassed:
+
+```text
+ghcr.io/ximeraproject/ximeraserver:v2.9
+Node 12.22.12
+npm 6.14.16
+Mocha 10.0.0
+Gulp 4.0.2
+```
+
+Result:
+
+```text
+67 passing
+```
+
+The focused tests cover:
+
+- timeout before initial Process begin;
+- timeout after binding a generation;
+- diagnostic timeout metadata;
+- matching late completion recovery;
+- mismatched generation rejection;
+- derived readiness recomputation;
+- preserved timeout history through `lastTimeout`;
+- cleared current error after recovery;
+- missing-generation MathJax error rejection;
+- generic external-task timeout metadata.
+
+JavaScript build:
+
+```text
+gulp js
+```
+
+Result:
+
+```text
+successful
+```
+
+Static `node --check` validation also passed for all five touched source and test
+files.
+
+A first container attempt accidentally used the image’s default `start.sh`
+entrypoint, which launched Redis, MongoDB, a full build, and the application
+server. The named container was stopped, and subsequent focused validation used
+`--entrypoint /bin/bash`. The real checkout was unchanged.
 
 ### 13.5 Full recursive test warning
 
@@ -913,21 +1042,22 @@ Expected from the last session, but do not assume:
 
 ```text
 branch: page-runtime-coordinator
-HEAD: ba32fea
-origin/page-runtime-coordinator: a2b88ba
+HEAD: 60c053f
+parent: 20b2e7b
+origin/page-runtime-coordinator: 91cc8b6
 working tree: clean
-ahead: 1
+ahead: 2
 ```
 
 ### 14.2 Review relevant files
 
-For the next MathJax timeout reconcile patch, inspect:
+For the next MathJax terminal-metadata patch, inspect:
 
-- `public/javascripts/page-runtime-coordinator-core.js`
-- `public/javascripts/page-runtime-coordinator-adapter.js`
-- `public/javascripts/page-runtime.js`
 - `public/javascripts/main.js`
-- `test/page-runtime-coordinator-core.js`
+- `public/javascripts/math-answer.js`
+- `public/javascripts/sagemath.js`
+- `public/javascripts/page-runtime.js`
+- `public/javascripts/page-runtime-coordinator-adapter.js`
 - `test/page-runtime-coordinator-adapter.js`
 - relevant MathJax sections in:
   - `COORDINATOR_DESIGN.md`
@@ -938,31 +1068,24 @@ For the next MathJax timeout reconcile patch, inspect:
 
 ### 14.3 Intended next patch
 
-Move the initial MathJax Process deadline into the coordinator while preserving
-parallel legacy comparison.
+Refine initial MathJax Process terminal metadata and document error
+classification while preserving the current successful-render behavior.
 
 The patch should likely:
 
-- add a configured timeout for `mathjax-initial-process`;
-- preserve `allow-late-success`;
-- preserve diagnostic code and elapsed/deadline metadata;
-- expose bound generation and operation ID;
-- reject late completion for another generation;
-- allow late completion for the bound generation;
-- preserve the earlier timeout event after recovery;
-- keep the legacy watchdog temporarily for comparison, but prevent it from
-  owning or double-settling the coordinator task;
-- add focused tests for:
-  - timeout before Process begin;
-  - timeout after bound begin;
-  - matching late completion recovery;
-  - mismatched late completion rejection;
-  - duplicate completion;
-  - legacy deadline/completion compatibility during transition;
-  - derived readiness recomputation after recovery.
+- retain the bound initial Process generation as the lifecycle identity;
+- include answer discovery, connection, unresolved-model, and attachment counts;
+- include inline Sage discovery/finalization counts relevant to the Process;
+- preserve observed MathJax errors with generation and error type;
+- distinguish observed errors from terminal-state policy;
+- keep successful Process completion successful unless evidence supports
+  degradation or failure;
+- add focused tests for terminal result shape and error association;
+- avoid changing timeout ownership, late recovery, or legacy comparison;
+- avoid removing the legacy watchdog in this metadata-only patch.
 
-Do not bundle MathJax error terminal policy into the same patch unless evidence
-and degraded-state rules are ready.
+Do not classify every MathJax parse or processing error as terminal without
+browser evidence and an explicit degraded-state rule.
 
 ---
 
@@ -1136,13 +1259,16 @@ Do not accidentally:
 
 ## 20. Immediate “do not accidentally” list
 
-- Do not push `ba32fea` without checking the current desired checkpoint policy.
+- Do not push `20b2e7b` or `60c053f` without checking the current desired
+  checkpoint policy.
 - Do not assume the coordinator fully owns a lifecycle merely because a task
   exists.
 - Do not let the legacy `mathjax-pass: ended` path bypass bound-generation
   validation.
-- Do not remove the MathJax watchdog before coordinator timeout parity and late
-  recovery are tested.
+- Do not reintroduce legacy deadline settlement for
+  `mathjax-initial-process`.
+- Do not remove the legacy MathJax watchdog before browser comparison confirms
+  parity or intentional improvement.
 - Do not make every MathJax error terminal without policy evidence.
 - Do not conflate canonical Sage success with visible placeholder success.
 - Do not combine canonical Sage and inline visible Sage into one leaf.
@@ -1162,12 +1288,12 @@ The project is incrementally replacing Xronos’s loosely coupled browser startu
 callbacks with an explicit Page Runtime Coordinator while preserving existing
 content and mature service implementations. A passive coordinator, readiness
 dimensions, diagnostics, core dependency engine, and several bounded ownership
-transfers are already implemented. The current local commit `ba32fea` adds
-generation-safe ownership of the initial MathJax Process lifecycle and prevents
-legacy completion from bypassing the bound generation; focused coordinator
-tests report 60 passing and the JavaScript build succeeds. The broader
-reconciliation is still active: the legacy MathJax, initial-state, and inline
-Sage watchdogs remain, and the next intended patch is to move the initial
-MathJax timeout into the coordinator with operation/generation-safe late
-recovery while retaining temporary legacy comparison. This project must not
-expand into Node/MathJax modernization or a framework rewrite.
+transfers are already implemented. Local commits `20b2e7b` and `60c053f` now
+bind the initial MathJax Process to its first generation and transfer its
+15-second deadline into the coordinator. Matching late completion recovers
+readiness, mismatched completion is rejected, the current timeout error clears
+after recovery, and `lastTimeout` preserves structured timeout history. The
+legacy MathJax watchdog remains comparison-only. Focused coordinator tests
+report 67 passing and the JavaScript build succeeds. The next intended patch is
+richer MathJax terminal metadata and evidence-based error classification; this
+project must not expand into Node/MathJax modernization or a framework rewrite.

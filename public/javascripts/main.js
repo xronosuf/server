@@ -549,6 +549,112 @@ function invokeDocumentReadyKineticNavigation(owner) {
     }
 }
 
+var documentReadyReferencesInvocation = {
+    started: false,
+    owner: null,
+    completed: false
+};
+
+function invokeDocumentReadyReferences(owner) {
+    var result;
+
+    if (documentReadyReferencesInvocation.started) {
+        pageRuntime.event(
+            "document-ready-references-duplicate-invocation-ignored",
+            {
+                requestedOwner:
+                    owner,
+                activeOwner:
+                    documentReadyReferencesInvocation.owner,
+                completed:
+                    documentReadyReferencesInvocation.completed
+            }
+        );
+
+        return {
+            state: "not-required",
+            value: {
+                reason:
+                    "already-started",
+                owner:
+                    documentReadyReferencesInvocation.owner
+            }
+        };
+    }
+
+    documentReadyReferencesInvocation.started =
+        true;
+    documentReadyReferencesInvocation.owner =
+        owner;
+
+    pageRuntime.operation(
+        "document-ready-references",
+        "invoked",
+        {
+            owner: owner
+        }
+    );
+
+    try {
+        result =
+            references
+                .installDocumentReferences(
+                    document
+                );
+
+        documentReadyReferencesInvocation.completed =
+            true;
+
+        pageRuntime.operation(
+            "document-ready-references",
+            "completed",
+            {
+                owner:
+                    owner,
+                labelsMatched:
+                    result.labelsMatched,
+                labelsInstalled:
+                    result.labelsInstalled,
+                referencesMatched:
+                    result.referencesMatched,
+                referencesInstalled:
+                    result.referencesInstalled
+            }
+        );
+
+        return {
+            state: "succeeded",
+            value: {
+                owner:
+                    owner,
+                labelsMatched:
+                    result.labelsMatched,
+                labelsInstalled:
+                    result.labelsInstalled,
+                referencesMatched:
+                    result.referencesMatched,
+                referencesInstalled:
+                    result.referencesInstalled
+            }
+        };
+    } catch (err) {
+        pageRuntime.operation(
+            "document-ready-references",
+            "failed",
+            {
+                owner:
+                    owner,
+                message:
+                    err && err.message
+                        ? err.message
+                        : String(err)
+            }
+        );
+
+        throw err;
+    }
+}
+
 var ProgressBar = require('./progress-bar');
 
 var userProfile = require('./profile');
@@ -582,6 +688,15 @@ var documentReadyStaticUiOwnerConfigured =
 var supervision = require('./supervision');
 
 var references = require('./references');
+
+var documentReadyReferencesOwnerConfigured =
+    pageRuntime.configureDocumentReadyReferences(
+        function() {
+            return invokeDocumentReadyReferences(
+                "coordinator"
+            );
+        }
+    );
 var Desmos = require('./desmos');
 
 var Javascript = require('./javascript');
@@ -2841,9 +2956,33 @@ MathJax.Hub.Configured();
 $(document).ready(function() {
     pageRuntime.event("document-ready-started");
 
-    // Make anchors with references from \ref actually work
-	$('a.ximera-label').texLabel();
-	$('a.reference').reference();
+    var documentReadyReferencesRequested =
+        documentReadyReferencesOwnerConfigured &&
+        pageRuntime
+            .requestDocumentReadyReferences(
+                {
+                    documentReady:
+                        true,
+                    requestLocation:
+                        "main-document-ready"
+                }
+            );
+
+    if (!documentReadyReferencesRequested) {
+        pageRuntime.event(
+            "document-ready-references-legacy-fallback",
+            {
+                reason:
+                    documentReadyReferencesOwnerConfigured
+                        ? "coordinator-request-rejected"
+                        : "coordinator-owner-not-configured"
+            }
+        );
+
+        invokeDocumentReadyReferences(
+            "legacy-fallback"
+        );
+    }
 
 	// This could go in "init" above, but it needs to be after the end process hook
     /*

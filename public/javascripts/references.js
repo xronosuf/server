@@ -37,7 +37,7 @@ function zoomTo( id ) {
 		if(previousElement.prop("tagName").toLowerCase() == "img" && previousElement.parent().prop("tagName").toLowerCase() == "div") {
 			target = previousElement.parent();
 		}
-		
+
 	}
 	else if (previousElement.hasClass('mathjax-env')) {
 		debug("zoomTo: previousElement is a mathjax-env, so zooming to that");
@@ -56,30 +56,30 @@ function zoomTo( id ) {
     window.setTimeout( function(){
         target.removeClass("flash");
     }, 5000);
-	
-     var el = target; 
+
+     var el = target;
     var elOffset = el.offset().top;
     debug( "elOffset = " + elOffset );
     var elHeight = el.outerHeight();
     var windowHeight = $(window).height();
     debug( "windowHeight = " + windowHeight );
     var offset;
-	
+
     if (elHeight < windowHeight) {
 		offset = elOffset - ((windowHeight / 2) - (elHeight / 2));
     }
     else {
 		offset = elOffset;
     }
-	
+
 	debug( "Scroll to top + " + offset + " + " + extraOffset);
-	
+
 	// offset = offset + extraOffset;
 
 
 
     // $('.main-activity').animate({
-	// 	scrollTop: $('.main-activity').scrollTop() + offset 
+	// 	scrollTop: $('.main-activity').scrollTop() + offset
     // }, 1000);
 
 	window.scrollTo({ top: $('.main-activity').scrollTop() + offset , behavior: 'smooth' });
@@ -89,8 +89,23 @@ function zoomTo( id ) {
 var maximumNumber = 1;
 var problemNumber = 1;
 
+var labelInstalledClass =
+    "xronos-label-installed";
+
+var referenceInstalledClass =
+    "xronos-reference-installed";
+
+var referenceEventNamespace =
+    ".xronosReference";
+
 var createLabel = function() {
     var label = $(this);
+
+    if (label.hasClass(labelInstalledClass)) {
+        return;
+    }
+
+    label.addClass(labelInstalledClass);
 	var href = label.attr('id');
 	var referenceText = $('[href="#'+ href + '"').first().text()
 
@@ -127,8 +142,8 @@ var createLabel = function() {
 						tag = maximumNumber.toString();
 						debug("Adding tag " + tag + " for ref '" + href + "' from next other")
 						maximumNumber = maximumNumber + 1;
-					}	   
-				}  
+					}
+				}
 			}
 		//}
 	    MathJax.Extension["TeX/AMSmath"].labels[href] = { id: href, tag: tag };
@@ -145,12 +160,18 @@ var createLabel = function() {
 var createReference = function() {
     var reference = $(this);
 
+    if (reference.hasClass(referenceInstalledClass)) {
+        return;
+    }
+
+    reference.addClass(referenceInstalledClass);
+
 	console.log("DEBUG: createReference " + reference.text());     // debug ...
 
     function checkLabel(reference) {
 	var href = reference.attr('href');
 	console.log("DEBUG: checklabel " + reference.text());     // debug ...
-	href = href.replace(/^#/, '' );	
+	href = href.replace(/^#/, '' );
 	if (MathJax.Extension["TeX/AMSmath"].labels[href]) {
 	    var label = MathJax.Extension["TeX/AMSmath"].labels[href];
 	    if (reference.hasClass('reference-keeptext')) {
@@ -164,12 +185,18 @@ var createReference = function() {
 	    reference.addClass('mathjax-link');
 	}
     }
-    
+
     MathJax.Hub.Queue(
 	[checkLabel,reference]
     );
-    
-    reference.click( function(event) {
+
+    reference
+        .off(
+            "click" + referenceEventNamespace
+        )
+        .on(
+            "click" + referenceEventNamespace,
+            function(event) {
 
 	console.log("DEBUG: click " + reference.text());     // debug ...
 
@@ -177,7 +204,7 @@ var createReference = function() {
 
 	if (reference.hasClass('broken'))
 	    return false;
-	
+
 	var href = reference.attr('href');
 
 	href = href.replace(/^#/, '' );
@@ -189,7 +216,7 @@ var createReference = function() {
 		debug("zoomed to " + href);
 	    return;
 	}
-	
+
 	var repository = $("#theActivity").attr('data-repository-name');
 
 	if (!repository) {
@@ -216,21 +243,76 @@ var createReference = function() {
 	    reference.css( 'cursor', 'not-allowed' );
 	    reference.addClass( 'broken' );
 	});
-	
+
 	return false;
-    });
+            }
+        );
 
     reference.css( 'cursor', 'pointer' );
 };
 
 $.fn.extend({
     reference: function() {
-	return this.each( createReference );
+        var matchedCount =
+            this.length;
+        var installedCount =
+            0;
+
+        this.each(function() {
+            var reference =
+                $(this);
+
+            if (
+                !reference.hasClass(
+                    referenceInstalledClass
+                )
+            ) {
+                installedCount += 1;
+            }
+
+            createReference.call(this);
+        });
+
+        this.xronosReferenceResult = {
+            matchedCount:
+                matchedCount,
+            installedCount:
+                installedCount
+        };
+
+        return this;
     },
 
     texLabel: function() {
-	return this.each( createLabel );
-    }    
+        var matchedCount =
+            this.length;
+        var installedCount =
+            0;
+
+        this.each(function() {
+            var label =
+                $(this);
+
+            if (
+                !label.hasClass(
+                    labelInstalledClass
+                )
+            ) {
+                installedCount += 1;
+            }
+
+            createLabel.call(this);
+        });
+
+        this.xronosLabelResult = {
+            matchedCount:
+                matchedCount,
+            installedCount:
+                installedCount
+        };
+
+        return this;
+    }
 });
 
 
@@ -276,4 +358,59 @@ exports.highlightTarget = function() {
 	    zoomTo( targetHash.replace( /^#/, '' ) );
 	}, 1000);
     }
+};
+
+
+exports.installDocumentReferences =
+    function(root) {
+        var scope =
+            root
+                ? $(root)
+                : $(document);
+
+        var labels =
+            scope.is("a.ximera-label")
+                ? scope
+                : scope.find(
+                    "a.ximera-label"
+                );
+
+        var references =
+            scope.is("a.reference")
+                ? scope
+                : scope.find(
+                    "a.reference"
+                );
+
+        labels.texLabel();
+        references.reference();
+
+        return {
+            labelsMatched:
+                labels.length,
+            labelsInstalled:
+                labels.xronosLabelResult
+                    ? labels
+                        .xronosLabelResult
+                        .installedCount
+                    : 0,
+            referencesMatched:
+                references.length,
+            referencesInstalled:
+                references
+                    .xronosReferenceResult
+                    ? references
+                        .xronosReferenceResult
+                        .installedCount
+                    : 0
+        };
+    };
+
+exports._test = {
+    labelInstalledClass:
+        labelInstalledClass,
+    referenceInstalledClass:
+        referenceInstalledClass,
+    referenceEventNamespace:
+        referenceEventNamespace
 };

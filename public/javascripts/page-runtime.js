@@ -1445,6 +1445,80 @@ function requestDocumentReadyKineticNavigation(details) {
     }
 }
 
+function configureDocumentReadyReferences(runner) {
+    try {
+        passiveCoordinator
+            .setDocumentReadyReferencesRunner(
+                runner
+            );
+
+        record(
+            "event",
+            "document-ready-references-owner-configured",
+            undefined,
+            {
+                owner: "coordinator"
+            }
+        );
+
+        return true;
+    } catch (err) {
+        record(
+            "event",
+            "document-ready-references-owner-configuration-failed",
+            undefined,
+            {
+                message:
+                    err && err.message
+                        ? err.message
+                        : String(err)
+            }
+        );
+
+        return false;
+    }
+}
+
+function requestDocumentReadyReferences(details) {
+    try {
+        var accepted =
+            passiveCoordinator
+                .requestDocumentReadyReferences(
+                    details
+                );
+
+        record(
+            "event",
+            accepted
+                ? "document-ready-references-owner-requested"
+                : "document-ready-references-owner-request-rejected",
+            undefined,
+            {
+                owner: "coordinator",
+                details:
+                    details || null
+            }
+        );
+
+        return accepted;
+    } catch (err) {
+        record(
+            "event",
+            "document-ready-references-owner-request-failed",
+            undefined,
+            {
+                owner: "coordinator",
+                message:
+                    err && err.message
+                        ? err.message
+                        : String(err)
+            }
+        );
+
+        return false;
+    }
+}
+
 function compareCoordinatorReadiness() {
     return coordinatorAdapter
         .compareReadiness(
@@ -2798,6 +2872,10 @@ var api = {
         configureDocumentReadyKineticNavigation,
     requestDocumentReadyKineticNavigation:
         requestDocumentReadyKineticNavigation,
+    configureDocumentReadyReferences:
+        configureDocumentReadyReferences,
+    requestDocumentReadyReferences:
+        requestDocumentReadyReferences,
     compareCoordinatorReadiness:
         compareCoordinatorReadiness,
     benchmark: benchmark,
@@ -2835,6 +2913,10 @@ window.xronosConfigureDocumentReadyKineticNavigation =
     configureDocumentReadyKineticNavigation;
 window.xronosRequestDocumentReadyKineticNavigation =
     requestDocumentReadyKineticNavigation;
+window.xronosConfigureDocumentReadyReferences =
+    configureDocumentReadyReferences;
+window.xronosRequestDocumentReadyReferences =
+    requestDocumentReadyReferences;
 window.xronosComparePageRuntimeReadiness =
     compareCoordinatorReadiness;
 window.xronosPageBenchmark = benchmark;

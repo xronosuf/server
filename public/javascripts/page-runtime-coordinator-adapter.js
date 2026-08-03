@@ -25,7 +25,9 @@ var CONTROL_TASKS = [
     "document-ready-static-ui-requested",
     "document-ready-static-ui",
     "document-ready-kinetic-navigation-requested",
-    "document-ready-kinetic-navigation"
+    "document-ready-kinetic-navigation",
+    "document-ready-references-requested",
+    "document-ready-references"
 ];
 
 var DIMENSION_TASKS = [
@@ -104,6 +106,7 @@ function createPassiveCoordinator(options) {
     var mathJaxStartupUiRunner = null;
     var documentReadyStaticUiRunner = null;
     var documentReadyKineticNavigationRunner = null;
+    var documentReadyReferencesRunner = null;
 
     LEAF_TASKS.forEach(function(taskId) {
         registerExternalLeaf(
@@ -287,6 +290,35 @@ function createPassiveCoordinator(options) {
             }
 
             return documentReadyKineticNavigationRunner();
+        }
+    });
+
+    coordinator.register({
+        id: "document-ready-references-requested",
+        external: true
+    });
+
+    coordinator.register({
+        id: "document-ready-references",
+        dependsOn: [
+            "document-ready-references-requested"
+        ],
+        accepts: {
+            "document-ready-references-requested": [
+                "succeeded"
+            ]
+        },
+        run: function() {
+            if (
+                typeof documentReadyReferencesRunner !==
+                    "function"
+            ) {
+                throw new Error(
+                    "Document-ready references runner is not configured."
+                );
+            }
+
+            return documentReadyReferencesRunner();
         }
     });
 
@@ -748,6 +780,62 @@ function createPassiveCoordinator(options) {
 
             return coordinator.signal(
                 "document-ready-kinetic-navigation-requested",
+                "succeeded",
+                details
+            );
+        };
+
+    coordinator.setDocumentReadyReferencesRunner =
+        function(runner) {
+            if (typeof runner !== "function") {
+                throw new Error(
+                    "Document-ready references runner must be a function."
+                );
+            }
+
+            documentReadyReferencesRunner =
+                runner;
+
+            coordinator.record(
+                "document-ready-references-runner-configured",
+                "document-ready-references"
+            );
+
+            return true;
+        };
+
+    coordinator.requestDocumentReadyReferences =
+        function(details) {
+            var report =
+                coordinator.inspect();
+
+            var task =
+                report.tasks[
+                    "document-ready-references"
+                ];
+
+            if (
+                task &&
+                (
+                    task.state === "running" ||
+                    task.state === "succeeded" ||
+                    task.state === "not-required"
+                )
+            ) {
+                coordinator.record(
+                    "duplicate-document-ready-references-request-ignored",
+                    "document-ready-references",
+                    {
+                        state:
+                            task.state
+                    }
+                );
+
+                return true;
+            }
+
+            return coordinator.signal(
+                "document-ready-references-requested",
                 "succeeded",
                 details
             );

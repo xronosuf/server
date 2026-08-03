@@ -1385,5 +1385,149 @@ describe(
             );
         });
 
+
+        it("runs the configured reference owner exactly once", async function() {
+            var coordinator =
+                adapter.create();
+            var calls = 0;
+
+            coordinator
+                .setDocumentReadyReferencesRunner(
+                    function() {
+                        calls += 1;
+
+                        return {
+                            state:
+                                "succeeded",
+                            value: {
+                                owner:
+                                    "coordinator",
+                                labelsMatched:
+                                    2,
+                                labelsInstalled:
+                                    2,
+                                referencesMatched:
+                                    3,
+                                referencesInstalled:
+                                    3
+                            }
+                        };
+                    }
+                );
+
+            assert.strictEqual(
+                coordinator
+                    .requestDocumentReadyReferences(
+                        {
+                            documentReady:
+                                true
+                        }
+                    ),
+                true
+            );
+
+            await flush();
+
+            assert.strictEqual(
+                calls,
+                1
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "document-ready-references"
+                    ].state,
+                "succeeded"
+            );
+
+            coordinator
+                .requestDocumentReadyReferences(
+                    {
+                        documentReady:
+                            true
+                    }
+                );
+
+            await flush();
+
+            assert.strictEqual(
+                calls,
+                1
+            );
+        });
+
+        it("keeps references separate from MathJax startup and activity bootstrap", async function() {
+            var coordinator =
+                adapter.create();
+            var calls = 0;
+
+            coordinator
+                .setDocumentReadyReferencesRunner(
+                    function() {
+                        calls += 1;
+
+                        return {
+                            state:
+                                "succeeded"
+                        };
+                    }
+                );
+
+            coordinator
+                .requestDocumentReadyReferences(
+                    {
+                        documentReady:
+                            true
+                    }
+                );
+
+            await flush();
+
+            assert.strictEqual(
+                calls,
+                1
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "mathjax-startup-trigger"
+                    ].state,
+                "waiting"
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "activity-bootstrap-trigger"
+                    ].state,
+                "waiting"
+            );
+        });
+
+        it("fails references when no runner is configured", async function() {
+            var coordinator =
+                adapter.create();
+
+            coordinator
+                .requestDocumentReadyReferences(
+                    {
+                        documentReady:
+                            true
+                    }
+                );
+
+            await flush();
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "document-ready-references"
+                    ].state,
+                "failed"
+            );
+        });
+
     }
 );

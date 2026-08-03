@@ -954,9 +954,37 @@ function completeInitialInlineSageDiscovery() {
 
 var pencil = require('./pencil');
 
+
+function activeInitialMathJaxProcessGeneration() {
+    if (
+        typeof mathJaxPassRuntime ===
+            "undefined" ||
+        !mathJaxPassRuntime ||
+        !mathJaxPassRuntime.active ||
+        !mathJaxPassRuntime.active.process
+    ) {
+        return null;
+    }
+
+    return mathJaxPassRuntime
+        .active.process.generation;
+}
+
+
 MathJax.Hub.Register.MessageHook("TeX Jax - parse error",function (message) {
+    var generation =
+        activeInitialMathJaxProcessGeneration();
+
     pageRuntime.event("mathjax-tex-parse-error", {
-        messageAvailable: message !== undefined
+        messageAvailable: message !== undefined,
+        generation: generation
+    });
+
+    pageRuntime.observeInitialMathJaxProcessError({
+        generation: generation,
+        errorType: "tex-parse-error",
+        messageAvailable:
+            message !== undefined
     });
 
     // do something with the error.  message[1] will contain the data about the error.
@@ -964,8 +992,19 @@ MathJax.Hub.Register.MessageHook("TeX Jax - parse error",function (message) {
 });
 
 MathJax.Hub.Register.MessageHook("Math Processing Error",function (message) {
+    var generation =
+        activeInitialMathJaxProcessGeneration();
+
     pageRuntime.event("mathjax-processing-error", {
-        messageAvailable: message !== undefined
+        messageAvailable: message !== undefined,
+        generation: generation
+    });
+
+    pageRuntime.observeInitialMathJaxProcessError({
+        generation: generation,
+        errorType: "processing-error",
+        messageAvailable:
+            message !== undefined
     });
 
     //  do something with the error.  message[2] is the Error object that records the problem.
@@ -2452,6 +2491,20 @@ function beginMathJaxPass(passType, message) {
     mathJaxPassRuntime.nextGeneration += 1;
     mathJaxPassRuntime.active[key] = pass;
 
+    if (key === "process") {
+        pageRuntime.beginInitialMathJaxProcess({
+            generation:
+                generation,
+            passType:
+                key,
+            signal:
+                message &&
+                message[0]
+                    ? message[0]
+                    : null
+        });
+    }
+
     if (key !== "rerender") {
         pageRuntime.operation(
             "mathjax-pass",
@@ -2562,6 +2615,25 @@ function endMathJaxPass(passType, message) {
 
         reportInitialMathAnswerReadiness();
         completeInitialInlineSageDiscovery();
+
+        pageRuntime.completeInitialMathJaxProcess({
+            generation:
+                pass.generation,
+            passType:
+                pass.passType,
+            durationMilliseconds:
+                pass.durationMilliseconds,
+            newMathMessages:
+                pass.newMathMessages,
+            discoveredAnswerInstances:
+                pass.discoveredAnswerInstances,
+            answerConnectionAttempts:
+                pass.answerConnectionAttempts,
+            missingAnswerModels:
+                pass.missingAnswerModels,
+            uniqueAnswersAdded:
+                pass.uniqueAnswersAdded
+        });
     }
 
     if (pass.passType === "rerender") {

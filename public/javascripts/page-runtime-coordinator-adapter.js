@@ -104,6 +104,12 @@ function createPassiveCoordinator(options) {
     var activityInitializationRunner = null;
     var mathJaxStartupRunner = null;
     var mathJaxStartupUiRunner = null;
+    var initialMathJaxProcess = {
+        generation: null,
+        begun: false,
+        completed: false,
+        errors: []
+    };
     var documentReadyStaticUiRunner = null;
     var documentReadyKineticNavigationRunner = null;
     var documentReadyReferencesRunner = null;
@@ -623,6 +629,308 @@ function createPassiveCoordinator(options) {
             );
         };
 
+    coordinator.beginInitialMathJaxProcess =
+        function(details) {
+            details = details || {};
+
+            var generation =
+                details.generation;
+
+            if (
+                generation === undefined ||
+                generation === null
+            ) {
+                coordinator.record(
+                    "initial-mathjax-process-begin-rejected",
+                    "mathjax-initial-process",
+                    {
+                        reason:
+                            "missing-generation"
+                    }
+                );
+
+                return false;
+            }
+
+            if (
+                initialMathJaxProcess
+                    .generation !== null
+            ) {
+                if (
+                    initialMathJaxProcess
+                        .generation ===
+                    generation
+                ) {
+                    coordinator.record(
+                        "duplicate-initial-mathjax-process-begin-ignored",
+                        "mathjax-initial-process",
+                        {
+                            generation:
+                                generation
+                        }
+                    );
+
+                    return true;
+                }
+
+                coordinator.record(
+                    "initial-mathjax-process-begin-rejected",
+                    "mathjax-initial-process",
+                    {
+                        reason:
+                            "generation-already-bound",
+                        boundGeneration:
+                            initialMathJaxProcess
+                                .generation,
+                        attemptedGeneration:
+                            generation
+                    }
+                );
+
+                return false;
+            }
+
+            initialMathJaxProcess
+                .generation =
+                    generation;
+            initialMathJaxProcess
+                .begun = true;
+
+            coordinator.record(
+                "initial-mathjax-process-begun",
+                "mathjax-initial-process",
+                {
+                    generation:
+                        generation,
+                    details:
+                        details
+                }
+            );
+
+            return true;
+        };
+
+    coordinator.observeInitialMathJaxProcessError =
+        function(details) {
+            details = details || {};
+
+            var generation =
+                details.generation;
+
+            if (
+                initialMathJaxProcess
+                    .generation === null
+            ) {
+                coordinator.record(
+                    "initial-mathjax-process-error-unbound",
+                    "mathjax-initial-process",
+                    {
+                        generation:
+                            generation === undefined
+                                ? null
+                                : generation,
+                        details:
+                            details
+                    }
+                );
+
+                return false;
+            }
+
+            if (
+                generation !== undefined &&
+                generation !== null &&
+                generation !==
+                    initialMathJaxProcess
+                        .generation
+            ) {
+                coordinator.record(
+                    "initial-mathjax-process-error-rejected",
+                    "mathjax-initial-process",
+                    {
+                        reason:
+                            "generation-mismatch",
+                        boundGeneration:
+                            initialMathJaxProcess
+                                .generation,
+                        attemptedGeneration:
+                            generation,
+                        details:
+                            details
+                    }
+                );
+
+                return false;
+            }
+
+            initialMathJaxProcess.errors.push(
+                details
+            );
+
+            coordinator.record(
+                "initial-mathjax-process-error-observed",
+                "mathjax-initial-process",
+                {
+                    generation:
+                        initialMathJaxProcess
+                            .generation,
+                    errorCount:
+                        initialMathJaxProcess
+                            .errors.length,
+                    details:
+                        details
+                }
+            );
+
+            return true;
+        };
+
+    coordinator.acceptLegacyInitialMathJaxProcessCompletion =
+        function(details) {
+            details = details || {};
+
+            if (
+                initialMathJaxProcess
+                    .generation !== null
+            ) {
+                coordinator.record(
+                    "legacy-initial-mathjax-process-completion-ignored",
+                    "mathjax-initial-process",
+                    {
+                        reason:
+                            "explicit-generation-bound",
+                        boundGeneration:
+                            initialMathJaxProcess
+                                .generation,
+                        attemptedGeneration:
+                            details.generation === undefined
+                                ? null
+                                : details.generation
+                    }
+                );
+
+                return false;
+            }
+
+            return coordinator.signal(
+                "mathjax-initial-process",
+                "succeeded",
+                {
+                    generation:
+                        details.generation === undefined
+                            ? null
+                            : details.generation,
+                    source:
+                        "legacy-mathjax-pass-ended"
+                }
+            );
+        };
+
+    coordinator.completeInitialMathJaxProcess =
+        function(details) {
+            details = details || {};
+
+            var generation =
+                details.generation;
+
+            if (
+                initialMathJaxProcess
+                    .generation === null
+            ) {
+                coordinator.record(
+                    "initial-mathjax-process-completion-rejected",
+                    "mathjax-initial-process",
+                    {
+                        reason:
+                            "process-not-bound",
+                        attemptedGeneration:
+                            generation === undefined
+                                ? null
+                                : generation
+                    }
+                );
+
+                return false;
+            }
+
+            if (
+                generation !==
+                    initialMathJaxProcess
+                        .generation
+            ) {
+                coordinator.record(
+                    "initial-mathjax-process-completion-rejected",
+                    "mathjax-initial-process",
+                    {
+                        reason:
+                            "generation-mismatch",
+                        boundGeneration:
+                            initialMathJaxProcess
+                                .generation,
+                        attemptedGeneration:
+                            generation === undefined
+                                ? null
+                                : generation
+                    }
+                );
+
+                return false;
+            }
+
+            if (
+                initialMathJaxProcess
+                    .completed
+            ) {
+                coordinator.record(
+                    "duplicate-initial-mathjax-process-completion-ignored",
+                    "mathjax-initial-process",
+                    {
+                        generation:
+                            generation
+                    }
+                );
+
+                return true;
+            }
+
+            var accepted =
+                coordinator.signal(
+                    "mathjax-initial-process",
+                    "succeeded",
+                    {
+                        generation:
+                            generation,
+                        errorCount:
+                            initialMathJaxProcess
+                                .errors.length,
+                        errors:
+                            initialMathJaxProcess
+                                .errors.slice(),
+                        details:
+                            details
+                    }
+                );
+
+            if (accepted) {
+                initialMathJaxProcess
+                    .completed = true;
+
+                coordinator.record(
+                    "initial-mathjax-process-completed",
+                    "mathjax-initial-process",
+                    {
+                        generation:
+                            generation,
+                        errorCount:
+                            initialMathJaxProcess
+                                .errors.length
+                    }
+                );
+            }
+
+            return accepted;
+        };
+
     coordinator.setMathJaxStartupUiRunner =
         function(runner) {
             if (typeof runner !== "function") {
@@ -1029,6 +1337,22 @@ function signalTransition(
     state,
     details
 ) {
+    if (
+        collectionName === "operations" &&
+        name === "mathjax-pass" &&
+        state === "ended" &&
+        details &&
+        details.passType === "process" &&
+        typeof coordinator
+            .acceptLegacyInitialMathJaxProcessCompletion ===
+                "function"
+    ) {
+        return coordinator
+            .acceptLegacyInitialMathJaxProcessCompletion(
+                details
+            );
+    }
+
     var signal = mappedSignal(
         collectionName,
         name,

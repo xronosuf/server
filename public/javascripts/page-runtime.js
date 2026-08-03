@@ -1223,6 +1223,145 @@ function requestMathJaxStartup(details) {
     }
 }
 
+function beginInitialMathJaxProcess(details) {
+    try {
+        var accepted =
+            passiveCoordinator
+                .beginInitialMathJaxProcess(
+                    details
+                );
+
+        record(
+            "event",
+            accepted
+                ? "initial-mathjax-process-begin-accepted"
+                : "initial-mathjax-process-begin-rejected",
+            undefined,
+            {
+                owner:
+                    "coordinator",
+                details:
+                    details || null
+            }
+        );
+
+        return accepted;
+    } catch (err) {
+        record(
+            "event",
+            "initial-mathjax-process-begin-failed",
+            undefined,
+            {
+                owner:
+                    "coordinator",
+                message:
+                    err && err.message
+                        ? err.message
+                        : String(err),
+                details:
+                    details || null
+            }
+        );
+
+        return false;
+    }
+}
+
+
+function observeInitialMathJaxProcessError(
+    details
+) {
+    try {
+        var accepted =
+            passiveCoordinator
+                .observeInitialMathJaxProcessError(
+                    details
+                );
+
+        record(
+            "event",
+            accepted
+                ? "initial-mathjax-process-error-bound"
+                : "initial-mathjax-process-error-unbound",
+            undefined,
+            {
+                owner:
+                    "coordinator",
+                details:
+                    details || null
+            }
+        );
+
+        return accepted;
+    } catch (err) {
+        record(
+            "event",
+            "initial-mathjax-process-error-observation-failed",
+            undefined,
+            {
+                owner:
+                    "coordinator",
+                message:
+                    err && err.message
+                        ? err.message
+                        : String(err),
+                details:
+                    details || null
+            }
+        );
+
+        return false;
+    }
+}
+
+
+function completeInitialMathJaxProcess(
+    details
+) {
+    try {
+        var accepted =
+            passiveCoordinator
+                .completeInitialMathJaxProcess(
+                    details
+                );
+
+        record(
+            "event",
+            accepted
+                ? "initial-mathjax-process-completion-accepted"
+                : "initial-mathjax-process-completion-rejected",
+            undefined,
+            {
+                owner:
+                    "coordinator",
+                details:
+                    details || null
+            }
+        );
+
+        return accepted;
+    } catch (err) {
+        record(
+            "event",
+            "initial-mathjax-process-completion-failed",
+            undefined,
+            {
+                owner:
+                    "coordinator",
+                message:
+                    err && err.message
+                        ? err.message
+                        : String(err),
+                details:
+                    details || null
+            }
+        );
+
+        return false;
+    }
+}
+
+
 function configureMathJaxStartupUi(runner) {
     try {
         passiveCoordinator
@@ -2860,6 +2999,12 @@ var api = {
         configureMathJaxStartup,
     requestMathJaxStartup:
         requestMathJaxStartup,
+    beginInitialMathJaxProcess:
+        beginInitialMathJaxProcess,
+    observeInitialMathJaxProcessError:
+        observeInitialMathJaxProcessError,
+    completeInitialMathJaxProcess:
+        completeInitialMathJaxProcess,
     configureMathJaxStartupUi:
         configureMathJaxStartupUi,
     requestMathJaxStartupUiFinalization:
@@ -2901,6 +3046,12 @@ window.xronosConfigureMathJaxStartup =
     configureMathJaxStartup;
 window.xronosRequestMathJaxStartup =
     requestMathJaxStartup;
+window.xronosBeginInitialMathJaxProcess =
+    beginInitialMathJaxProcess;
+window.xronosObserveInitialMathJaxProcessError =
+    observeInitialMathJaxProcessError;
+window.xronosCompleteInitialMathJaxProcess =
+    completeInitialMathJaxProcess;
 window.xronosConfigureMathJaxStartupUi =
     configureMathJaxStartupUi;
 window.xronosRequestMathJaxStartupUiFinalization =

@@ -40,6 +40,288 @@ describe(
             );
         });
 
+        it("binds and completes the initial MathJax Process generation", async function() {
+            var coordinator =
+                adapter.create();
+
+            assert.strictEqual(
+                coordinator
+                    .beginInitialMathJaxProcess(
+                        {
+                            generation: 7,
+                            passType: "process"
+                        }
+                    ),
+                true
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "mathjax-initial-process"
+                    ].state,
+                "waiting"
+            );
+
+            assert.strictEqual(
+                coordinator
+                    .completeInitialMathJaxProcess(
+                        {
+                            generation: 7,
+                            durationMilliseconds:
+                                125
+                        }
+                    ),
+                true
+            );
+
+            await flush();
+
+            var task =
+                coordinator.inspect()
+                    .tasks[
+                        "mathjax-initial-process"
+                    ];
+
+            assert.strictEqual(
+                task.state,
+                "succeeded"
+            );
+
+            assert.strictEqual(
+                task.result.generation,
+                7
+            );
+
+            assert.strictEqual(
+                task.result.details
+                    .durationMilliseconds,
+                125
+            );
+        });
+
+        it("rejects a mismatched initial MathJax Process completion", async function() {
+            var coordinator =
+                adapter.create();
+
+            assert.strictEqual(
+                coordinator
+                    .beginInitialMathJaxProcess(
+                        {
+                            generation: 3
+                        }
+                    ),
+                true
+            );
+
+            assert.strictEqual(
+                coordinator
+                    .completeInitialMathJaxProcess(
+                        {
+                            generation: 4
+                        }
+                    ),
+                false
+            );
+
+            await flush();
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "mathjax-initial-process"
+                    ].state,
+                "waiting"
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .events.some(
+                        function(event) {
+                            return (
+                                event.type ===
+                                    "initial-mathjax-process-completion-rejected" &&
+                                event.taskId ===
+                                    "mathjax-initial-process" &&
+                                event.details &&
+                                event.details.reason ===
+                                    "generation-mismatch"
+                            );
+                        }
+                    ),
+                true
+            );
+        });
+
+        it("associates observed MathJax errors with the bound initial generation", async function() {
+            var coordinator =
+                adapter.create();
+
+            coordinator
+                .beginInitialMathJaxProcess(
+                    {
+                        generation: 11
+                    }
+                );
+
+            assert.strictEqual(
+                coordinator
+                    .observeInitialMathJaxProcessError(
+                        {
+                            generation: 11,
+                            errorType:
+                                "tex-parse-error"
+                        }
+                    ),
+                true
+            );
+
+            assert.strictEqual(
+                coordinator
+                    .observeInitialMathJaxProcessError(
+                        {
+                            generation: 12,
+                            errorType:
+                                "processing-error"
+                        }
+                    ),
+                false
+            );
+
+            assert.strictEqual(
+                coordinator
+                    .completeInitialMathJaxProcess(
+                        {
+                            generation: 11
+                        }
+                    ),
+                true
+            );
+
+            await flush();
+
+            var result =
+                coordinator.inspect()
+                    .tasks[
+                        "mathjax-initial-process"
+                    ].result;
+
+            assert.strictEqual(
+                result.errorCount,
+                1
+            );
+
+            assert.strictEqual(
+                result.errors[0]
+                    .errorType,
+                "tex-parse-error"
+            );
+        });
+
+        it("keeps the legacy MathJax completion path compatible when no generation is bound", async function() {
+            var coordinator =
+                adapter.create();
+
+            assert.strictEqual(
+                adapter.signalTransition(
+                    coordinator,
+                    "operations",
+                    "mathjax-pass",
+                    "ended",
+                    {
+                        passType:
+                            "process",
+                        generation:
+                            5
+                    }
+                ),
+                true
+            );
+
+            await flush();
+
+            var task =
+                coordinator.inspect()
+                    .tasks[
+                        "mathjax-initial-process"
+                    ];
+
+            assert.strictEqual(
+                task.state,
+                "succeeded"
+            );
+
+            assert.strictEqual(
+                task.result.generation,
+                5
+            );
+
+            assert.strictEqual(
+                task.result.source,
+                "legacy-mathjax-pass-ended"
+            );
+        });
+
+        it("prevents a legacy MathJax completion from bypassing the bound generation", async function() {
+            var coordinator =
+                adapter.create();
+
+            coordinator
+                .beginInitialMathJaxProcess(
+                    {
+                        generation: 3
+                    }
+                );
+
+            assert.strictEqual(
+                adapter.signalTransition(
+                    coordinator,
+                    "operations",
+                    "mathjax-pass",
+                    "ended",
+                    {
+                        passType:
+                            "process",
+                        generation:
+                            4
+                    }
+                ),
+                false
+            );
+
+            await flush();
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "mathjax-initial-process"
+                    ].state,
+                "waiting"
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .events.some(
+                        function(event) {
+                            return (
+                                event.type ===
+                                    "legacy-initial-mathjax-process-completion-ignored" &&
+                                event.taskId ===
+                                    "mathjax-initial-process" &&
+                                event.details &&
+                                event.details.reason ===
+                                    "explicit-generation-bound" &&
+                                event.details.boundGeneration ===
+                                    3 &&
+                                event.details.attemptedGeneration ===
+                                    4
+                            );
+                        }
+                    ),
+                true
+            );
+        });
+
         it("maps the successful legacy readiness path", async function() {
             var coordinator =
                 adapter.create();

@@ -299,6 +299,39 @@ The next migration should not:
 - perform unrelated Bootstrap or formatting cleanup in the same commit;
 - declare the overall coordinator migration complete.
 
+## Sage reliability acceptance criteria
+
+The Sage migration must preserve the existing error-classification and
+user-facing retry/failure machinery while adding an explicit terminal-state
+guarantee.
+
+The central reliability requirement is that known Sage failures must not leave
+runtime readiness or visible Sage placeholders indefinitely pending.
+
+Phase 3 acceptance criteria for `canonical-sage`:
+
+- one stable operation identity spans the canonical initial request lifecycle;
+- every attempt reaches an explicit coordinator-visible terminal outcome;
+- existing retryable versus permanent-fallback classification is preserved;
+- request, authorization, network, response-parse, manifest, compilation, and
+  result-quality failures cannot strand the operation in a waiting state;
+- retry availability does not make the failed attempt itself nonterminal;
+- canonical request success remains distinct from visible placeholder
+  settlement.
+
+Phase 4 acceptance criteria for `sage-inline-initial`:
+
+- every required initial Sage placeholder reaches a visible terminal state;
+- successful output, degraded output, explicit failure UI, permanent fallback,
+  not-required, and timeout/fallback are all terminal alternatives;
+- rejected promises, DOM replacement, rerender, retry, and recovery paths
+  cannot leave a placeholder permanently displaying a loading spinner;
+- late recovery may improve state while preserving the original failure and
+  recovery history.
+
+The legacy ambiguous permanent Sage spinner is considered a correctness failure,
+not an acceptable degraded state.
+
 ## Immediate next action
 
 Begin Phase 3 by inventorying and designing the canonical initial Sage
@@ -309,11 +342,17 @@ The next patch should:
 - bind the existing canonical initial Sage request state machine to one stable
   coordinator operation identity;
 - preserve the immutable pre-MathJax manifest and stable expression IDs;
+- preserve and reuse the existing Sage error-classification, retry, fallback,
+  and user-facing failure machinery rather than replacing it;
+- trace every canonical failure exit and verify that it settles the current
+  attempt instead of leaving a pending promise/readiness state;
 - preserve the distinction between retryable request failure and permanent
   eligibility fallback;
 - record result quality without treating it as proof of visible display
   settlement;
 - keep `canonical-sage` and `sage-inline-initial` as separate dependencies;
+- explicitly retain elimination of indefinite Sage loading/spinner states as an
+  acceptance criterion for the later visible-settlement phase;
 - avoid moving the visible-placeholder deadline until the canonical request
   boundary is understood and tested.
 

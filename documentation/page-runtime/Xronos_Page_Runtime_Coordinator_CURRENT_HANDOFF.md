@@ -920,6 +920,66 @@ A robust placeholder record should link:
 
 ---
 
+### 9.7 Sage reliability and terminal-state acceptance criteria
+
+The existing Sage implementation already contains substantial error
+classification and user-facing failure handling. That work should be preserved
+and integrated into coordinator ownership rather than replaced by a new error
+taxonomy.
+
+The coordinator migration must address the failure mode that motivated this
+work: a Sage request or visible Sage component can encounter a known failure
+while some surrounding readiness path nevertheless remains pending, leaving the
+student with an indefinite loading spinner.
+
+For Sage, robust error classification is therefore necessary but not
+sufficient. The runtime contract must guarantee terminal settlement.
+
+For the canonical initial Sage operation:
+
+- every initial canonical attempt must eventually reach an explicit terminal
+  coordinator-visible outcome;
+- the existing distinctions among successful execution, degraded result
+  quality, retryable operational failure, and permanent eligibility fallback
+  must be preserved;
+- manifest parse errors, compiled-size limits, authorization failures, network
+  failures, response failures, and other already-classified conditions must not
+  leave the canonical operation indefinitely pending;
+- retryable failures may continue to expose the existing retry mechanism, but
+  the failed attempt itself must still be represented as a terminal observed
+  outcome rather than an unresolved promise;
+- operation identity and diagnostic metadata must remain privacy-safe;
+- canonical computation success must not be treated as proof of visible Sage
+  settlement.
+
+For initial visible Sage components:
+
+- every required placeholder must eventually reach an explicit visible terminal
+  state such as rendered success, degraded output, failure message, permanent
+  fallback, not-required, or timeout/fallback;
+- a known failed canonical operation must provide enough information for
+  dependent visible Sage work to stop waiting and present the appropriate
+  existing failure UI;
+- no exception, rejected promise, retryable failure, DOM replacement, or
+  MathJax rerender path may strand an initial Sage placeholder in a permanent
+  spinner/loading state;
+- later retry or recovery may improve a prior failed state, but must preserve
+  the earlier failure and recovery history rather than pretending the first
+  attempt never failed.
+
+Acceptance criterion for the Sage portion of the coordinator migration:
+
+> Once the runtime has enough information to classify an initial Sage operation
+> or required visible Sage component as succeeded, degraded, failed, fallback,
+> not-required, or timed-out, that work must not remain indefinitely pending.
+> In particular, the ambiguous permanent Sage loading spinner must not be a
+> possible terminal user experience.
+
+Phase 3 should first bind and classify the canonical initial Sage operation.
+Phase 4 should then make the visible `sage-inline-initial` lifecycle enforce the
+corresponding per-placeholder terminal-settlement guarantee. Keeping these as
+separate leaves is intentional.
+
 ## 10. Initial state and activity reconciliation
 
 ### 10.1 Initial state

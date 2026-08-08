@@ -346,3 +346,37 @@ commit `785cd8a`. Validation confirmed failed leaf state, degraded
 derived readiness, a visible failure notice, disabled existing and dynamically
 inserted controls, one-shot fault consumption, and clean recovery after an
 ordinary reload.
+
+## Sage terminal-state policy
+
+Sage degradation must be explicit and bounded.
+
+The existing Sage implementation distinguishes multiple operational and
+content-level failure classes and may offer retry or fallback UI. Coordinator
+integration must preserve that behavior while ensuring that classification of a
+failure also permits the relevant runtime work to stop waiting.
+
+A retryable Sage failure is not equivalent to a still-running request. The
+failed attempt may be terminal while the UI separately offers a new retry
+attempt.
+
+Likewise, canonical Sage computation and visible Sage settlement are separate
+facts:
+
+- `canonical-sage` answers whether the page-level canonical computation reached
+  a classified terminal outcome;
+- `sage-inline-initial` answers whether each required initial visible Sage
+  component reached an explicit visible terminal outcome.
+
+A canonical failure may therefore degrade or fail dependent visible work, but
+must not leave it indefinitely pending merely because retry is theoretically
+possible.
+
+For required initial Sage content, an indefinite spinner/loading indicator is
+not an acceptable degraded state. Once success, degraded output, explicit
+failure, permanent fallback, not-required, or timeout/fallback can be
+determined, the corresponding component and derived readiness must transition
+out of waiting.
+
+Late retry or recovery may subsequently improve the state. Such recovery should
+retain prior failure/timeout evidence for diagnostics.

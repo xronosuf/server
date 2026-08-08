@@ -2329,5 +2329,286 @@ describe(
             );
         });
 
+
+        it("preserves canonical Sage terminal metadata", function() {
+            var coordinator =
+                adapter.create();
+
+            adapter.signalTransition(
+                coordinator,
+                "components",
+                "sage-initial",
+                "failed",
+                {
+                    requestCount:
+                        1,
+                    errorName:
+                        "NetworkError",
+                    authorizationToken:
+                        "must-not-survive",
+                    expression:
+                        "must-not-survive",
+                    studentAnswer:
+                        "must-not-survive"
+                }
+            );
+
+            var task =
+                coordinator.inspect()
+                    .tasks[
+                        "canonical-sage"
+                    ];
+
+            assert.strictEqual(
+                task.state,
+                "degraded"
+            );
+
+            assert.strictEqual(
+                task.result.observedState,
+                "failed"
+            );
+
+            assert.strictEqual(
+                task.result.details.errorName,
+                "NetworkError"
+            );
+
+            assert.strictEqual(
+                task.result.details
+                    .authorizationToken,
+                undefined
+            );
+
+            assert.strictEqual(
+                task.result.details.expression,
+                undefined
+            );
+
+            assert.strictEqual(
+                task.result.details.studentAnswer,
+                undefined
+            );
+        });
+
+        it("creates a new canonical Sage operation for retry", function() {
+            var coordinator =
+                adapter.create();
+
+            adapter.signalTransition(
+                coordinator,
+                "operations",
+                "sage-initial-request",
+                "waiting-for-seed",
+                {
+                    expressions:
+                        3
+                }
+            );
+
+            var first =
+                coordinator.inspect()
+                    .tasks[
+                        "canonical-sage"
+                    ];
+
+            assert.strictEqual(
+                first.state,
+                "waiting"
+            );
+
+            assert.strictEqual(
+                typeof first.operationId,
+                "number"
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "components",
+                "sage-initial",
+                "failed",
+                {
+                    requestCount:
+                        1,
+                    errorName:
+                        "NetworkError"
+                }
+            );
+
+            var failed =
+                coordinator.inspect()
+                    .tasks[
+                        "canonical-sage"
+                    ];
+
+            assert.strictEqual(
+                failed.state,
+                "degraded"
+            );
+
+            assert.strictEqual(
+                failed.operationId,
+                first.operationId
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "operations",
+                "sage-initial-request",
+                "waiting-for-seed",
+                {
+                    expressions:
+                        3
+                }
+            );
+
+            var retry =
+                coordinator.inspect()
+                    .tasks[
+                        "canonical-sage"
+                    ];
+
+            assert.strictEqual(
+                retry.state,
+                "waiting"
+            );
+
+            assert.strictEqual(
+                retry.attempt,
+                first.attempt + 1
+            );
+
+            assert.notStrictEqual(
+                retry.operationId,
+                first.operationId
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "operations",
+                "sage-initial-request",
+                "submitted",
+                {
+                    request:
+                        2
+                }
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "operations",
+                "sage-initial-request",
+                "response-received",
+                {
+                    requestDurationMilliseconds:
+                        25
+                }
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "components",
+                "sage-initial",
+                "results-available",
+                {
+                    resultCount:
+                        3,
+                    expressionFailureCount:
+                        0
+                }
+            );
+
+            var recovered =
+                coordinator.inspect()
+                    .tasks[
+                        "canonical-sage"
+                    ];
+
+            assert.strictEqual(
+                recovered.state,
+                "succeeded"
+            );
+
+            assert.strictEqual(
+                recovered.operationId,
+                retry.operationId
+            );
+
+            assert.strictEqual(
+                recovered.result
+                    .observedState,
+                "results-available"
+            );
+
+            assert.strictEqual(
+                recovered.result
+                    .details
+                    .resultCount,
+                3
+            );
+
+            var events =
+                coordinator.inspect()
+                    .events;
+
+            assert.strictEqual(
+                events.some(
+                    function(event) {
+                        return (
+                            event.type ===
+                                "external-task-rearmed" &&
+                            event.taskId ===
+                                "canonical-sage" &&
+                            event.details
+                                .previousOperationId ===
+                                first.operationId &&
+                            event.details
+                                .operationId ===
+                                retry.operationId
+                        );
+                    }
+                ),
+                true
+            );
+
+            assert.strictEqual(
+                events.some(
+                    function(event) {
+                        return (
+                            event.type ===
+                                "canonical-sage-stage-observed" &&
+                            event.taskId ===
+                                "canonical-sage" &&
+                            event.details.stage ===
+                                "submitted" &&
+                            event.details
+                                .operationId ===
+                                retry.operationId
+                        );
+                    }
+                ),
+                true
+            );
+
+            assert.strictEqual(
+                events.some(
+                    function(event) {
+                        return (
+                            event.type ===
+                                "canonical-sage-stage-observed" &&
+                            event.taskId ===
+                                "canonical-sage" &&
+                            event.details.stage ===
+                                "response-received" &&
+                            event.details
+                                .operationId ===
+                                retry.operationId
+                        );
+                    }
+                ),
+                true
+            );
+        });
+
     }
 );

@@ -899,6 +899,92 @@ Coordinator.prototype.armExternalTask = function(task) {
     }
 };
 
+Coordinator.prototype.rearmExternalTask = function(
+    taskId,
+    details
+) {
+    var task = this.tasks[taskId];
+    var previousState;
+    var previousOperationId;
+
+    if (!task) {
+        throw new Error(
+            "Unknown coordinator task: " +
+            taskId
+        );
+    }
+
+    if (!task.external) {
+        throw new Error(
+            "Coordinator task is not externally signaled: " +
+            taskId
+        );
+    }
+
+    var rearmableStates = [
+        "degraded",
+        "failed",
+        "timed-out"
+    ];
+
+    if (
+        rearmableStates.indexOf(
+            task.state
+        ) < 0
+    ) {
+        this.record(
+            "external-task-rearm-rejected",
+            task.id,
+            {
+                state: task.state,
+                operationId: task.operationId,
+                reason:
+                    this.isTerminal(task.state)
+                        ? "external-task-not-retryable"
+                        : "external-task-not-terminal"
+            }
+        );
+        return false;
+    }
+
+    previousState = task.state;
+    previousOperationId = task.operationId;
+
+    if (task.timer !== null) {
+        clearTimeout(task.timer);
+        task.timer = null;
+    }
+
+    task.result = undefined;
+    task.error = null;
+    task.blockedBy = [];
+    task.pendingSignal = null;
+    task.operationId = null;
+
+    this.armExternalTask(task);
+
+    this.record(
+        "external-task-rearmed",
+        task.id,
+        {
+            previousState: previousState,
+            previousOperationId: previousOperationId,
+            attempt: task.attempt,
+            operationId: task.operationId,
+            details:
+                details === undefined
+                    ? null
+                    : copy(details)
+        }
+    );
+
+    return {
+        attempt: task.attempt,
+        operationId: task.operationId
+    };
+};
+
+
 Coordinator.prototype.signal = function(
     taskId,
     state,

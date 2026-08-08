@@ -1465,4 +1465,131 @@ describe("page runtime coordinator core", function() {
     });
 
 
+    it("does not rearm a successful external task", function() {
+        var coordinator =
+            coordinatorCore.create();
+
+        coordinator.register({
+            id: "completed-external",
+            external: true
+        });
+
+        coordinator.start();
+
+        coordinator.signal(
+            "completed-external",
+            "succeeded"
+        );
+
+        var before =
+            coordinator.inspect()
+                .tasks[
+                    "completed-external"
+                ];
+
+        assert.strictEqual(
+            coordinator.rearmExternalTask(
+                "completed-external"
+            ),
+            false
+        );
+
+        var after =
+            coordinator.inspect()
+                .tasks[
+                    "completed-external"
+                ];
+
+        assert.strictEqual(
+            after.state,
+            "succeeded"
+        );
+
+        assert.strictEqual(
+            after.operationId,
+            before.operationId
+        );
+
+        assert.strictEqual(
+            coordinator.inspect().events.some(
+                function(event) {
+                    return (
+                        event.type ===
+                            "external-task-rearm-rejected" &&
+                        event.taskId ===
+                            "completed-external" &&
+                        event.details.reason ===
+                            "external-task-not-retryable"
+                    );
+                }
+            ),
+            true
+        );
+    });
+
+
+    it("rearms a terminal external task as a new operation", function() {
+        var coordinator =
+            coordinatorCore.create();
+
+        coordinator.register({
+            id: "retryable-external",
+            external: true,
+            recoveryPolicy:
+                "allow-late-success"
+        });
+
+        coordinator.start();
+
+        var first =
+            coordinator.inspect()
+                .tasks[
+                    "retryable-external"
+                ];
+
+        coordinator.signal(
+            "retryable-external",
+            "degraded",
+            {
+                errorName:
+                    "NetworkError"
+            }
+        );
+
+        var rearmed =
+            coordinator.rearmExternalTask(
+                "retryable-external",
+                {
+                    reason:
+                        "retry"
+                }
+            );
+
+        var second =
+            coordinator.inspect()
+                .tasks[
+                    "retryable-external"
+                ];
+
+        assert.strictEqual(
+            second.state,
+            "waiting"
+        );
+
+        assert.strictEqual(
+            second.attempt,
+            first.attempt + 1
+        );
+
+        assert.notStrictEqual(
+            second.operationId,
+            first.operationId
+        );
+
+        assert.strictEqual(
+            rearmed.operationId,
+            second.operationId
+        );
+    });
+
 });

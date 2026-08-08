@@ -1267,6 +1267,137 @@ function createPassiveCoordinator(options) {
             );
         };
 
+    coordinator.beginCanonicalSageAttempt =
+        function(details) {
+            var task =
+                coordinator.inspect()
+                    .tasks[
+                        "canonical-sage"
+                    ];
+
+            if (!task) {
+                return false;
+            }
+
+            if (
+                task.state === "waiting" &&
+                task.operationId !== null
+            ) {
+                coordinator.record(
+                    "canonical-sage-attempt-observed",
+                    "canonical-sage",
+                    {
+                        attempt: task.attempt,
+                        operationId: task.operationId,
+                        rearmed: false,
+                        details:
+                            canonicalSageSafeDetails(
+                                details
+                            )
+                    }
+                );
+
+                return {
+                    attempt: task.attempt,
+                    operationId: task.operationId,
+                    rearmed: false
+                };
+            }
+
+            if (
+                task.state === "degraded" ||
+                task.state === "failed" ||
+                task.state === "timed-out"
+            ) {
+                var rearmed =
+                    coordinator.rearmExternalTask(
+                        "canonical-sage",
+                        {
+                            reason:
+                                "canonical-sage-retry",
+                            details:
+                                canonicalSageSafeDetails(
+                                    details
+                                )
+                        }
+                    );
+
+                if (!rearmed) {
+                    return false;
+                }
+
+                return {
+                    attempt: rearmed.attempt,
+                    operationId: rearmed.operationId,
+                    rearmed: true
+                };
+            }
+
+            coordinator.record(
+                "canonical-sage-attempt-begin-rejected",
+                "canonical-sage",
+                {
+                    state: task.state,
+                    attempt: task.attempt,
+                    operationId: task.operationId,
+                    reason:
+                        "canonical-sage-task-not-retryable"
+                }
+            );
+
+            return false;
+        };
+
+    coordinator.observeCanonicalSageStage =
+        function(state, details) {
+            var operation;
+
+            if (state === "waiting-for-seed") {
+                operation =
+                    coordinator
+                        .beginCanonicalSageAttempt(
+                            details
+                        );
+            } else {
+                var task =
+                    coordinator.inspect()
+                        .tasks[
+                            "canonical-sage"
+                        ];
+
+                operation =
+                    task
+                        ? {
+                            attempt: task.attempt,
+                            operationId:
+                                task.operationId,
+                            rearmed: false
+                        }
+                        : null;
+            }
+
+            if (!operation) {
+                return false;
+            }
+
+            coordinator.record(
+                "canonical-sage-stage-observed",
+                "canonical-sage",
+                {
+                    stage: state,
+                    attempt: operation.attempt,
+                    operationId:
+                        operation.operationId,
+                    details:
+                        canonicalSageSafeDetails(
+                            details
+                        )
+                }
+            );
+
+            return true;
+        };
+
     coordinator.start({
         mode:
             "active-activity-bootstrap-trigger"
@@ -1274,6 +1405,45 @@ function createPassiveCoordinator(options) {
 
     return coordinator;
 }
+
+function canonicalSageSafeDetails(
+    details
+) {
+    var safe = {};
+    var allowed = [
+        "expressions",
+        "answerKeys",
+        "silentBlocks",
+        "request",
+        "requestCount",
+        "compiledCharacters",
+        "compiledUtf8Bytes",
+        "resultCountExpected",
+        "resultCount",
+        "expressionFailureCount",
+        "requestDurationMilliseconds",
+        "errorName",
+        "fallbackCode"
+    ];
+
+    if (
+        !details ||
+        typeof details !== "object"
+    ) {
+        return null;
+    }
+
+    allowed.forEach(function(key) {
+        if (details[key] !== undefined) {
+            safe[key] = details[key];
+        }
+    });
+
+    return Object.keys(safe).length > 0
+        ? safe
+        : null;
+}
+
 
 function mappedSignal(
     collectionName,
@@ -1327,17 +1497,27 @@ function mappedSignal(
         collectionName === "components" &&
         name === "sage-initial"
     ) {
+        var canonicalSageValue = {
+            observedState: state,
+            details:
+                canonicalSageSafeDetails(
+                    details
+                )
+        };
+
         if (state === "results-available") {
             return {
                 taskId: "canonical-sage",
-                state: "succeeded"
+                state: "succeeded",
+                value: canonicalSageValue
             };
         }
 
         if (state === "not-required") {
             return {
                 taskId: "canonical-sage",
-                state: "not-required"
+                state: "not-required",
+                value: canonicalSageValue
             };
         }
 
@@ -1349,7 +1529,8 @@ function mappedSignal(
         ) {
             return {
                 taskId: "canonical-sage",
-                state: "degraded"
+                state: "degraded",
+                value: canonicalSageValue
             };
         }
     }
@@ -1455,6 +1636,20 @@ function signalTransition(
     state,
     details
 ) {
+    if (
+        collectionName === "operations" &&
+        name === "sage-initial-request" &&
+        typeof coordinator
+            .observeCanonicalSageStage ===
+                "function"
+    ) {
+        return coordinator
+            .observeCanonicalSageStage(
+                state,
+                details
+            );
+    }
+
     if (
         collectionName === "operations" &&
         name === "mathjax-pass" &&

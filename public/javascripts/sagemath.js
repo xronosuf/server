@@ -1847,6 +1847,44 @@ function canonicalPageSageEntryError(
 }
 
 
+function initialCanonicalPageSageFailureDetails(
+    err
+) {
+    return {
+        requestCount:
+            canonicalPageSageRuntime
+                .requestCount,
+        requestDurationMilliseconds:
+            canonicalPageSageRuntime
+                .requestDurationMilliseconds,
+        errorName:
+            err && err.ename
+                ? err.ename
+                : null,
+        fallbackCode:
+            err && err.fallbackCode
+                ? err.fallbackCode
+                : null
+    };
+}
+
+
+function reportInitialCanonicalPageSageFailure(
+    err
+) {
+    pageRuntime.component(
+        "sage-initial",
+        err &&
+        err.xronosCanonicalFallback
+            ? "fallback"
+            : "failed",
+        initialCanonicalPageSageFailureDetails(
+            err
+        )
+    );
+}
+
+
 function executeInitialCanonicalPageSage() {
     var manifest =
         initialSagePageManifestSnapshot;
@@ -1855,6 +1893,11 @@ function executeInitialCanonicalPageSage() {
         canonicalPageSageRuntime
             .permanentFallbackReason
     ) {
+        reportInitialCanonicalPageSageFailure(
+            canonicalPageSageRuntime
+                .permanentFallbackReason
+        );
+
         return Promise.reject(
             canonicalPageSageRuntime
                 .permanentFallbackReason
@@ -1868,6 +1911,11 @@ function executeInitialCanonicalPageSage() {
                     "missing-snapshot",
                     "The pre-MathJax Sage manifest was not captured."
                 );
+
+        reportInitialCanonicalPageSageFailure(
+            canonicalPageSageRuntime
+                .permanentFallbackReason
+        );
 
         return Promise.reject(
             canonicalPageSageRuntime
@@ -1896,6 +1944,11 @@ function executeInitialCanonicalPageSage() {
                     "The initial Sage manifest contains no expressions."
                 );
 
+        reportInitialCanonicalPageSageFailure(
+            canonicalPageSageRuntime
+                .permanentFallbackReason
+        );
+
         return Promise.reject(
             canonicalPageSageRuntime
                 .permanentFallbackReason
@@ -1920,6 +1973,11 @@ function executeInitialCanonicalPageSage() {
                             parseErrors
                     }
                 );
+
+        reportInitialCanonicalPageSageFailure(
+            canonicalPageSageRuntime
+                .permanentFallbackReason
+        );
 
         return Promise.reject(
             canonicalPageSageRuntime
@@ -2193,28 +2251,8 @@ function executeInitialCanonicalPageSage() {
                 canonicalPageSageRuntime.initialPromise =
                     null;
 
-                pageRuntime.component(
-                    "sage-initial",
-                    err &&
-                    err.xronosCanonicalFallback
-                        ? "fallback"
-                        : "failed",
-                    {
-                        requestCount:
-                            canonicalPageSageRuntime
-                                .requestCount,
-                        requestDurationMilliseconds:
-                            canonicalPageSageRuntime
-                                .requestDurationMilliseconds,
-                        errorName:
-                            err && err.ename
-                                ? err.ename
-                                : null,
-                        fallbackCode:
-                            err && err.fallbackCode
-                                ? err.fallbackCode
-                                : null
-                    }
+                reportInitialCanonicalPageSageFailure(
+                    err
                 );
 
                 throw err;

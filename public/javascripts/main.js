@@ -3010,16 +3010,28 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
                 );
             }
 
-            var missingPlaceholderFault =
+            var pageResultErrorFault =
                 claimSageInlineFault(
-                    "missing-placeholder",
+                    "page-result-error",
                     {
                         attempt:
                             requestAttempt
                     }
                 );
 
+            var missingPlaceholderFault =
+                pageResultErrorFault
+                    ? false
+                    : claimSageInlineFault(
+                        "missing-placeholder",
+                        {
+                            attempt:
+                                requestAttempt
+                        }
+                    );
+
             var staleAttemptFault =
+                pageResultErrorFault ||
                 missingPlaceholderFault
                     ? false
                     : claimSageInlineFault(
@@ -3032,7 +3044,17 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
 
             var requestPromise;
 
-            if (missingPlaceholderFault) {
+            if (pageResultErrorFault) {
+                requestPromise =
+                    Promise.reject({
+                        ename:
+                            "XronosSagePageResultError",
+                        evalue:
+                            "controlled canonical Sage result parsing fault",
+                        xronosSageInlineFault:
+                            "page-result-error"
+                    });
+            } else if (missingPlaceholderFault) {
                 requestPromise =
                     Promise.reject({
                         ename:

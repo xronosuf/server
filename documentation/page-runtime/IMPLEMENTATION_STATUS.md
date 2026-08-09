@@ -269,6 +269,49 @@ initial MathJax fault probe:         5 passing
 total:                              53 passing
 ```
 
+## Fresh Sage reliability audit at `fdb015b`
+
+A final read-only Sage pipeline audit was run after the documentation
+reconciliation commit.
+
+The audit reclassified several apparent gaps as already-settled behavior:
+
+- expired page-auth tokens are automatically detected, refreshed through
+  `/sagecell/auth`, and the original Sage request is retried once;
+- persistent `SAGECELL_PAGE_AUTH_SECRET` is a deployment requirement so tokens
+  survive process restart, not missing browser recovery logic;
+- canonical invariant failures intentionally fail closed instead of restoring
+  legacy execution;
+- the 60 KB compiled-request ceiling remains an intentional safety/content
+  boundary;
+- missing input ID, missing placeholder, visible deadline settlement, and stale
+  explicit-Retry callbacks already have terminal/stale-safe handling;
+- local transport errors plus HTTP 502/503/504 already use the configured
+  fallback SageCell path in `local-with-fallback` mode.
+
+The two narrow reliability discrepancies found by the audit have now been
+resolved:
+
+1. canonical response marker/JSON parsing failures
+   (`XronosSagePageResultError`) are explicitly transient/retryable;
+2. automatic local-to-fallback switching now treats HTTP
+   408/429/500/502/503/504 as infrastructure failures, in addition to transport
+   or missing-response failures.
+
+The production predicates are factored into directly tested policy helpers.
+The focused Sage/coordinator/MathJax suite now passes 57 tests.
+
+Browser validation on `03-basic-sage` used the one-shot `page-result-error`
+probe. The first attempt produced the intended retryable result-reading error;
+clicking `Retry computation` started a fresh normal attempt and Sage completed
+successfully without a stale failure overwriting the result.
+
+The final Sage reliability audit is therefore closed without weakening
+canonical fail-closed invariants.
+
+The audit also corrected one documentation error: stale-token refresh/retry is
+already implemented and must not remain listed as future browser work.
+
 ## Next lifecycle target: initial math answers
 
 The next substantive coordinator work is reconciliation of the existing

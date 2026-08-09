@@ -11,6 +11,8 @@ var FAULT_TYPES = {
     "missing-placeholder":
         true,
     "stale-attempt":
+        true,
+    "page-result-error":
         true
 };
 

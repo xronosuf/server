@@ -265,6 +265,41 @@ initial MathJax fault probe:         5
 total:                              53 passing
 ```
 
+## 11A. Fresh Sage reliability audit before push
+
+After commit `fdb015b`, a new read-only Sage audit rechecked all known failure
+paths before backing up the branch.
+
+The audit confirmed several apparent issues were already solved or deliberately
+fail-closed:
+
+- expired page-auth refresh/retry is implemented;
+- persistent page-auth signing secret is deployment configuration, not missing
+  browser recovery logic;
+- canonical identity/invariant failures deliberately reject rather than restore
+  legacy execution;
+- the 60 KB compiled canonical request ceiling remains intentional;
+- missing input ID, missing placeholder, deadline fallback, same-request late
+  recovery, explicit Retry, and stale explicit-attempt callbacks already have
+  explicit handling;
+- local transport failures and HTTP 502/503/504 already use fallback SageCell
+  when service mode is `local-with-fallback`.
+
+Both narrow items found by the audit are now resolved:
+
+1. `XronosSagePageResultError` is explicitly transient/retryable and uses the
+   existing visible Retry path.
+2. Local SageCell transport/missing-response and HTTP
+   408/429/500/502/503/504 failures now qualify for automatic fallback.
+
+Production uses directly tested policy helpers for both decisions. The focused
+suite passes 57 tests. Browser validation on `03-basic-sage` with the one-shot
+`page-result-error` probe confirmed retryable visible failure followed by a
+successful fresh Retry.
+
+Canonical identity checks remain fail-closed and legacy execution was not
+restored.
+
 ## 12. Existing initial math-answer baseline
 
 The next substantive lifecycle is `initial-math-answers`, but it is not a blank
@@ -318,7 +353,7 @@ The overall coordinator project is not complete.
 Keep separate from the next coordinator patch:
 
 - remove only the dead canonical-Sage `.env` entry later
-- persistent `SAGECELL_PAGE_AUTH_SECRET` deployment work
+- verify persistent `SAGECELL_PAGE_AUTH_SECRET` deployment configuration on each target
 - post-rollout trusted-origin/exact-request Sage authorization hardening
 - coordinator-only aggregate statistics workflow
 - LRS retention/pruning and aggregate preservation

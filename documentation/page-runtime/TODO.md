@@ -245,12 +245,65 @@ Remaining/deferred Sage work:
   expectations when needed;
 - verify effective seed remains part of exact canonical request/cache identity;
 - investigate manual author seed overrides only if encountered;
-- patch stale page-auth token refresh/retry behavior in the near term;
+- expired page-auth token refresh/retry is already implemented: the browser
+  refreshes through `/sagecell/auth` and retries the original Sage request once;
+  keep this behavior covered by regression tests rather than treating it as
+  unfinished work;
+- verify deployment uses a persistent `SAGECELL_PAGE_AUTH_SECRET` (or legacy
+  signing-secret equivalent) so process restarts do not invalidate otherwise
+  valid page tokens; this is deployment configuration, not missing browser retry
+  behavior;
+- keep regression coverage for the resolved Sage reliability policy:
+  `XronosSagePageResultError` is transient/retryable, while local SageCell
+  transport/missing-response and HTTP 408/429/500/502/503/504 failures trigger
+  automatic fallback;
 - after production stability, harden authorization using trusted origin plus
   exact authorized request/code hashes or a build-time manifest rather than page
   token alone;
 - remove only the dead `XRONOS_CANONICAL_PAGE_SAGE_ENABLED` `.env` entry during
   deployment cleanup, leaving unrelated `.env` entries intact.
+
+### Reliability audit classification
+
+A fresh post-canonicalization audit at `fdb015b` rechecked every known Sage
+failure class against the stronger reliability goal: valid author Sage with a
+healthy browser connection and healthy Xronos/SageCell components should not
+surface avoidable internal/transient failures to students.
+
+The audit confirmed these are **not unfinished reliability bugs**:
+
+- expired page authorization already refreshes through `/sagecell/auth` and
+  retries the original request once;
+- missing/invalid/malformed/incomplete authorization remains fail-closed by
+  design; only the specifically expired-token case is safe to refresh
+  automatically;
+- canonical invariants such as `missing-snapshot`, `missing-trace-entry`,
+  `generation-unmapped-call`, `stale-generation`, and other unresolved canonical
+  mappings intentionally fail closed rather than executing an unverified legacy
+  Sage string;
+- the 60 KB compiled canonical request ceiling remains an intentional safety
+  boundary supported by the earlier content-size audit;
+- missing MathJax input IDs, missing visible placeholders, deadline settlement,
+  and callbacks from superseded explicit Retry attempts already have visible or
+  stale-safe terminal handling;
+- local SageCell transport failures and HTTP 502/503/504 already trigger the
+  configured local-to-fallback service path when running in
+  `local-with-fallback` mode.
+
+The two transient-classification items found by that audit were resolved
+without weakening canonical fail-closed behavior:
+
+1. `XronosSagePageResultError` is explicitly transient/retryable.
+2. Local SageCell transport/missing-response and HTTP
+   408/429/500/502/503/504 failures use automatic fallback.
+
+The production decisions are directly unit-tested. The focused suite passes
+57 tests, and the browser `page-result-error` one-shot probe validated the full
+visible error -> Retry -> successful recomputation path on `03-basic-sage`.
+
+If a canonical invariant occurs under valid current-publisher content, continue
+to treat it as an Xronos defect requiring diagnosis rather than authorization to
+execute a different path.
 
 ## Startup and performance
 

@@ -781,6 +781,43 @@ with explicitly numeric answer globals.
 The direct identity test does not establish authenticated LTI learner, role, or
 Canvas-context behavior.
 
+## Sage reliability audit classification
+
+A post-reconciliation audit at `fdb015b` verified the remaining Sage error
+paths against the intended reliability boundary.
+
+Already-settled paths:
+
+- an expired page-auth token is refreshed through `/sagecell/auth`; after
+  successful refresh the same Sage request is retried once;
+- missing, invalid, malformed, or incomplete page authorization is deliberately
+  not auto-refreshed because the browser cannot safely reconstruct trust from
+  those states;
+- canonical invariant failures remain fail-closed and never authorize legacy
+  string execution;
+- `compiled-size-limit` remains a deliberate 60 KB safety boundary rather than
+  an infrastructure retry condition;
+- visible missing-anchor/input-ID cases and stale explicit-Retry callbacks have
+  explicit terminal/stale-safe handling;
+- in the default `local-with-fallback` service mode, local transport errors and
+  HTTP 502/503/504 trigger remote SageCell fallback.
+
+The two discrepancies found by that audit are now resolved:
+
+- `XronosSagePageResultError` is explicitly classified as transient/retryable,
+  so canonical marker/JSON response failures reach the existing visible Retry
+  path rather than nonretryable `unexpected`;
+- local SageCell HTTP 408/429/500 now join transport failures and
+  502/503/504 as automatic local-to-fallback infrastructure failures.
+
+The production decisions use small directly tested policy helpers. The focused
+Sage/coordinator/MathJax suite passes with 57 tests. A browser one-shot
+`page-result-error` fault on `03-basic-sage` was also validated: the first
+attempt displayed the retryable result-reading error, explicit Retry started a
+fresh attempt, and normal Sage then completed successfully.
+
+Canonical correctness failures remain separate and fail closed.
+
 ## Current architectural conclusion
 
 The runtime still contains multiple mature feature-owned internal paths, but

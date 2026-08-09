@@ -71,12 +71,13 @@ describe(
         );
 
         it(
-            "normalizes the three supported fault types",
+            "normalizes the supported fault types",
             function() {
                 [
                     "missing-input-id",
                     "missing-placeholder",
-                    "stale-attempt"
+                    "stale-attempt",
+                    "page-result-error"
                 ].forEach(function(faultType) {
                     var normalized =
                         probe.normalizeRequest({

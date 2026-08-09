@@ -48,6 +48,7 @@ var express = require('express')
   , basicAuth = require('express-basic-auth')
   , request = require('request')
   , crypto = require('crypto')
+  , sageReliabilityPolicy = require('./sage-reliability-policy')
   ;
 
 require('./summarize/summarize') // Load summarize interval
@@ -344,22 +345,14 @@ return false;
 }
 
 function sagecellProxyShouldFallback(err, response) {
-    var statusCode;
-
-    if (err) {
-return true;
-    }
-
-    if (!response) {
-return true;
-    }
-
-    statusCode = response.statusCode || 0;
-
-    // Treat gateway/service-unavailable style failures as infrastructure
-    // failures.  Do not fallback on normal Sage execution errors, which
-    // should be returned as HTTP 200 with success:false.
-    return statusCode === 502 || statusCode === 503 || statusCode === 504;
+    // Treat transport failure, timeout, throttling and server/gateway failures
+    // as infrastructure failures. Do not fallback on normal Sage execution
+    // errors, which should be returned as HTTP 200 with success:false.
+    return sageReliabilityPolicy
+        .sagecellProxyShouldFallback(
+            err,
+            response
+        );
 }
 
 function sagecellProxyErrorBody(source, err) {

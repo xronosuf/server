@@ -361,6 +361,45 @@ derived readiness, a visible failure notice, disabled existing and dynamically
 inserted controls, one-shot fault consumption, and clean recovery after an
 ordinary reload.
 
+## Sage reliability classification after canonical audit
+
+The post-canonicalization reliability audit distinguishes failures that may
+recover transparently from failures that must remain fail-closed.
+
+Already-supported transparent or bounded recovery includes:
+
+- expired page authorization: refresh `/sagecell/auth`, then retry the original
+  Sage request once;
+- local SageCell transport failure and HTTP 502/503/504 in
+  `local-with-fallback` mode: try the configured fallback service;
+- same-request late visible result after the initial inline deadline: reopen and
+  recover when still current;
+- explicit student Retry: create a new request attempt and ignore callbacks from
+  superseded attempts.
+
+The following are intentionally **not** automatic-recovery signals:
+
+- missing, invalid, malformed, or incomplete authorization;
+- canonical identity/invariant failures;
+- the compiled canonical request safety ceiling;
+- authored Sage setup/expression errors.
+
+Those states may indicate a security boundary, an Xronos programming defect, or
+author/content failure. They must not be converted into arbitrary fallback
+execution.
+
+The transient-classification discrepancies found by the final audit are
+resolved:
+
+- `XronosSagePageResultError` is now transient/retryable and therefore exposes
+  the grouped Retry path;
+- local HTTP 408/429/500 now trigger the same automatic fallback policy as
+  transport failure and HTTP 502/503/504.
+
+The full server fallback decision and browser result-error classification are
+covered by direct policy tests. The browser `page-result-error` one-shot probe
+also verified visible Retry followed by successful normal recomputation.
+
 ## Sage terminal-state policy
 
 Sage visible terminality is now an implemented runtime invariant.

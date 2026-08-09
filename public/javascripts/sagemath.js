@@ -4,6 +4,7 @@ var MathJax = require('mathjax');
 var database = require('./database');
 var TinCan = require('./tincan');
 var pageRuntime = require('./page-runtime');
+var sageErrorPolicy = require('./sage-error-policy');
 
 var seeded = false;
 var seedCallbacks = [];
@@ -5659,6 +5660,21 @@ function describeSageError(err) {
             message:
                 "The computation session could not be refreshed. " +
                 "Reload the page or try the computation again."
+        };
+    }
+
+    if (
+        sageErrorPolicy
+            .isCanonicalPageResultError(
+                ename
+            )
+    ) {
+        return {
+            category: "transient",
+            retryable: true,
+            message:
+                "The computation service returned a result that could not " +
+                "be read. Try the computation again."
         };
     }
 

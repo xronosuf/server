@@ -712,6 +712,20 @@ function findSageProblemContainer(element) {
  * This is instrumentation only. The existing batching and request behavior
  * remain unchanged until the collected ordering and sizes are validated.
  */
+/*
+ * Normalize htlatex's Sage CDATA wrapper before canonical manifest parsing.
+ *
+ * This helper is shared parsing infrastructure. It is intentionally retained
+ * independently of the removed legacy browser Sage executor.
+ */
+var stripCDATA = function(code) {
+    return code.replace(
+        /[\s\S]*#<!\[CDATA\[\s*\n((.|\n)*)\s*#\]\]>/m,
+        "$1"
+    );
+};
+
+
 function buildSagePageManifestProbe(
     root,
     options

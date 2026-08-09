@@ -84,6 +84,9 @@ var MathJax = require('./mathjax');
 var mathJaxInitialFaultProbe =
     require('./mathjax-initial-fault-probe');
 
+var sageInlineFaultProbe =
+    require('./sage-inline-fault-probe');
+
 var activity = require('./activity');
 var mathAnswer = require('./math-answer');
 
@@ -1770,6 +1773,14 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
             window.sessionStorage
     });
 
+    var sageInlineFaultController =
+        sageInlineFaultProbe.install({
+            pageRuntime:
+                pageRuntime,
+            storage:
+                window.sessionStorage
+        });
+
     TEXDEF.macros.answer = "answer";
     TEXDEF.macros.graph = "graph";
     TEXDEF.macros.newlabel = "newlabel";
@@ -1859,7 +1870,8 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
         var controller = {
             groupState: null,
             mathContainer: null,
-            originalDisplay: null
+            originalDisplay: null,
+            requestAttempt: 0
         };
 
         var createSpinner = function() {
@@ -1963,32 +1975,70 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
                 return details;
             };
 
+        var claimSageInlineFault =
+            function(
+                faultType,
+                extra
+            ) {
+                if (
+                    !sageInlineFaultController ||
+                    typeof sageInlineFaultController
+                        .claim !==
+                        "function"
+                ) {
+                    return false;
+                }
+
+                return sageInlineFaultController
+                    .claim(
+                        faultType,
+                        sagePlaceholderDetails(
+                            extra || {}
+                        )
+                    );
+            };
+
         var rerenderPlaceholder = function() {
             var parent = placeholder;
 
             while (parent.parent != undefined)
                 parent = parent.parent;
 
-            if (!parent.inputID) {
+            var missingInputIdFault =
+                claimSageInlineFault(
+                    "missing-input-id",
+                    {
+                        attempt:
+                            currentRequestAttempt()
+                    }
+                );
+
+            if (
+                missingInputIdFault ||
+                !parent.inputID
+            ) {
                 pageRuntime.operation(
                     "sage-placeholder",
                     "rerender-unavailable",
                     sagePlaceholderDetails({
                         reason:
-                            "missing-input-id"
+                            missingInputIdFault
+                                ? "controlled-fault-missing-input-id"
+                                : "missing-input-id",
+                        controlledFault:
+                            !!missingInputIdFault
                     })
                 );
 
-                if (
-                    sageCallRuntime
-                        .initialManifestCall
-                ) {
-                    settleInitialInlineSage(
-                        placeholderId,
-                        "rerender-unavailable",
-                        true
-                    );
-                }
+                showError(
+                    {
+                        ename:
+                            "XronosSageDisplayError",
+                        evalue:
+                            "The computed Sage result could not be attached to its MathJax source."
+                    },
+                    currentRequestAttempt()
+                );
 
                 return false;
             }
@@ -2425,6 +2475,105 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
             return elements.length > 0;
         };
 
+        var currentInitialPlaceholder = function() {
+            if (
+                !sageCallRuntime
+                    .initialManifestCall
+            ) {
+                return null;
+            }
+
+            return initialInlineSageRuntime
+                .placeholders[
+                    placeholderId
+                ] || null;
+        };
+
+        var currentRequestAttempt = function() {
+            return controller.requestAttempt;
+        };
+
+        var requestAttemptIsCurrent = function(
+            requestAttempt
+        ) {
+            return (
+                requestAttempt ===
+                controller.requestAttempt
+            );
+        };
+
+        var reportStaleRequestCallback = function(
+            stage,
+            requestAttempt
+        ) {
+            pageRuntime.operation(
+                "sage-placeholder",
+                "stale-attempt-ignored",
+                sagePlaceholderDetails({
+                    stage:
+                        stage,
+                    requestAttempt:
+                        requestAttempt,
+                    currentAttempt:
+                        controller.requestAttempt
+                })
+            );
+        };
+
+        var findFallbackFailureContainer = function() {
+            var problemContainer = null;
+
+            if (sageCallRuntime.problemId) {
+                problemContainer =
+                    document.getElementById(
+                        sageCallRuntime.problemId
+                    );
+            }
+
+            if (problemContainer) {
+                return {
+                    container:
+                        problemContainer,
+                    target:
+                        "problem"
+                };
+            }
+
+            var activity =
+                $("main.activity").first()[0];
+
+            if (activity) {
+                return {
+                    container:
+                        activity,
+                    target:
+                        "activity"
+                };
+            }
+
+            var pageContent =
+                document.getElementById(
+                    "page-content"
+                );
+
+            if (pageContent) {
+                return {
+                    container:
+                        pageContent,
+                    target:
+                        "page-content"
+                };
+            }
+
+            return {
+                container:
+                    document.body,
+                target:
+                    "body"
+            };
+        };
+
+
         var clearRegisteredFailure = function() {
             var state = controller.groupState;
 
@@ -2447,19 +2596,101 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
 
         var runSage;
 
-        var showError = function(err) {
+        var showError = function(
+            err,
+            requestAttempt
+        ) {
             console.log("Inline Sage error=", err);
+
+            if (
+                !requestAttemptIsCurrent(
+                    requestAttempt
+                )
+            ) {
+                reportStaleRequestCallback(
+                    "error-before-queue",
+                    requestAttempt
+                );
+                return;
+            }
 
             MathJax.Hub.Queue([
                 function() {
+                    if (
+                        !requestAttemptIsCurrent(
+                            requestAttempt
+                        )
+                    ) {
+                        reportStaleRequestCallback(
+                            "error-in-mathjax-queue",
+                            requestAttempt
+                        );
+                        return;
+                    }
+
+                    if (
+                        err &&
+                        err.xronosSageInlineFault ===
+                            "missing-placeholder"
+                    ) {
+                        findPlaceholderElements()
+                            .forEach(function(element) {
+                                if (element.parentNode) {
+                                    element.parentNode
+                                        .removeChild(
+                                            element
+                                        );
+                                }
+                            });
+                    }
+
                     var anchor =
                         findVisiblePlaceholderElement();
                     var mathContainer;
                     var problemContainer;
+                    var fallbackTarget;
                     var state;
                     var info;
 
+                    info =
+                        sagemath.describeSageError(err);
+
                     if (!anchor) {
+                        fallbackTarget =
+                            findFallbackFailureContainer();
+
+                        problemContainer =
+                            fallbackTarget.container;
+
+                        state =
+                            getGroupState(
+                                problemContainer
+                            );
+
+                        registerGroupState(state);
+
+                        controller.groupState =
+                            state;
+
+                        state.failures[
+                            placeholderId
+                        ] = {
+                            id:
+                                placeholderId,
+                            info:
+                                info,
+                            error:
+                                err,
+                            retry:
+                                runSage,
+                            showSpinner:
+                                showSpinner,
+                            mathContainer:
+                                null
+                        };
+
+                        renderGroupPanel(state);
+
                         pageRuntime.operation(
                             "sage-placeholder",
                             "fallback-placeholder-missing",
@@ -2468,7 +2699,16 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
                                     err &&
                                     err.ename
                                         ? err.ename
-                                        : null
+                                        : null,
+                                errorCategory:
+                                    info &&
+                                    info.category
+                                        ? info.category
+                                        : null,
+                                visibleFallbackShown:
+                                    true,
+                                visibleFallbackTarget:
+                                    fallbackTarget.target
                             })
                         );
 
@@ -2478,15 +2718,14 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
                         ) {
                             settleInitialInlineSage(
                                 placeholderId,
-                                "fallback-placeholder-missing",
+                                err &&
+                                err.xronosInitialInlineDeadline
+                                    ? "deadline-fallback"
+                                    : "fallback-placeholder-missing",
                                 true
                             );
                         }
 
-                        console.log(
-                            "Could not locate inline Sage placeholder:",
-                            placeholderId
-                        );
                         return;
                     }
 
@@ -2504,9 +2743,6 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
                         );
 
                     registerGroupState(state);
-
-                    info =
-                        sagemath.describeSageError(err);
 
                     hideMathContainer(mathContainer);
 
@@ -2559,6 +2795,7 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
             ]);
         };
 
+
         if (
             sageCallRuntime
                 .initialManifestCall
@@ -2582,38 +2819,50 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
                         })
                     );
 
-                    showError({
-                        ename:
-                            "SageCellRequestError",
-                        evalue:
-                            "initial inline Sage display deadline exceeded",
-                        status:
-                            "timeout",
-                        httpStatus:
-                            0,
-                        xronosInitialInlineDeadline:
-                            true
-                    });
+                    showError(
+                        {
+                            ename:
+                                "SageCellRequestError",
+                            evalue:
+                                "initial inline Sage display deadline exceeded",
+                            status:
+                                "timeout",
+                            httpStatus:
+                                0,
+                            xronosInitialInlineDeadline:
+                                true
+                        },
+                        currentRequestAttempt()
+                    );
                 }
             );
         }
 
 
-        var renderResult = function(result) {
-            var currentInitialPlaceholder =
-                sageCallRuntime
-                    .initialManifestCall
-                    ? initialInlineSageRuntime
-                        .placeholders[
-                            placeholderId
-                        ]
-                    : null;
+        var renderResult = function(
+            result,
+            requestAttempt
+        ) {
+            if (
+                !requestAttemptIsCurrent(
+                    requestAttempt
+                )
+            ) {
+                reportStaleRequestCallback(
+                    "result-before-queue",
+                    requestAttempt
+                );
+                return;
+            }
+
+            var currentPlaceholder =
+                currentInitialPlaceholder();
 
             if (
-                currentInitialPlaceholder &&
-                currentInitialPlaceholder
+                currentPlaceholder &&
+                currentPlaceholder
                     .terminal &&
-                currentInitialPlaceholder
+                currentPlaceholder
                     .terminalState ===
                     "deadline-fallback"
             ) {
@@ -2631,12 +2880,26 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
                 "result-resolved",
                 sagePlaceholderDetails({
                     resultType:
-                        typeof result
+                        typeof result,
+                    attempt:
+                        requestAttempt
                 })
             );
 
             MathJax.Hub.Queue([
                 function() {
+                    if (
+                        !requestAttemptIsCurrent(
+                            requestAttempt
+                        )
+                    ) {
+                        reportStaleRequestCallback(
+                            "result-in-mathjax-queue",
+                            requestAttempt
+                        );
+                        return;
+                    }
+
                     try {
                         clearRegisteredFailure();
                         restoreMathContainer();
@@ -2664,7 +2927,9 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
                             sagePlaceholderDetails({
                                 placeholderPresent:
                                     findPlaceholderElements()
-                                        .length > 0
+                                        .length > 0,
+                                attempt:
+                                    requestAttempt
                             })
                         );
 
@@ -2695,18 +2960,24 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
                                         ? displayError.message
                                         : String(
                                             displayError
-                                        )
+                                        ),
+                                attempt:
+                                    requestAttempt
                             })
                         );
 
-                        showError({
-                            ename: "XronosSageDisplayError",
-                            evalue:
-                                displayError &&
-                                displayError.message
-                                    ? displayError.message
-                                    : String(displayError)
-                        });
+                        showError(
+                            {
+                                ename:
+                                    "XronosSageDisplayError",
+                                evalue:
+                                    displayError &&
+                                    displayError.message
+                                        ? displayError.message
+                                        : String(displayError)
+                            },
+                            requestAttempt
+                        );
                     }
 
                     return;
@@ -2715,10 +2986,18 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
         };
 
         runSage = function() {
+            controller.requestAttempt += 1;
+
+            var requestAttempt =
+                currentRequestAttempt();
+
             pageRuntime.operation(
                 "sage-placeholder",
                 "request-started",
-                sagePlaceholderDetails()
+                sagePlaceholderDetails({
+                    attempt:
+                        requestAttempt
+                })
             );
 
             if (
@@ -2731,12 +3010,135 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
                 );
             }
 
-            sagemath.resolveMathJaxSageCall(
-                sageCallTrace,
-                code
-            ).then(
-                renderResult,
+            var missingPlaceholderFault =
+                claimSageInlineFault(
+                    "missing-placeholder",
+                    {
+                        attempt:
+                            requestAttempt
+                    }
+                );
+
+            var staleAttemptFault =
+                missingPlaceholderFault
+                    ? false
+                    : claimSageInlineFault(
+                        "stale-attempt",
+                        {
+                            attempt:
+                                requestAttempt
+                        }
+                    );
+
+            var requestPromise;
+
+            if (missingPlaceholderFault) {
+                requestPromise =
+                    Promise.reject({
+                        ename:
+                            "SageCellRequestError",
+                        evalue:
+                            "controlled missing-placeholder Sage fault",
+                        status:
+                            "error",
+                        httpStatus:
+                            0,
+                        xronosSageInlineFault:
+                            "missing-placeholder"
+                    });
+            } else {
+                requestPromise =
+                    sagemath.resolveMathJaxSageCall(
+                        sageCallTrace,
+                        code
+                    );
+            }
+
+            if (staleAttemptFault) {
+                var underlyingRequestPromise =
+                    requestPromise;
+
+                requestPromise =
+                    new Promise(
+                        function(resolve, reject) {
+                            underlyingRequestPromise.then(
+                                function(result) {
+                                    window.setTimeout(
+                                        function() {
+                                            resolve(result);
+                                        },
+                                        staleAttemptFault
+                                            .delayMilliseconds
+                                    );
+                                },
+                                function(err) {
+                                    window.setTimeout(
+                                        function() {
+                                            reject(err);
+                                        },
+                                        staleAttemptFault
+                                            .delayMilliseconds
+                                    );
+                                }
+                            );
+                        }
+                    );
+
+                /*
+                 * Make attempt 1 visibly retryable while preserving its real
+                 * delayed callback. The explicit Retry starts attempt 2; when
+                 * attempt 1 is released later, the request token must reject
+                 * it as stale before it touches lifecycle state or the DOM.
+                 */
+                showError(
+                    {
+                        ename:
+                            "SageCellRequestError",
+                        evalue:
+                            "controlled stale-attempt Sage fault",
+                        status:
+                            "timeout",
+                        httpStatus:
+                            0,
+                        xronosSageInlineFault:
+                            "stale-attempt"
+                    },
+                    requestAttempt
+                );
+            }
+
+            requestPromise.then(
+                function(result) {
+                    if (
+                        !requestAttemptIsCurrent(
+                            requestAttempt
+                        )
+                    ) {
+                        reportStaleRequestCallback(
+                            "result-promise",
+                            requestAttempt
+                        );
+                        return;
+                    }
+
+                    renderResult(
+                        result,
+                        requestAttempt
+                    );
+                },
                 function(err) {
+                    if (
+                        !requestAttemptIsCurrent(
+                            requestAttempt
+                        )
+                    ) {
+                        reportStaleRequestCallback(
+                            "error-promise",
+                            requestAttempt
+                        );
+                        return;
+                    }
+
                     pageRuntime.operation(
                         "sage-placeholder",
                         "request-failed",
@@ -2745,11 +3147,16 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
                                 err &&
                                 err.ename
                                     ? err.ename
-                                    : null
+                                    : null,
+                            attempt:
+                                requestAttempt
                         })
                     );
 
-                    showError(err);
+                    showError(
+                        err,
+                        requestAttempt
+                    );
                 }
             );
         };

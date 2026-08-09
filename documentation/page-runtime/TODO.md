@@ -13,20 +13,36 @@ Items here are not commitments to include all work in the current project.
 
 ## Runtime coordinator and diagnostics
 
-- Passive runtime event instrumentation exists; continue extending subsystem coverage.
-- `window.xronosInspectPageRuntime()` exists; stabilize and document its support contract.
-- Service, operation, and component states are recorded separately; continue ownership cleanup.
-- A bounded recent-event buffer exists; continue adding bounded subsystem diagnostics.
-- Stable diagnostic codes now exist for initial state, initial MathJax, and initial inline Sage display; add occurrence IDs and broader code coverage.
-- Record automatic reload and navigation causes.
-- Detect unresolved visible loading indicators.
-- Record page metadata version, bundle version, `/version`, and feature mode.
-- Add operation IDs and generation IDs.
-- Define an ownership adapter for each startup subsystem.
-- Replace implicit callback completion with explicit terminal outcomes.
-- Create the student and instructor support-report workflow.
-- Create a support portal that accepts a code or copied report.
-- Verify technical state rather than relying only on user reports.
+Completed/current foundation:
+
+- dependency-aware coordinator core exists;
+- external lifecycle leaves and operation IDs exist;
+- bounded event history exists;
+- state/content/interaction/page readiness exists;
+- multiple document-ready and MathJax startup control seams are coordinator-owned;
+- initial MathJax generation binding and coordinator timeout are implemented;
+- initial MathJax processing-failure policy is browser-validated;
+- canonical initial Sage operation identity is implemented;
+- initial visible Sage terminal settlement and stale explicit-attempt protection
+  are browser-validated.
+
+Remaining coordinator work:
+
+- reconcile the existing `initial-math-answers` lifecycle as the next
+  substantive boundary;
+- reconcile initial-state result semantics and timeout ownership;
+- stabilize and document `window.xronosInspectPageRuntime()` as a support
+  contract;
+- add occurrence IDs and broader stable diagnostic coverage;
+- record automatic reload/navigation causes;
+- detect unresolved visible loading indicators across non-Sage components;
+- record page metadata version, bundle version, `/version`, and relevant feature
+  modes;
+- continue replacing implicit callback completion with explicit terminal
+  outcomes;
+- reconcile duplicated legacy comparison/watchdog ownership one dependency at a
+  time after evidence supports removal;
+- create the student/instructor support-report workflow and support portal.
 
 ## Saved state and WebSocket
 
@@ -204,18 +220,37 @@ Deferred grouped-validator defects and design work:
 
 ## Sage
 
-- Keep seed readiness conditional on actual seed consumers.
-- Measure Sage request and display timings separately.
-- Verify same-context deterministic sequencing.
-- Later verify different LTI contexts produce different sequences.
-- Verify effective seed participates in exact request and cache identity.
-- Audit generation and seed reconstruction during fallback states.
-- Investigate manual author seed overrides only if encountered.
-- Prevent stale generation callbacks from replacing newer output.
-- Separate request success from placeholder and display success.
-- Harden Sage authorization after production stability using trusted origin and
-  exact request or code authorization rather than page token alone.
-- Patch stale-token refresh and retry behavior in the near term.
+Completed/current behavior:
+
+- the initial canonical request has stable coordinator operation identity;
+- explicit Retry creates a new canonical coordinator operation;
+- legitimate browser Sage execution is canonical-only;
+- obsolete standalone `.sage` / `.sageOutput`, browser kernel/iopub, queue, and
+  batching compatibility has been removed;
+- canonical execution is unconditional and the old deployment flag is inert;
+- canonical request and visible settlement remain separate lifecycles;
+- the initial visible deadline converts unresolved spinners into explicit
+  terminal UI;
+- missing MathJax `inputID` and missing-placeholder paths terminate visibly;
+- each visible placeholder has explicit request-attempt identity;
+- callbacks from superseded explicit Retry attempts are ignored;
+- repeated canonical `Another` is browser-validated;
+- 60 KB remains the compiled canonical request safety ceiling.
+
+Remaining/deferred Sage work:
+
+- keep seed readiness conditional on actual seed consumers;
+- continue measuring canonical request and display timings separately;
+- verify same-context deterministic sequencing and later cross-LTI-context
+  expectations when needed;
+- verify effective seed remains part of exact canonical request/cache identity;
+- investigate manual author seed overrides only if encountered;
+- patch stale page-auth token refresh/retry behavior in the near term;
+- after production stability, harden authorization using trusted origin plus
+  exact authorized request/code hashes or a build-time manifest rather than page
+  token alone;
+- remove only the dead `XRONOS_CANONICAL_PAGE_SAGE_ENABLED` `.env` entry during
+  deployment cleanup, leaving unrelated `.env` entries intact.
 
 ## Startup and performance
 
@@ -240,8 +275,10 @@ Deferred grouped-validator defects and design work:
   - initial MathJax processing
   - initial inline Sage display
 - Continue adding or refining timeout classes for:
-  - canonical Sage request
   - optional external libraries
+- Canonical Sage attempts already have explicit terminal classification; add a
+  separate request-level deadline only if production evidence shows one is
+  necessary beyond current request/proxy timeout behavior.
 - Measure whether the current 15-second readiness deadlines are appropriate
   before treating them as a stable operational policy.
 
@@ -395,8 +432,9 @@ corrections. Keep the fixtures as a repeatable regression suite covering:
 
 1. static content and core MathJax
 2. answers and saved progress
-3. basic Sage
-4. Sage generation and Another
+3. basic canonical Sage plus missing-input-ID, missing-placeholder, and
+   stale-attempt fault cases
+4. canonical Sage generation and repeated Another
 5. mixed critical lifecycle
 6. optional interactives
 7. legacy and unusual features

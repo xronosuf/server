@@ -9,13 +9,13 @@ The original architecture inventory began at baseline commit:
 
 `b235dc15fa1d409b52ebc7038ebdf967113f0cda`
 
-The current passive readiness instrumentation described below includes changes
-through:
+The current coordinator/runtime description below is reconciled through:
 
-`7b05bfab5a1f27e4d6ac042a4bfae73f2c13f126`
+`e794671`
 
-It describes existing behavior and current observability. It is not yet a
-detailed replacement design.
+It records current behavior, current ownership boundaries, and browser-validated
+runtime contracts. Historical inventory sections are retained where still
+accurate.
 
 ## Browser entrypoint
 
@@ -89,107 +89,55 @@ The visible `main.js` document-ready callback currently performs work including:
 
 ## MathJax ownership
 
-MathJax currently participates in:
+MathJax participates in TeX parsing, references, answer construction, Sage
+placeholder creation, author `\js` output, and later rerender/reprocess work.
 
-- TeX parsing
-- references and labels
-- answer-box construction
-- Sage placeholder creation
-- author `\js` output
-- rerendering and reprocessing
-- hiding the global loading spinner
+The coordinator now owns the MathJax startup trigger and separately models the
+authoritative initial full `Process`.
 
-The global loading spinner is hidden when MathJax reports startup `End`.
+The first authoritative `Begin Process` binds `mathjax-initial-process` to one
+generation; matching `End Process` settles it.
 
-That event does not prove that saved state, Sage display, answer
-initialization, optional interactives, or grade-related operations are ready.
+The coordinator owns the 15-second `XR-MATHJAX-INITIAL-101` deadline. Stale or
+mismatched completion cannot settle the task. Matching late completion can
+recover where policy permits while timeout history remains recorded.
 
-The runtime separately observes the initial MathJax `Process` pass. Completion
-requires an operation with:
-
-- operation: `mathjax-pass`
-- state: `ended`
-- `details.passType`: `process`
-
-A completed `Reprocess` or `Rerender` does not satisfy this initial-process
-boundary.
-
-The passive runtime coordinator applies a 15-second diagnostic readiness
-deadline to the initial process:
-
-- dependency: `mathjax-initial-process`
-- readiness dimension: `content-ready`
-- diagnostic code: `XR-MATHJAX-INITIAL-101`
-- deadline event: `readiness-deadline-exceeded`
-
-The deadline does not cancel MathJax or replace page content. If the initial
-process completes later, `content-ready` may recover to `ready`, while the
-earlier timeout remains recorded in diagnostic history.
+Current policy is no longer passive: a parse/processing error associated with
+the authoritative initial generation fails `mathjax-initial-process`, degrades
+affected readiness, shows persistent failure UI, and blocks mathematical
+coursework interaction until reload.
 
 ## Initial inline Sage display readiness
 
-The runtime separately aggregates the display lifecycle of immutable
-initial-manifest inline Sage expressions in the component:
+The runtime separately tracks the visible lifecycle of immutable initial-manifest
+Sage expressions in `sage-inline-initial`.
 
-- `sage-inline-initial`
+This remains distinct from `canonical-sage`.
 
-The aggregate records:
+Terminal aggregate outcomes include `settled`, `degraded`, and `not-required`.
 
-- expected placeholders
-- discovered placeholders
-- requests started
-- MathML applied
-- rerenders completed
-- failed placeholders
-- settled placeholders
-- whether initial MathJax discovery completed
+The 15-second `XR-SAGE-INLINE-INITIAL-101` deadline can actively convert
+unresolved visible Sage work from a spinner into explicit failure/fallback UI.
 
-Terminal states are:
+A naturally late result for the same explicit request may still recover the
+timed-out lifecycle while preserving timeout history.
 
-- `settled`: every expected placeholder completed successfully
-- `degraded`: every expected placeholder reached a terminal state, but at
-  least one failed and displayed a fallback
-- `not-required`: the initial page manifest contains no inline Sage expressions
+Explicit Retry creates a new visible request attempt and a new coordinator
+operation.
 
-The component is a dependency of `content-ready`:
+Each placeholder has a monotonically increasing request-attempt token.
+Callbacks from an explicitly superseded attempt are ignored before changing DOM
+or lifecycle state and are recorded as `stale-attempt-ignored`.
 
-- `settled` and `not-required` are ready
-- `degraded` and `failed` are degraded
-- absent or `discovered` remain waiting
+Known display attachment failures terminate visibly:
 
-The passive runtime coordinator applies a 15-second diagnostic readiness
-deadline:
+- missing MathJax source `inputID` routes through display-error handling
+- missing exact placeholder DOM uses a controlled problem/activity/page/body
+  fallback destination
 
-- dependency: `sage-inline-initial`
-- readiness dimension: `content-ready`
-- diagnostic code: `XR-SAGE-INLINE-INITIAL-101`
-- deadline event: `readiness-deadline-exceeded`
-
-The deadline does not cancel Sage requests, replace mathematical content, or
-prevent late completion. If all placeholders settle later, the component,
-`content-ready`, and page readiness may recover to ready. The watchdog retains
-the earlier timeout as diagnostic history.
-
-The promoted implementation has been browser-validated for:
-
-1. a page with 23 successful inline Sage expressions
-2. a page requiring no inline Sage
-3. one forced display failure with 22 successful expressions
-4. a forced 500-millisecond readiness timeout
-5. late successful settlement after that timeout
-
-The observed readiness results were:
-
-| Scenario | Inline Sage | Content readiness | Page readiness |
-|---|---|---|---|
-| 23 successful expressions | `settled` | `ready` | `ready` |
-| No inline Sage | `not-required` | `ready` | `ready` |
-| One display failure | `degraded` | `degraded` | `degraded` |
-| Deadline exceeded | `degraded` | `degraded` | `degraded` |
-| Late successful completion | `settled` | recovered to `ready` | recovered to `ready` |
-
-The timeout history remains visible after recovery through
-`window.xronosPageBenchmark(options)`.
+Browser validation on the rebuilt bundle covers clean success,
+missing-input-ID, missing-placeholder, and stale explicit attempt on 03,
+repeated `Another` on 04, and mixed Sage/answer/author-JS behavior on 05.
 
 ## Initial saved-state gate
 
@@ -502,28 +450,40 @@ the browser console, but students receive no useful localized error.
 
 ## Sage runtime
 
-Sage has two distinct jQuery-ready handlers:
+Current legitimate browser Sage execution is canonical-only.
 
-1. create and bind the hidden `Another` button
-2. initialize Sage only when Sage markers exist
+Current-publisher contracts include:
 
-Current Sage markers include:
+- generated `script[type="text/sagemath"]` from `sagesilent`
+- visible canonical `\sage{...}`
+- seeded canonical generation
+- `Another`
+- replay/reprocessing including Sage answer-key use
 
-- `.sage`
-- `script[type="text/sagemath"]`
-- canonical `\sage{...}` expressions discovered in mathematical source
+Before MathJax startup, the Sage module captures an immutable manifest with
+stable expression identity, ordering, problem identity when available,
+answer-key entries, and silent setup blocks.
 
-The `.sageOutput` class belongs to the older public-SageCell standalone
-autoevaluation workflow. The local `/sagecell/service` implementation retains a
-compatibility path for such elements, but no current author macro, generated
-repository HTML, or active page sample has been found to produce them.
+The canonical page request compiles that manifest, enforces the 60,000 UTF-8-byte
+safety ceiling, submits it through the Xronos SageCell proxy, parses the
+response, and maps results by canonical identity.
 
-Consequently, `.sageOutput` is recorded as legacy standalone Sage telemetry and
-does not block normal page readiness. Canonical Sage request completion and the
-initial MathJax process remain the active content-readiness boundaries.
+`canonical-sage` represents computation/result availability.
+`sage-inline-initial` represents visible settlement.
 
-Sage request, result mapping, MathJax processing, placeholder discovery, and
-legacy standalone display are separate runtime operations.
+The browser no longer maintains the old standalone/embedded executor. Removed
+compatibility includes `.sage` / `.sageOutput` standalone autoevaluation,
+browser `createKernel`/iopub emulation, legacy request queues/batching, and
+arbitrary-code fallback after canonical identity failure.
+
+A live Sage call that cannot resolve to deterministic canonical identity is an
+explicit invariant failure.
+
+Dynamic `Another` generations are canonical and stale-generation guarded, but
+remain outside initial page readiness.
+
+`stripCDATA()` remains shared canonical parsing infrastructure, not legacy
+executor code.
 
 ## Author JavaScript
 
@@ -805,7 +765,7 @@ The page-runtime fixtures were browser-tested on July 31, 2026:
 |---|---|---|
 | Static MathJax | Pass | Initial MathJax completes; no Sage or answers required |
 | Answers and saved progress | Pass | Logical answers attach once and submitted state survives reload |
-| Basic Sage | Pass | Batched Sage results complete all initial inline rerenders |
+| Basic Sage | Pass | Canonical Sage results complete all initial inline rerenders |
 | Sage generation and Another | Pass | Later generation remains outside initial readiness |
 | Mixed critical lifecycle | Pass | State, content, and interaction dimensions aggregate independently |
 | Optional interactive | Pass | Optional author interaction works without blocking critical readiness |
@@ -823,11 +783,13 @@ Canvas-context behavior.
 
 ## Current architectural conclusion
 
-The present runtime is a network of cooperating callbacks rather than a single
-coordinated lifecycle.
+The runtime still contains multiple mature feature-owned internal paths, but
+startup is no longer only a passive network of callbacks.
 
-The first coordinator milestone should make this behavior observable without
-changing normal page behavior.
+The coordinator owns multiple startup control seams and explicit lifecycle
+contracts for the initial MathJax Process plus canonical and visible initial
+Sage.
 
-Explicit ownership, terminal outcomes, degraded behavior, and orchestration
-should then be introduced incrementally.
+The next substantive reconciliation target is the existing
+`initial-math-answers` lifecycle, followed by initial-state semantics and the
+stable support contract.

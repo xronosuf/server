@@ -160,19 +160,28 @@ A validator exception must not reset the whole activity runtime.
 
 ## Sage failure
 
-Sage request success and Sage display success are different outcomes.
+Canonical Sage computation and visible Sage display are separate outcomes.
 
-A Sage component must distinguish:
+A Sage component must distinguish at least:
 
-- request failed
-- request succeeded but response mapping failed
-- response mapped but placeholder was not found
-- placeholder found but MathJax processing failed
+- canonical request/authorization/network failure
+- canonical identity/invariant failure
+- result-mapping or expression-level failure
+- request succeeded but MathJax source attachment failed
+- request succeeded but exact placeholder disappeared
+- MathJax rerender/display failure
+- visible failure/fallback shown
 - display completed
-- fallback panel displayed
 
 A successful compute request must not leave a visible component spinning
 forever.
+
+Retryable failure is terminal for that attempt even when Retry is offered.
+Explicit Retry creates a new attempt.
+
+Same-request late completion after the visible deadline may recover when still
+current. A callback from an explicitly superseded Retry attempt must be ignored
+and cannot overwrite the newer result.
 
 ## MathJax failure
 
@@ -241,20 +250,25 @@ Runtime reports must distinguish true document navigation from:
 
 ## Operation and generation identity
 
-Asynchronous work must carry IDs so that:
+Asynchronous work must carry identity so stale completion cannot overwrite newer
+state.
 
-- late callbacks after timeout cannot overwrite fallback state
-- an older answer submission cannot overwrite a newer submission
-- an older Sage generation cannot replace the current generation
-- diagnostics can correlate related events
-
-Relevant IDs may include:
+Relevant identity includes:
 
 - page session ID
-- operation ID
-- answer-submission ID
+- coordinator operation ID
+- MathJax generation ID
 - Sage generation ID
-- component instance ID
+- Sage per-placeholder request-attempt token
+- answer-submission ID
+- component logical/instance ID
+
+Late recovery is valid only when it belongs to the still-relevant operation or
+an explicitly permitted recovery generation/request.
+
+For initial visible Sage, the deadline does not create a new request-attempt
+token, so same-request late recovery can still succeed. Explicit Retry increments
+the token; callbacks from earlier explicit attempts are ignored and recorded.
 
 ## Diagnostic presentation
 
@@ -349,34 +363,29 @@ ordinary reload.
 
 ## Sage terminal-state policy
 
-Sage degradation must be explicit and bounded.
+Sage visible terminality is now an implemented runtime invariant.
 
-The existing Sage implementation distinguishes multiple operational and
-content-level failure classes and may offer retry or fallback UI. Coordinator
-integration must preserve that behavior while ensuring that classification of a
-failure also permits the relevant runtime work to stop waiting.
+Keep these coordinator leaves separate:
 
-A retryable Sage failure is not equivalent to a still-running request. The
-failed attempt may be terminal while the UI separately offers a new retry
-attempt.
+- `canonical-sage`: canonical computation/result availability
+- `sage-inline-initial`: visible settlement of required initial Sage consumers
 
-Likewise, canonical Sage computation and visible Sage settlement are separate
-facts:
+For `canonical-sage`, every explicit attempt reaches a coordinator-visible
+terminal outcome. Retryable failure is terminal for that attempt; explicit Retry
+creates a new coordinator operation. Canonical invariant failure never falls
+back to arbitrary legacy execution.
 
-- `canonical-sage` answers whether the page-level canonical computation reached
-  a classified terminal outcome;
-- `sage-inline-initial` answers whether each required initial visible Sage
-  component reached an explicit visible terminal outcome.
+For `sage-inline-initial`, every required placeholder must reach a visible
+terminal outcome. The deadline can replace unresolved loading state with explicit
+failure/fallback UI. Missing MathJax `inputID` becomes visible failure. Missing
+exact placeholder DOM uses a controlled visible fallback destination.
+Same-request late completion may recover; a callback from a superseded explicit
+Retry attempt is stale and cannot mutate current DOM or lifecycle state.
 
-A canonical failure may therefore degrade or fail dependent visible work, but
-must not leave it indefinitely pending merely because retry is theoretically
-possible.
+The ambiguous permanent Sage spinner is a correctness failure, not an acceptable
+degraded state.
 
-For required initial Sage content, an indefinite spinner/loading indicator is
-not an acceptable degraded state. Once success, degraded output, explicit
-failure, permanent fallback, not-required, or timeout/fallback can be
-determined, the corresponding component and derived readiness must transition
-out of waiting.
-
-Late retry or recovery may subsequently improve the state. Such recovery should
-retain prior failure/timeout evidence for diagnostics.
+Browser validation has exercised clean success, missing-input-ID,
+missing-placeholder, stale explicit attempt, repeated `Another`, and mixed
+Sage/answer/author-JavaScript behavior. Timeout/failure history remains available
+after safe recovery.

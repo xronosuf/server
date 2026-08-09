@@ -64,33 +64,42 @@ component initialization, event binding, diagnostics, and readiness.
 
 ## Existing foundation
 
-A passive coordinator and diagnostic layer already exist.
+The coordinator is now an active runtime layer rather than only passive
+instrumentation.
 
-The current implementation observes three independent readiness dimensions:
+Implemented foundation includes:
 
-- `state-synchronized`
-- `content-ready`
-- `interaction-ready`
+- dependency validation and dependency joins;
+- external lifecycle leaves;
+- task and operation identity;
+- timeouts and retained timeout history;
+- stale completion recording;
+- bounded event history;
+- recomputable derived readiness;
+- `allow-late-success`;
+- transitive recovery;
+- active ownership of several startup trigger/release seams.
 
-Current page readiness is derived from those dimensions and may be:
+Current derived readiness dimensions are:
 
-- `waiting`
-- `degraded`
-- `ready`
+- `state-synchronized`;
+- `content-ready`;
+- `interaction-ready`;
+- `page-readiness`.
 
-Current passive deadlines include:
+Current 15-second readiness deadlines are:
 
-| Dependency | Dimension | Deadline | Diagnostic code |
-|---|---|---:|---|
-| `initial-state` | `state-synchronized` | 15,000 ms | `XR-STATE-INITIAL-101` |
-| `mathjax-initial-process` | `content-ready` | 15,000 ms | `XR-MATHJAX-INITIAL-101` |
-| `sage-inline-initial` | `content-ready` | 15,000 ms | `XR-SAGE-INLINE-INITIAL-101` |
+| Dependency | Dimension | Deadline | Diagnostic code | Current ownership |
+|---|---|---:|---|---|
+| `initial-state` | `state-synchronized` | 15,000 ms | `XR-STATE-INITIAL-101` | legacy state watchdog currently reports the external leaf deadline |
+| `mathjax-initial-process` | `content-ready` | 15,000 ms | `XR-MATHJAX-INITIAL-101` | coordinator-owned |
+| `sage-inline-initial` | `content-ready` | 15,000 ms | `XR-SAGE-INLINE-INITIAL-101` | visible-settlement lifecycle converts unresolved placeholders to terminal UI |
 
-Late successful completion may recover the current state from `degraded` to
-`ready`, while the earlier timeout remains in diagnostic history.
+Late safe recovery may move current readiness from degraded to ready while the
+earlier timeout remains in diagnostic history.
 
-This behavior must be preserved unless a later design change is explicitly
-documented and tested.
+The initial MathJax failure policy and initial visible Sage terminality are now
+implemented behavior rather than only passive-observation goals.
 
 ## Architectural principle
 
@@ -587,42 +596,22 @@ Migration must be incremental.
 
 ### Phase 4: first active owner
 
-Status: active ownership now covers two bounded activity responsibilities.
+Status: completed and expanded.
 
-The first active owner controls the one-shot document-ready activity-bootstrap
-trigger. The second active owner controls release of the state-dependent
-activity initialization callback after initial state becomes available.
+The first active ownership transfer was the one-shot document-ready activity
+bootstrap trigger. State-dependent activity initialization release followed.
 
-The WebSocket transport, database construction, generic `fetchData()` queue,
-and the internal activity initialization body remain component-owned.
+Additional coordinator-owned startup seams now include:
 
-Move one bounded startup responsibility under active coordinator control.
+- MathJax startup trigger;
+- MathJax Startup End UI finalization;
+- document-ready static UI;
+- kinetic navigation;
+- references.
 
-The first ownership transfer was deliberately limited to the one-shot
-document-ready trigger that invokes the existing `.activity()` bootstrap.
-
-The next bounded transfer moved authority over release of the activity's
-state-dependent initialization callback. The coordinator waits for both:
-
-- the activity initialization request; and
-- successful initial-state availability.
-
-The generic `fetchData()` queue remains owned by `database.js`, and unrelated
-consumers such as Sage seed setup and author random setup retain their existing
-delivery behavior. The coordinator does not yet own the WebSocket transport,
-database construction, MathJax startup, Sage execution, answer submission
-transactions, or parser-owned author JavaScript.
-
-The first owner should be selected for:
-
-- clear prerequisites;
-- clear completion signal;
-- low compatibility risk;
-- meaningful diagnostic value;
-- easy rollback.
-
-Do not begin with parser-owned author JavaScript, the entire activity bootstrap,
-or all MathJax behavior at once.
+This phase established an important migration rule: moving a trigger or release
+boundary does not automatically move every internal operation owned by the
+feature module.
 
 ### Phase 5: incremental ownership transfer
 
@@ -700,17 +689,26 @@ The first coordinator increment will not:
 - replace MathJax or Sage;
 - introduce user-facing fatal panels before terminal outcomes are reliable.
 
-## First implementation target
+## Current implementation target
 
-After this document is committed, the next code task is:
+The original first implementation target is complete.
 
-1. inspect the current `public/javascripts/page-runtime.js` API and tests;
-2. identify the smallest internal seam for dependency registration;
-3. add a coordinator-core module or internal layer;
-4. preserve all current passive readiness behavior;
-5. add focused unit tests for graph execution and failure propagation;
-6. expose graph state through existing diagnostics;
-7. avoid transferring startup ownership in the same first commit.
+The next substantive lifecycle target is the existing
+`initial-math-answers` boundary.
+
+Before changing ownership:
+
+1. inventory initial answer discovery and stable logical identity;
+2. trace MathJax model resolution and DOM attachment;
+3. distinguish ordinary rebinding from logical initial attachment;
+4. identify stale or duplicate attachment callback hazards;
+5. preserve current later-pass repair and degraded-to-ready recovery;
+6. clarify activity and saved-state dependencies;
+7. define the smallest remaining coordinator ownership change;
+8. add focused tests before changing behavior.
+
+Do not rewrite answer correctness or submission semantics as part of this
+initial-attachment reconciliation.
 
 ## Reorientation checklist
 

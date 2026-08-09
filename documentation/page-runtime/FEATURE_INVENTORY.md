@@ -74,9 +74,28 @@ behavior depends upon it.
 
 - Browser owners: `sagemath.js`, `main.js`
 - Backend owner: Sage proxy in `app.js`
-- Contracts: Sage scripts, outputs, placeholders, and generation controls
+- Current authoring/runtime contracts:
+  - `sagesilent` / generated `script[type="text/sagemath"]`
+  - canonical `\sage{...}`
+  - seeded canonical generation
+  - `Another`
+  - replay/reprocessing including Sage answer-key use
+- Current architecture:
+  - immutable pre-MathJax manifest
+  - canonical-only browser execution
+  - separate `canonical-sage` computation lifecycle
+  - separate `sage-inline-initial` visible lifecycle
+  - explicit per-placeholder Retry-attempt identity
+- Removed compatibility:
+  - standalone `.sage` / `.sageOutput` autoevaluation
+  - browser `createKernel` / iopub emulation
+  - legacy browser request queues and batching
 - Disposition: `RETAIN`
-- Current-project treatment: explicit request and display lifecycles
+- Current-project treatment:
+  - canonical operation identity is implemented
+  - visible terminal settlement is implemented and browser-validated
+  - future work should focus on diagnostics, deployment cleanup, and
+    authorization hardening without restoring legacy execution
 
 ### Author JavaScript block
 

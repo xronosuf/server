@@ -1095,12 +1095,26 @@ Coordinator.prototype.signal = function(
         return false;
     }
 
-    if (task.state === "timed-out") {
-        if (
-            task.recoveryPolicy !==
-                "allow-late-success" ||
-            recoverableStates.indexOf(state) < 0
-        ) {
+    if (
+        task.state === "timed-out" ||
+        task.state === "degraded"
+    ) {
+        var previousState = task.state;
+        var lateRecoveryAllowed =
+            task.recoveryPolicy ===
+                "allow-late-success" &&
+            (
+                previousState === "timed-out"
+                    ? recoverableStates.indexOf(
+                        state
+                    ) >= 0
+                    : (
+                        state === "succeeded" ||
+                        state === "not-required"
+                    )
+            );
+
+        if (!lateRecoveryAllowed) {
             this.record(
                 "stale-task-completion",
                 task.id,
@@ -1133,7 +1147,7 @@ Coordinator.prototype.signal = function(
                 operationId:
                     task.operationId,
                 fromState:
-                    "timed-out",
+                    previousState,
                 toState:
                     state,
                 source:

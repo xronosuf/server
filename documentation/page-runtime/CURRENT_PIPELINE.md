@@ -717,8 +717,16 @@ The implementation was browser-validated for:
 1. three successful initial answer attachments
 2. ordinary MathJax rebinding without duplicate readiness events
 3. correct-answer replacement with no readiness regression
-4. one forced initial missing-model failure
-5. automatic later-pass recovery of that logical answer
+4. one forced initial `missing-answer-model` failure targeted through authored
+   `data-id="runtimeInteger"`
+5. degraded initial state with 2/3 attached answers and unresolved
+   `answer0problem2`
+6. later `Reprocess` recovery to 3/3 attached answers and zero unresolved answers
+7. same-operation coordinator leaf recovery from `degraded` to `succeeded`
+8. transitive recomputation of `interaction-ready` and `page-readiness` from
+   degraded to ready
+9. preservation of authored ID, generated persistence ID, and problem ID across
+   the repair
 
 Page readiness is derived from those dimensions and may be:
 
@@ -810,9 +818,11 @@ The two discrepancies found by that audit are now resolved:
 - local SageCell HTTP 408/429/500 now join transport failures and
   502/503/504 as automatic local-to-fallback infrastructure failures.
 
-The production decisions use small directly tested policy helpers. The focused
-Sage/coordinator/MathJax suite passes with 57 tests. A browser one-shot
-`page-result-error` fault on `03-basic-sage` was also validated: the first
+The production decisions use small directly tested policy helpers. The earlier
+Sage/coordinator/MathJax checkpoint passed 57 focused tests. The current
+initial-answer reconciliation worktree passes 95 focused coordinator,
+answer-probe, Sage, and MathJax tests. A browser one-shot `page-result-error`
+fault on `03-basic-sage` was also validated: the first
 attempt displayed the retryable result-reading error, explicit Retry started a
 fresh attempt, and normal Sage then completed successfully.
 
@@ -827,6 +837,7 @@ The coordinator owns multiple startup control seams and explicit lifecycle
 contracts for the initial MathJax Process plus canonical and visible initial
 Sage.
 
-The next substantive reconciliation target is the existing
-`initial-math-answers` lifecycle, followed by initial-state semantics and the
-stable support contract.
+The `initial-math-answers` reconciliation is complete for the current scope,
+including browser-proven degraded-to-settled repair and coordinator-derived
+readiness recovery. The next substantive reconciliation target is initial-state
+terminal semantics and ownership, followed by the stable support contract.

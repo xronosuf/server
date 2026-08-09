@@ -87,6 +87,17 @@ var mathJaxInitialFaultProbe =
 var sageInlineFaultProbe =
     require('./sage-inline-fault-probe');
 
+var mathAnswerInitialFaultProbe =
+    require('./math-answer-initial-fault-probe');
+
+var mathAnswerInitialFaultController = {
+    armed: false,
+    reason: "not-installed",
+    claim: function() {
+        return false;
+    }
+};
+
 var activity = require('./activity');
 var mathAnswer = require('./math-answer');
 
@@ -1775,6 +1786,14 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
 
     var sageInlineFaultController =
         sageInlineFaultProbe.install({
+            pageRuntime:
+                pageRuntime,
+            storage:
+                window.sessionStorage
+        });
+
+    mathAnswerInitialFaultController =
+        mathAnswerInitialFaultProbe.install({
             pageRuntime:
                 pageRuntime,
             storage:
@@ -4043,6 +4062,31 @@ MathJax.Hub.signal.Interest(function(message) {
 
             if (initialProcessActive)
                 initialMathAnswerEntry(stableAnswerId);
+
+            /*
+             * Development-only one-shot probe for the real initial-answer
+             * degraded -> repaired lifecycle. The authored data-id is used only
+             * to target a known fixture answer; production identity semantics
+             * remain unchanged.
+             */
+            if (
+                mathAnswerInitialFaultController.claim(
+                    "missing-answer-model",
+                    {
+                        initialProcessActive:
+                            initialProcessActive,
+                        authoredId:
+                            result.attr("data-id") ||
+                            null,
+                        answerId:
+                            stableAnswerId,
+                        mathJaxInputId:
+                            id
+                    }
+                )
+            ) {
+                answer = null;
+            }
 
             mathAnswerRuntime.connectionAttempts += 1;
 

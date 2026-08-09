@@ -1592,4 +1592,186 @@ describe("page runtime coordinator core", function() {
         );
     });
 
+    it("allows degraded external task to recover to success on the same operation", async function() {
+        var coordinator =
+            coordinatorCore.create();
+
+        coordinator.register({
+            id: "recoverable-degraded",
+            external: true,
+            recoveryPolicy:
+                "allow-late-success"
+        });
+
+        coordinator.register({
+            id: "derived-readiness",
+            dependsOn: [
+                "recoverable-degraded"
+            ],
+            accepts: {
+                "recoverable-degraded": [
+                    "succeeded",
+                    "degraded"
+                ]
+            },
+            recomputeOnDependencyChange:
+                true,
+            run: function() {
+                return {
+                    state:
+                        coordinator.inspect()
+                            .tasks[
+                                "recoverable-degraded"
+                            ].state ===
+                            "succeeded"
+                            ? "succeeded"
+                            : "degraded"
+                };
+            }
+        });
+
+        coordinator.start();
+
+        assert.strictEqual(
+            coordinator.signal(
+                "recoverable-degraded",
+                "degraded"
+            ),
+            true
+        );
+
+        await Promise.resolve();
+        await Promise.resolve();
+
+        var degradedReport =
+            coordinator.inspect();
+
+        assert.strictEqual(
+            degradedReport.tasks[
+                "recoverable-degraded"
+            ].state,
+            "degraded"
+        );
+
+        assert.strictEqual(
+            degradedReport.tasks[
+                "derived-readiness"
+            ].state,
+            "degraded"
+        );
+
+        var operationId =
+            degradedReport.tasks[
+                "recoverable-degraded"
+            ].operationId;
+
+        assert.strictEqual(
+            coordinator.signal(
+                "recoverable-degraded",
+                "succeeded"
+            ),
+            true
+        );
+
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+
+        var recoveredReport =
+            coordinator.inspect();
+
+        assert.strictEqual(
+            recoveredReport.tasks[
+                "recoverable-degraded"
+            ].state,
+            "succeeded"
+        );
+
+        assert.strictEqual(
+            recoveredReport.tasks[
+                "recoverable-degraded"
+            ].operationId,
+            operationId
+        );
+
+        assert.strictEqual(
+            recoveredReport.tasks[
+                "recoverable-degraded"
+            ].attempt,
+            1
+        );
+
+        assert.strictEqual(
+            recoveredReport.tasks[
+                "derived-readiness"
+            ].state,
+            "succeeded"
+        );
+
+        assert.strictEqual(
+            recoveredReport.tasks[
+                "derived-readiness"
+            ].attempt,
+            2
+        );
+
+        assert.strictEqual(
+            recoveredReport.events.some(
+                function(event) {
+                    return (
+                        event.type ===
+                            "task-recovered" &&
+                        event.taskId ===
+                            "recoverable-degraded" &&
+                        event.details.fromState ===
+                            "degraded" &&
+                        event.details.toState ===
+                            "succeeded" &&
+                        event.details.source ===
+                            "external-signal"
+                    );
+                }
+            ),
+            true
+        );
+    });
+
+    it("does not treat a second degraded signal as late success", async function() {
+        var coordinator =
+            coordinatorCore.create();
+
+        coordinator.register({
+            id: "recoverable-degraded",
+            external: true,
+            recoveryPolicy:
+                "allow-late-success"
+        });
+
+        coordinator.start();
+
+        assert.strictEqual(
+            coordinator.signal(
+                "recoverable-degraded",
+                "degraded"
+            ),
+            true
+        );
+
+        assert.strictEqual(
+            coordinator.signal(
+                "recoverable-degraded",
+                "degraded"
+            ),
+            false
+        );
+
+        assert.strictEqual(
+            coordinator.inspect()
+                .tasks[
+                    "recoverable-degraded"
+                ].state,
+            "degraded"
+        );
+    });
+
 });

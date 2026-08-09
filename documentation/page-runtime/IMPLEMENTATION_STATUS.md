@@ -17,14 +17,15 @@ Canvas grade passback.
 
 ```text
 branch: page-runtime-coordinator
-local HEAD: 7c5913f Close final canonical Sage reliability gaps
-remote HEAD: 7c5913f Close final canonical Sage reliability gaps
-branch relation: synchronized
+local HEAD: eed8ae4 Refresh runtime coordinator checkpoint docs
+remote HEAD: eed8ae4 Refresh runtime coordinator checkpoint docs
+branch relation: synchronized; current initial-answer reconciliation is uncommitted
 ```
 
-The canonical-only Sage cleanup, visible reliability hardening, documentation
-reconciliation, and final Sage reliability fixes through `7c5913f` are pushed
-to `origin/page-runtime-coordinator`.
+The pushed checkpoint through `eed8ae4` includes the canonical-only Sage cleanup,
+visible reliability hardening, and refreshed coordinator checkpoint docs. The
+current worktree additionally contains the browser-validated initial math-answer
+reconciliation described below; it has not yet been staged, committed, or pushed.
 ## Current coordinator model
 
 External leaves:
@@ -64,8 +65,8 @@ Derived readiness:
 | Canonical initial Sage operation | Implemented |
 | Initial visible Sage settlement | Implemented and browser-validated |
 | Dynamic Sage / Another | Canonical generation path; outside initial readiness |
-| Initial math-answer attachment | Baseline readiness and late repair implemented; next reconciliation target |
-| Initial state | Partial; detailed terminal semantics still pending |
+| Initial math-answer attachment | Reconciled and browser-validated, including degraded-to-settled repair and derived readiness recovery |
+| Initial state | Partial; detailed terminal semantics are the next major lifecycle target |
 | Stable support contract | Partial |
 
 ## Initial MathJax Process
@@ -251,16 +252,21 @@ Use the project-local Gulp executable inside `devximserver`.
 
 The host Node 8/global-Gulp environment cannot build the current bundle.
 
-Latest focused validation at `7c5913f`:
+Latest focused validation in the current uncommitted reconciliation worktree:
 
 ```text
+page-runtime coordinator core:     33 passing
+page-runtime coordinator adapter:  42 passing
+initial math-answer fault probe:    5 passing
 Sage reliability policy:            4 passing
 sage-inline fault probe:            6 passing
-page-runtime coordinator adapter:  42 passing
 initial MathJax fault probe:         5 passing
                                     ----------
-total:                              57 passing
+total:                              95 passing
 ```
+
+The browser bundle was rebuilt with project-local Gulp inside `devximserver`,
+and host/container SHA-256 hashes matched before browser validation.
 ## Fresh Sage reliability audit at `fdb015b`
 
 A final read-only Sage pipeline audit was run after the documentation
@@ -304,31 +310,48 @@ canonical fail-closed invariants.
 The audit also corrected one documentation error: stale-token refresh/retry is
 already implemented and must not remain listed as future browser work.
 
-## Next lifecycle target: initial math answers
+## Initial math-answer reconciliation
 
-The next substantive coordinator work is reconciliation of the existing
-`initial-math-answers` lifecycle.
+The existing `initial-math-answers` lifecycle is now reconciled for the current
+scope.
 
-A substantial baseline already exists:
+Confirmed behavior:
 
-- stable logical answer identity
-- discovery during the authoritative initial MathJax generation
-- model-resolution tracking
-- attachment attempt tracking
-- attachment exceptions contained and diagnosed
-- `settled`, `degraded`, and `not-required` outcomes
-- successful attachment retained across DOM replacement
-- ordinary rebinding does not repeat logical initial completion
-- later `New Math` passes can repair unresolved initial answers
-- such repair can recover `initial-math-answers`, `interaction-ready`, and page
-  readiness while preserving earlier failure history
+- authored `data-id`, generated Xronos persistence/DOM ID, and transient MathJax
+  rendering identity remain distinct;
+- ordinary MathJax `Reprocess` replaces the answer DOM node but preserves the
+  authored ID, generated persistence ID, and owning problem ID in the validated
+  fixture;
+- no new answer-identity scheme is warranted by the observed runtime behavior;
+- discovery during the authoritative initial MathJax generation, model
+  resolution, attachment attempts, and contained attachment exceptions remain
+  the production ownership boundaries;
+- successful logical initial attachment remains terminal across ordinary DOM
+  replacement/rebinding;
+- a development-only one-shot `missing-answer-model` probe can target a known
+  authored answer without changing production identity semantics;
+- a forced initial missing model produces `initial-math-answers: degraded` with
+  the unresolved generated answer ID recorded;
+- a later MathJax `Reprocess` repairs that same logical answer and changes the
+  runtime component from `degraded` to `settled`;
+- coordinator external leaves using `allow-late-success` now permit same-operation
+  `degraded -> succeeded/not-required` recovery;
+- that leaf recovery recomputes `interaction-ready` and then `page-readiness`
+  from `degraded` to `succeeded`;
+- the repaired leaf retains the same attempt and operation ID, while derived
+  readiness tasks correctly begin new recomputation attempts.
 
-The next step is read-only inventory of the remaining ownership, stale/duplicate
-attachment, terminal-failure, state/activity dependency, and recovery boundaries.
+Browser validation on `testSuite/02-answers-saved-progress` used authored ID
+`runtimeInteger` and generated persistence ID `answer0problem2`. The controlled
+initial failure produced 2/3 attached answers and one unresolved answer; a later
+`Reprocess` produced 3/3 attached answers, zero unresolved answers, and successful
+interaction/page readiness recovery.
+
+No answer-specific deadline was added: unresolved initial attachment is still
+bounded by the authoritative initial MathJax Process, and later repair remains
+available when another legitimate MathJax pass occurs.
 
 ## Remaining major coordinator work
-
-After initial math-answer reconciliation:
 
 1. initial-state terminal semantics and ownership reconciliation
 2. stable support-report contract

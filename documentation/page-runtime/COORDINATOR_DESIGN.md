@@ -691,24 +691,26 @@ The first coordinator increment will not:
 
 ## Current implementation target
 
-The original first implementation target is complete.
+The initial math-answer reconciliation target is complete for the current scope.
 
-The next substantive lifecycle target is the existing
-`initial-math-answers` boundary.
+That reconciliation established:
 
-Before changing ownership:
+1. authored answer `data-id`, generated persistence/DOM ID, and MathJax render
+   identity are separate contracts;
+2. ordinary MathJax replacement requires rebinding the replacement DOM node but
+   does not require redefining logical initial completion;
+3. no production answer-ID redesign is justified by the observed runtime;
+4. controlled initial missing-model failure degrades the logical answer leaf;
+5. a later legitimate MathJax pass can repair the same logical answer;
+6. `allow-late-success` external leaves support same-operation
+   `degraded -> succeeded/not-required` recovery;
+7. derived interaction/page readiness recomputes transitively after that repair;
+8. answer correctness and submission semantics remain outside this
+   initial-attachment reconciliation.
 
-1. inventory initial answer discovery and stable logical identity;
-2. trace MathJax model resolution and DOM attachment;
-3. distinguish ordinary rebinding from logical initial attachment;
-4. identify stale or duplicate attachment callback hazards;
-5. preserve current later-pass repair and degraded-to-ready recovery;
-6. clarify activity and saved-state dependencies;
-7. define the smallest remaining coordinator ownership change;
-8. add focused tests before changing behavior.
-
-Do not rewrite answer correctness or submission semantics as part of this
-initial-attachment reconciliation.
+The next substantive lifecycle target is initial-state terminal semantics and
+ownership reconciliation. The same discipline applies: inventory actual
+operation outcomes and ownership before introducing fallback or retry behavior.
 
 ## Reorientation checklist
 

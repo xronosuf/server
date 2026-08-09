@@ -5,11 +5,12 @@ Coordinator project after a chat/session boundary.
 
 **Last reconciled:** 2026-08-09
 **Working branch:** `page-runtime-coordinator`
-**Last known local HEAD:** `7c5913f` — `Close final canonical Sage reliability gaps`
-**Last known remote HEAD:** `7c5913f` — `Close final canonical Sage reliability gaps`
-**Last known branch relation:** synchronized
-**Pushed?** Yes; the current coordinator checkpoint is backed up on
-`origin/page-runtime-coordinator`.
+**Last known local HEAD:** `eed8ae4` — `Refresh runtime coordinator checkpoint docs`
+**Last known remote HEAD:** `eed8ae4` — `Refresh runtime coordinator checkpoint docs`
+**Last known branch relation:** synchronized; current initial-answer work is uncommitted
+**Pushed?** The checkpoint through `eed8ae4` is backed up on
+`origin/page-runtime-coordinator`; the current initial-answer reconciliation is
+not yet staged, committed, or pushed.
 
 Always verify Git state before changing code.
 
@@ -42,6 +43,7 @@ one.
 ## 3. Current branch checkpoint
 
 ```text
+eed8ae4 Refresh runtime coordinator checkpoint docs
 7c5913f Close final canonical Sage reliability gaps
 fdb015b Reconcile page runtime coordinator documentation
 e794671 Harden inline Sage visible failure handling
@@ -59,7 +61,8 @@ efbdced Record failed-render browser validation
 785cd8a Block interaction after failed initial MathJax render
 ```
 
-Local and remote are synchronized at `7c5913f`.
+Local and remote commits are synchronized at `eed8ae4`; the worktree contains
+the uncommitted initial math-answer reconciliation and its documentation cleanup.
 ## 4. Coordinator foundation already completed
 
 Implemented foundation includes:
@@ -259,15 +262,20 @@ Use project-local Gulp inside `devximserver`.
 
 The host Node 8/global-Gulp environment is not a valid browser build path.
 
-Latest focused tests at `7c5913f`:
+Latest focused tests in the current reconciliation worktree:
 
 ```text
+page-runtime coordinator core:     33
+page-runtime coordinator adapter:  42
+initial math-answer fault probe:    5
 Sage reliability policy:            4
 sage-inline fault probe:            6
-page-runtime coordinator adapter:  42
 initial MathJax fault probe:         5
-total:                              57 passing
+total:                              95 passing
 ```
+
+The served browser bundle was rebuilt inside `devximserver`, and host/container
+SHA-256 hashes matched.
 ## 11A. Fresh Sage reliability audit before push
 
 After commit `fdb015b`, a new read-only Sage audit rechecked all known failure
@@ -303,28 +311,58 @@ successful fresh Retry.
 Canonical identity checks remain fail-closed and legacy execution was not
 restored.
 
-## 12. Existing initial math-answer baseline
+## 12. Initial math-answer reconciliation
 
-The next substantive lifecycle is `initial-math-answers`, but it is not a blank
-slate.
+This lifecycle is reconciled for the current coordinator scope.
 
-Current behavior already includes:
+Important identity finding:
 
-- stable logical answer identity
-- discovery under the initial MathJax generation
-- MathJax model-resolution tracking
-- attachment attempt tracking
-- contained attachment exceptions
-- `settled`, `degraded`, and `not-required` outcomes
-- successful attachment retained across DOM replacement
-- ordinary rebinding does not repeat logical initial completion
-- later `New Math` can repair an unresolved initial answer
-- repair can recover `initial-math-answers`, `interaction-ready`, and page
-  readiness while preserving the earlier degraded event
+- authored `\answer[id=...]` reaches the browser as semantic `data-id`;
+- Xronos separately assigns the generated persistence/DOM ID used by persistence
+  and answer activity;
+- MathJax render IDs are a third, transient rendering identity;
+- do not collapse these identities or replace the generated persistence scheme
+  without a reproduced defect.
 
-Next step: read-only inventory of remaining stale/duplicate attachment hazards,
-exact ownership boundaries, state/activity dependencies, terminal-failure
-classification, and repair semantics.
+Browser evidence on `testSuite/02-answers-saved-progress`:
+
+- authored target: `runtimeInteger`
+- generated persistence ID: `answer0problem2`
+- owning problem: `problem2`
+- ordinary `Reprocess` replaced the answer DOM node while preserving authored ID,
+  persistence ID, and problem ID
+- a development-only one-shot `missing-answer-model` probe produced an initial
+  degraded state with 2/3 answers attached and `answer0problem2` unresolved
+- the initial MathJax Process itself still completed successfully
+- a later `Reprocess` resolved and attached the missing model, giving 3/3 attached
+  and zero unresolved
+- the runtime component changed `degraded -> settled`
+- the coordinator leaf changed `degraded -> succeeded` on the same attempt and
+  operation
+- `interaction-ready` and `page-readiness` recomputed from degraded to succeeded
+
+The browser run exposed one real coordinator defect: `allow-late-success`
+previously accepted late external recovery only from `timed-out`, so a second
+signal after `degraded` was counted but rejected. The current uncommitted core
+patch permits same-operation `degraded -> succeeded/not-required` recovery for
+`allow-late-success` external leaves, records `task-recovered`, and uses the
+existing derived recomputation path.
+
+Development-only probe files:
+
+```text
+public/javascripts/math-answer-initial-fault-probe.js
+test/math-answer-initial-fault-probe.js
+```
+
+Storage key:
+
+```text
+xronosMathAnswerInitialFault
+```
+
+No answer-specific timeout was added, and no production answer identity scheme
+was changed.
 
 ## 13. Initial state remains unresolved
 
@@ -342,12 +380,11 @@ failed” can be distinguished.
 
 ## 14. Remaining major sequence
 
-1. reconcile existing `initial-math-answers`
-2. reconcile initial-state operation/outcome semantics
-3. stabilize the support-report contract
-4. remove/demote duplicated legacy comparison/watchdog ownership where evidence
+1. reconcile initial-state operation/outcome semantics
+2. stabilize the support-report contract
+3. remove/demote duplicated legacy comparison/watchdog ownership where evidence
    permits
-5. address optional-service terminality and broader cleanup afterward
+4. address optional-service terminality and broader cleanup afterward
 
 The overall coordinator project is not complete.
 
@@ -397,14 +434,14 @@ Keep separate from the next coordinator patch:
 ## 18. Recovery summary
 
 The Page Runtime Coordinator has progressed from passive observation to active
-startup ownership and explicit initial MathJax/Sage lifecycle contracts. The
-pushed checkpoint through `7c5913f` removes obsolete standalone browser Sage,
-enforces canonical-only execution, makes canonical Sage unconditional, hardens
-visible Sage failure/retry behavior, and closes the final canonical Sage
-reliability audit gaps. Current-publisher fixtures 03/04/05 pass on the rebuilt
-bundle, including missing-input-ID, missing-placeholder, stale-attempt,
-page-result-error recovery, and repeated-Another cases. The focused suite passes
-57 tests. The next substantive lifecycle is the existing
-`initial-math-answers` implementation: inventory the remaining ownership,
-stale/duplicate, failure, dependency, and repair boundaries before changing
-code.
+startup ownership and explicit initial MathJax/Sage/answer-readiness lifecycle
+contracts. The pushed checkpoint through `eed8ae4` contains the completed Sage
+milestones and refreshed checkpoint docs. The current uncommitted worktree closes
+the `initial-math-answers` reconciliation with a development fault probe,
+same-operation degraded external recovery in the coordinator core, 95 focused
+passing tests, and browser proof that a forced missing answer model degrades then
+repairs to settled while interaction/page readiness recover transitively. No
+answer identity redesign or answer-specific deadline was introduced.
+
+The next substantive lifecycle is initial-state operation/outcome semantics,
+followed by the stable support-report contract.

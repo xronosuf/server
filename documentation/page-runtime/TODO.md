@@ -24,13 +24,14 @@ Completed/current foundation:
 - initial MathJax processing-failure policy is browser-validated;
 - canonical initial Sage operation identity is implemented;
 - initial visible Sage terminal settlement and stale explicit-attempt protection
-  are browser-validated.
+  are browser-validated;
+- initial math-answer identity, degradation, later repair, same-operation
+  coordinator recovery, and transitive readiness recovery are browser-validated.
 
 Remaining coordinator work:
 
-- reconcile the existing `initial-math-answers` lifecycle as the next
+- reconcile initial-state result semantics and timeout ownership as the next
   substantive boundary;
-- reconcile initial-state result semantics and timeout ownership;
 - stabilize and document `window.xronosInspectPageRuntime()` as a support
   contract;
 - add occurrence IDs and broader stable diagnostic coverage;
@@ -90,6 +91,11 @@ Remaining coordinator work:
   - A later MathJax pass can recover `initial-math-answers`,
     `interaction-ready`, and page readiness from degraded to ready while
     retaining the original failure event.
+  - The coordinator accepts same-operation `degraded -> succeeded/not-required`
+    recovery for `allow-late-success` external leaves and recomputes affected
+    derived readiness.
+  - Browser validation preserved authored `data-id`, generated persistence ID,
+    and problem ID across the controlled repair.
 - Add bounded detail for repeated pre-success attachment failures without
   creating unbounded per-answer history.
 - Decide whether initial-answer readiness needs its own deadline only if

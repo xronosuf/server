@@ -2330,6 +2330,114 @@ describe(
         });
 
 
+        it("rearms degraded initial inline Sage for visible retry", function() {
+            var coordinator =
+                adapter.create();
+
+            adapter.signalTransition(
+                coordinator,
+                "components",
+                "sage-inline-initial",
+                "degraded",
+                {
+                    expected: 2,
+                    failed: 1,
+                    settled: 2
+                }
+            );
+
+            var failedTask =
+                coordinator.inspect()
+                    .tasks[
+                        "sage-inline-initial"
+                    ];
+
+            assert.strictEqual(
+                failedTask.state,
+                "degraded"
+            );
+
+            var previousAttempt =
+                failedTask.attempt;
+            var previousOperationId =
+                failedTask.operationId;
+
+            var retry =
+                coordinator
+                    .beginInitialInlineSageAttempt({
+                        placeholders: 1
+                    });
+
+            assert.strictEqual(
+                retry.rearmed,
+                true
+            );
+
+            assert.strictEqual(
+                retry.attempt,
+                previousAttempt + 1
+            );
+
+            assert.notStrictEqual(
+                retry.operationId,
+                previousOperationId
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "sage-inline-initial"
+                    ].state,
+                "waiting"
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "components",
+                "sage-inline-initial",
+                "settled",
+                {
+                    expected: 2,
+                    failed: 0,
+                    settled: 2
+                }
+            );
+
+            var recoveredTask =
+                coordinator.inspect()
+                    .tasks[
+                        "sage-inline-initial"
+                    ];
+
+            assert.strictEqual(
+                recoveredTask.state,
+                "succeeded"
+            );
+
+            assert.strictEqual(
+                recoveredTask.operationId,
+                retry.operationId
+            );
+
+            assert.strictEqual(
+                coordinator.inspect().events.some(
+                    function(event) {
+                        return (
+                            event.type ===
+                                "external-task-rearmed" &&
+                            event.taskId ===
+                                "sage-inline-initial" &&
+                            event.details
+                                .previousOperationId ===
+                                previousOperationId
+                        );
+                    }
+                ),
+                true
+            );
+        });
+
+
         it("preserves canonical Sage terminal metadata", function() {
             var coordinator =
                 adapter.create();

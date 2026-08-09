@@ -843,10 +843,13 @@ function discoverInitialInlineSage(
         .placeholders[
             placeholderId
         ] = {
+            attempt: 1,
             started: false,
             mmlApplied: false,
             terminal: false,
-            terminalState: null
+            terminalState: null,
+            failed: false,
+            terminalHistory: []
         };
 
     initialInlineSageRuntime
@@ -913,6 +916,13 @@ function settleInitialInlineSage(
     placeholder.terminal = true;
     placeholder.terminalState =
         terminalState;
+    placeholder.failed = !!failed;
+
+    placeholder.terminalHistory.push({
+        attempt: placeholder.attempt,
+        terminalState: terminalState,
+        failed: !!failed
+    });
 
     initialInlineSageRuntime
         .settled += 1;
@@ -926,6 +936,73 @@ function settleInitialInlineSage(
     }
 
     reportInitialInlineSageProgress();
+}
+
+
+function reopenInitialInlineSage(
+    placeholderId
+) {
+    var placeholder =
+        initialInlineSageRuntime
+            .placeholders[
+                placeholderId
+            ];
+
+    if (
+        !placeholder ||
+        !placeholder.terminal ||
+        !placeholder.failed
+    ) {
+        return false;
+    }
+
+    /*
+     * These aggregate counters describe the current visible attempt,
+     * not cumulative retry history. Remove the prior attempt's current
+     * contributions before reopening the placeholder.
+     */
+    if (placeholder.started) {
+        initialInlineSageRuntime
+            .started -= 1;
+    }
+
+    if (placeholder.mmlApplied) {
+        initialInlineSageRuntime
+            .mmlApplied -= 1;
+    }
+
+    placeholder.attempt += 1;
+    placeholder.started = false;
+    placeholder.mmlApplied = false;
+    placeholder.terminal = false;
+    placeholder.terminalState = null;
+    placeholder.failed = false;
+
+    initialInlineSageRuntime
+        .settled -= 1;
+    initialInlineSageRuntime
+        .failed -= 1;
+
+    initialInlineSageRuntime
+        .reportedTerminal = false;
+    initialInlineSageRuntime
+        .reportedDiscovered = false;
+
+    pageRuntime.operation(
+        "sage-placeholder",
+        "retry-reopened",
+        {
+            placeholderId:
+                placeholderId,
+            attempt:
+                placeholder.attempt,
+            priorTerminalAttempts:
+                placeholder
+                    .terminalHistory.length
+        }
+    );
+
+    return true;
 }
 
 
@@ -1880,6 +1957,40 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
                     renderGroupPanel(state);
                 }
             });
+
+            /*
+             * Reopen failed initial-placeholder lifecycle records before
+             * putting their spinners back. Prior terminal attempts remain
+             * preserved in each placeholder's terminalHistory.
+             */
+            var reopenedInitialPlaceholders = 0;
+
+            retryItems.forEach(function(item) {
+                if (
+                    reopenInitialInlineSage(
+                        item.entry.id
+                    )
+                ) {
+                    reopenedInitialPlaceholders += 1;
+                }
+            });
+
+            if (
+                reopenedInitialPlaceholders > 0
+            ) {
+                if (
+                    pageRuntime
+                        .beginInitialInlineSageRetry
+                ) {
+                    pageRuntime
+                        .beginInitialInlineSageRetry({
+                            placeholders:
+                                reopenedInitialPlaceholders
+                        });
+                }
+
+                reportInitialInlineSageProgress();
+            }
 
             /*
              * Restore every affected expression and show its

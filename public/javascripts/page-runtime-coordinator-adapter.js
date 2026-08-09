@@ -1267,6 +1267,100 @@ function createPassiveCoordinator(options) {
             );
         };
 
+    coordinator.beginInitialInlineSageAttempt =
+        function(details) {
+            var task =
+                coordinator.inspect()
+                    .tasks[
+                        "sage-inline-initial"
+                    ];
+
+            if (!task) {
+                return false;
+            }
+
+            if (
+                task.state === "waiting" &&
+                task.operationId !== null
+            ) {
+                coordinator.record(
+                    "initial-inline-sage-attempt-observed",
+                    "sage-inline-initial",
+                    {
+                        attempt: task.attempt,
+                        operationId:
+                            task.operationId,
+                        rearmed: false,
+                        placeholders:
+                            details &&
+                            typeof details
+                                .placeholders ===
+                                "number"
+                                ? details
+                                    .placeholders
+                                : null
+                    }
+                );
+
+                return {
+                    attempt: task.attempt,
+                    operationId:
+                        task.operationId,
+                    rearmed: false
+                };
+            }
+
+            if (
+                task.state === "degraded" ||
+                task.state === "failed" ||
+                task.state === "timed-out"
+            ) {
+                var rearmed =
+                    coordinator.rearmExternalTask(
+                        "sage-inline-initial",
+                        {
+                            reason:
+                                "initial-inline-sage-retry",
+                            placeholders:
+                                details &&
+                                typeof details
+                                    .placeholders ===
+                                    "number"
+                                    ? details
+                                        .placeholders
+                                    : null
+                        }
+                    );
+
+                if (!rearmed) {
+                    return false;
+                }
+
+                return {
+                    attempt: rearmed.attempt,
+                    operationId:
+                        rearmed.operationId,
+                    rearmed: true
+                };
+            }
+
+            coordinator.record(
+                "initial-inline-sage-attempt-begin-rejected",
+                "sage-inline-initial",
+                {
+                    state: task.state,
+                    attempt: task.attempt,
+                    operationId:
+                        task.operationId,
+                    reason:
+                        "initial-inline-sage-task-not-retryable"
+                }
+            );
+
+            return false;
+        };
+
+
     coordinator.beginCanonicalSageAttempt =
         function(details) {
             var task =

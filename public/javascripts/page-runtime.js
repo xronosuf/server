@@ -990,6 +990,69 @@ function startInitialInlineSageReadinessWatchdog() {
 }
 
 
+function beginInitialInlineSageRetry(
+    details
+) {
+    var watchdog =
+        readinessWatchdogs.initialInlineSage;
+    var operation = false;
+
+    if (
+        passiveCoordinator &&
+        typeof passiveCoordinator
+            .beginInitialInlineSageAttempt ===
+            "function"
+    ) {
+        operation =
+            passiveCoordinator
+                .beginInitialInlineSageAttempt(
+                    details || null
+                );
+    }
+
+    if (!operation) {
+        return false;
+    }
+
+    if (watchdog.timer !== null) {
+        window.clearTimeout(
+            watchdog.timer
+        );
+        watchdog.timer = null;
+    }
+
+    watchdog.completed = false;
+    watchdog.completedAtElapsedMs = null;
+    watchdog.terminalState = null;
+    watchdog.timedOut = false;
+    watchdog.timedOutAtElapsedMs = null;
+
+    record(
+        "event",
+        "initial-inline-sage-retry-begun",
+        undefined,
+        {
+            attempt:
+                operation.attempt,
+            operationId:
+                operation.operationId,
+            rearmed:
+                operation.rearmed === true,
+            placeholders:
+                details &&
+                typeof details.placeholders ===
+                    "number"
+                    ? details.placeholders
+                    : null
+        }
+    );
+
+    startInitialInlineSageReadinessWatchdog();
+
+    return operation;
+}
+
+
 function event(name, details) {
     return record("event", name, undefined, details);
 }
@@ -3049,6 +3112,8 @@ var api = {
         observeInitialMathJaxProcessError,
     completeInitialMathJaxProcess:
         completeInitialMathJaxProcess,
+    beginInitialInlineSageRetry:
+        beginInitialInlineSageRetry,
     configureMathJaxStartupUi:
         configureMathJaxStartupUi,
     requestMathJaxStartupUiFinalization:
@@ -3096,6 +3161,8 @@ window.xronosObserveInitialMathJaxProcessError =
     observeInitialMathJaxProcessError;
 window.xronosCompleteInitialMathJaxProcess =
     completeInitialMathJaxProcess;
+window.xronosBeginInitialInlineSageRetry =
+    beginInitialInlineSageRetry;
 window.xronosConfigureMathJaxStartupUi =
     configureMathJaxStartupUi;
 window.xronosRequestMathJaxStartupUiFinalization =

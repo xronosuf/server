@@ -5,10 +5,11 @@ Coordinator project after a chat/session boundary.
 
 **Last reconciled:** 2026-08-09
 **Working branch:** `page-runtime-coordinator`
-**Last known local HEAD:** `e794671` — `Harden inline Sage visible failure handling`
-**Last known remote HEAD:** `10f6eb5` — `Settle timed-out initial inline Sage visibly`
-**Last known branch relation:** local ahead 5
-**Pushed?** No; the five canonical-only/reliability commits remain local.
+**Last known local HEAD:** `7c5913f` — `Close final canonical Sage reliability gaps`
+**Last known remote HEAD:** `7c5913f` — `Close final canonical Sage reliability gaps`
+**Last known branch relation:** synchronized
+**Pushed?** Yes; the current coordinator checkpoint is backed up on
+`origin/page-runtime-coordinator`.
 
 Always verify Git state before changing code.
 
@@ -41,6 +42,8 @@ one.
 ## 3. Current branch checkpoint
 
 ```text
+7c5913f Close final canonical Sage reliability gaps
+fdb015b Reconcile page runtime coordinator documentation
 e794671 Harden inline Sage visible failure handling
 43f97e0 Make canonical browser Sage unconditional
 03603fe Remove legacy browser Sage executor
@@ -56,8 +59,7 @@ efbdced Record failed-render browser validation
 785cd8a Block interaction after failed initial MathJax render
 ```
 
-Remote remains at `10f6eb5`.
-
+Local and remote are synchronized at `7c5913f`.
 ## 4. Coordinator foundation already completed
 
 Implemented foundation includes:
@@ -223,6 +225,7 @@ Faults:
 - `missing-input-id`
 - `missing-placeholder`
 - `stale-attempt`
+- `page-result-error`
 
 Browser validation on the rebuilt bundle:
 
@@ -230,13 +233,13 @@ Browser validation on the rebuilt bundle:
 - 03 missing input ID: PASS
 - 03 missing placeholder: PASS
 - 03 stale attempt after explicit Retry: PASS
+- 03 canonical page-result parsing fault followed by successful Retry: PASS
 - 04 repeated `Another`: PASS
 - 05 mixed Sage/answer/author-JS lifecycle: PASS
 
 The stale-attempt runtime showed attempt 2 rendering successfully, followed by
 the delayed attempt 1 being ignored, with final state/content/interaction/page
 readiness all ready and final coordinator/legacy comparison matching.
-
 ## 11. Browser build environment
 
 The browser serves `public/javascripts/main.min.js`; source changes are not
@@ -256,15 +259,15 @@ Use project-local Gulp inside `devximserver`.
 
 The host Node 8/global-Gulp environment is not a valid browser build path.
 
-Latest focused tests at `e794671`:
+Latest focused tests at `7c5913f`:
 
 ```text
+Sage reliability policy:            4
 sage-inline fault probe:            6
 page-runtime coordinator adapter:  42
 initial MathJax fault probe:         5
-total:                              53 passing
+total:                              57 passing
 ```
-
 ## 11A. Fresh Sage reliability audit before push
 
 After commit `fdb015b`, a new read-only Sage audit rechecked all known failure
@@ -395,11 +398,13 @@ Keep separate from the next coordinator patch:
 
 The Page Runtime Coordinator has progressed from passive observation to active
 startup ownership and explicit initial MathJax/Sage lifecycle contracts. The
-current local five-commit series removes obsolete standalone browser Sage,
-enforces canonical-only execution, makes canonical Sage unconditional, and
-hardens visible Sage failure/retry behavior through `e794671`. Current-publisher
-fixtures 03/04/05 pass on the rebuilt bundle, including missing-input-ID,
-missing-placeholder, stale-attempt, and repeated-Another cases. The next
-substantive lifecycle is the existing `initial-math-answers` implementation:
-inventory the remaining ownership, stale/duplicate, failure, dependency, and
-repair boundaries before changing code.
+pushed checkpoint through `7c5913f` removes obsolete standalone browser Sage,
+enforces canonical-only execution, makes canonical Sage unconditional, hardens
+visible Sage failure/retry behavior, and closes the final canonical Sage
+reliability audit gaps. Current-publisher fixtures 03/04/05 pass on the rebuilt
+bundle, including missing-input-ID, missing-placeholder, stale-attempt,
+page-result-error recovery, and repeated-Another cases. The focused suite passes
+57 tests. The next substantive lifecycle is the existing
+`initial-math-answers` implementation: inventory the remaining ownership,
+stale/duplicate, failure, dependency, and repair boundaries before changing
+code.

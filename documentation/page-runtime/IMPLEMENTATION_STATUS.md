@@ -17,23 +17,14 @@ Canvas grade passback.
 
 ```text
 branch: page-runtime-coordinator
-local HEAD: e794671 Harden inline Sage visible failure handling
-remote HEAD: 10f6eb5 Settle timed-out initial inline Sage visibly
-branch relation: local ahead 5
+local HEAD: 7c5913f Close final canonical Sage reliability gaps
+remote HEAD: 7c5913f Close final canonical Sage reliability gaps
+branch relation: synchronized
 ```
 
-Local-only commits after the remote checkpoint:
-
-```text
-7a97229 Remove obsolete standalone Sage compatibility
-b9fed4d Enforce canonical-only browser Sage execution
-03603fe Remove legacy browser Sage executor
-43f97e0 Make canonical browser Sage unconditional
-e794671 Harden inline Sage visible failure handling
-```
-
-Nothing in that five-commit series has been pushed yet.
-
+The canonical-only Sage cleanup, visible reliability hardening, documentation
+reconciliation, and final Sage reliability fixes through `7c5913f` are pushed
+to `origin/page-runtime-coordinator`.
 ## Current coordinator model
 
 External leaves:
@@ -212,11 +203,11 @@ Supported faults:
 - `missing-input-id`
 - `missing-placeholder`
 - `stale-attempt`
+- `page-result-error`
 
 The request is consumed before parse/injection so a malformed or successful
 probe does not repeat on reload.
-
-## Browser validation through `e794671`
+## Browser validation through `7c5913f`
 
 After rebuilding the actual served browser bundle:
 
@@ -228,6 +219,8 @@ After rebuilding the actual served browser bundle:
 - stale explicit attempt: Retry attempt 2 succeeds; delayed attempt 1 later
   reports `stale-attempt-ignored`; attempt 1 cannot overwrite attempt 2; final
   readiness all ready and coordinator/legacy comparison matches: PASS
+- canonical page-result parsing fault: visible retryable error appears; explicit
+  Retry starts a fresh attempt and normal Sage completes successfully: PASS
 
 ### `04-sage-generation-another`
 
@@ -239,7 +232,6 @@ After rebuilding the actual served browser bundle:
 - Sage: PASS
 - answers: PASS
 - author JavaScript interaction: PASS
-
 ## Browser build environment
 
 The browser serves `public/javascripts/main.min.js`; changing `main.js` alone is
@@ -259,16 +251,16 @@ Use the project-local Gulp executable inside `devximserver`.
 
 The host Node 8/global-Gulp environment cannot build the current bundle.
 
-Final focused validation at `e794671`:
+Latest focused validation at `7c5913f`:
 
 ```text
+Sage reliability policy:            4 passing
 sage-inline fault probe:            6 passing
 page-runtime coordinator adapter:  42 passing
 initial MathJax fault probe:         5 passing
                                     ----------
-total:                              53 passing
+total:                              57 passing
 ```
-
 ## Fresh Sage reliability audit at `fdb015b`
 
 A final read-only Sage pipeline audit was run after the documentation

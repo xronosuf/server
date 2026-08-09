@@ -1670,14 +1670,57 @@ function canonicalPageSageFallback(
     legacyCode,
     reason
 ) {
-    canonicalPageSageRuntime
-        .legacyFallbacks += 1;
-
+    /*
+     * Canonical-only enforcement boundary.
+     *
+     * Historically this helper escaped to the older stateless Sage executor
+     * whenever canonical identity or mapping failed. That allowed a canonical
+     * integrity failure to silently switch execution models.
+     *
+     * Keep this helper temporarily so every existing unresolved branch stays
+     * explicit and observable, but reject instead of executing legacy Sage.
+     * Browser validation can then expose any legitimate call class that still
+     * needs deterministic canonical mapping.
+     */
     canonicalPageSageRuntime
         .lastFallback = reason;
 
-    return exports.sage(
-        legacyCode
+    var code =
+        reason &&
+        reason.code
+            ? reason.code
+            : "canonical-only-unresolved-call";
+
+    var message =
+        reason &&
+        reason.message
+            ? reason.message
+            : "Canonical Sage could not resolve this call without legacy execution.";
+
+    return Promise.reject(
+        canonicalPageSageFallbackError(
+            code,
+            message,
+            {
+                reason:
+                    reason || null,
+
+                /*
+                 * Record shape only. Do not expose authored Sage code in
+                 * coordinator-visible diagnostics.
+                 */
+                legacyCodeCharacters:
+                    legacyCode === undefined ||
+                    legacyCode === null
+                        ? 0
+                        : String(
+                            legacyCode
+                        ).length,
+
+                legacyExecutionBlocked:
+                    true
+            }
+        )
     );
 }
 

@@ -107,7 +107,7 @@ block activity-title
 //- eigenlijke inhoud
 block activity
   div.main-activity
-        main.activity(id="theActivity", data-hash=activity.hash, data-repository-name=repositoryName, data-commit=activity.commit, data-path=activity.path, data-title=activity.title, role="main", data-learner=learner ? learner._id : undefined, data-xourse-path=activity.xourse ? activity.xourse.path : undefined, data-xourse-url=activity.xourse ? (repositoryName + '/' + activity.xourse.path) : undefined, data-points=activity.xourse ? activity.xourse.totalPoints : undefined, data-randomization-scope=randomizationScope, data-scoped-sage-base-seeds=scopedSageBaseSeeds ? "true" : "false", data-canonical-page-sage-enabled=canonicalPageSageEnabled ? "true" : "false")
+        main.activity(id="theActivity", data-hash=activity.hash, data-repository-name=repositoryName, data-commit=activity.commit, data-path=activity.path, data-title=activity.title, role="main", data-learner=learner ? learner._id : undefined, data-xourse-path=activity.xourse ? activity.xourse.path : undefined, data-xourse-url=activity.xourse ? (repositoryName + '/' + activity.xourse.path) : undefined, data-points=activity.xourse ? activity.xourse.totalPoints : undefined, data-randomization-scope=randomizationScope, data-scoped-sage-base-seeds=scopedSageBaseSeeds ? "true" : "false")
           .activity-body#page-content
             | !{activity.html}            
             //- needed here ? next-and-previous is also in navmenu ...

@@ -208,14 +208,6 @@ return false;
 }
 
 
-function canonicalPageSageEnabled() {
-    return (
-        config.canonicalPageSageEnabled ===
-        true
-    );
-}
-
-
 exports.renderWithETag = function(req, res, next) {
     var activity = req.activity;
 
@@ -227,14 +219,10 @@ if (err) {
 
 req.randomizationScope = randomizationScope;
 req.scopedSageBaseSeeds = scopedSageBaseSeedsEnabled();
-req.canonicalPageSageEnabled =
-    canonicalPageSageEnabled();
-
 var etag = 'sha:' + activity.hash +
     ':application-version:' + config.version +
     ':randomization-scope:' + randomizationScope +
-    ':scoped-sage-base-seeds:' + req.scopedSageBaseSeeds +
-    ':canonical-page-sage:' + req.canonicalPageSageEnabled;
+    ':scoped-sage-base-seeds:' + req.scopedSageBaseSeeds;
 
 ETag.checkIfNoneMatch( req, res, etag,
        function( setETag ) {
@@ -330,7 +318,6 @@ exports.render = function(req, res, next) {
 				 previousActivity: previousActivity,
 				 randomizationScope: req.randomizationScope || fallbackRandomizationScope(req.repositoryName),
 				 scopedSageBaseSeeds: req.scopedSageBaseSeeds || scopedSageBaseSeedsEnabled(),
-				 canonicalPageSageEnabled: typeof req.canonicalPageSageEnabled === 'boolean' ? req.canonicalPageSageEnabled : canonicalPageSageEnabled(),
 				 url: req.url });		    
 	});
     } else {
@@ -344,7 +331,6 @@ exports.render = function(req, res, next) {
 			     user: req.user,			     
 				 randomizationScope: req.randomizationScope || fallbackRandomizationScope(req.repositoryName),
 				 scopedSageBaseSeeds: req.scopedSageBaseSeeds || scopedSageBaseSeedsEnabled(),
-				 canonicalPageSageEnabled: typeof req.canonicalPageSageEnabled === 'boolean' ? req.canonicalPageSageEnabled : canonicalPageSageEnabled(),
 				 url: req.url });
     }
 };

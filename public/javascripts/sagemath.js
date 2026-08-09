@@ -11,36 +11,26 @@ var seed = null;
 var currentSeedCode = "";
 
 
-// Browser-side exact-code cache and queue.
-// This avoids duplicate network calls from the same page load and prevents
-// a page from stampeding the local SageCell service with many simultaneous
-// requests during MathJax/Xronos startup.
 var sageAuthRefreshInFlight = null;
 
-// Browser-side batching for expression-style Sage requests.
-// Many Xronos pages ask for many display values after one large common setup.
-// We batch those display expressions into one SageCell request when possible.
 
 var sagePageManifestCompilerVersion = 4;
 
 var initialSagePageManifestSnapshot = null;
-
-var canonicalPageSageStorageKey =
-    "xronos-canonical-page-sage";
 
 var canonicalPageSageMaxCompiledUtf8Bytes =
     60000;
 
 var canonicalPageSageRuntime = {
     initialPromise: null,
-    permanentFallbackReason: null,
+    permanentFailureReason: null,
     status: "idle",
     requestCount: 0,
     mappedCalls: 0,
     postInitialReplayMappedCalls: 0,
     canonicalResolutions: 0,
     canonicalRejections: 0,
-    legacyFallbacks: 0,
+    invariantFailures: 0,
     compiledCharacters: 0,
     compiledUtf8Bytes: 0,
     compiledDebugHash: null,
@@ -49,7 +39,7 @@ var canonicalPageSageRuntime = {
     requestDurationMilliseconds: null,
     resultCount: 0,
     expressionFailureCount: 0,
-    lastFallback: null,
+    lastInvariantFailure: null,
     lastError: null
 };
 
@@ -282,7 +272,7 @@ function canonicalPageSageNewGeneration(
         requestPromise:
             null,
 
-        permanentFallbackReason:
+        permanentFailureReason:
             null,
 
         callMappings:
@@ -317,7 +307,7 @@ function canonicalPageSageNewGeneration(
         canonicalRejections:
             0,
 
-        legacyFallbacks:
+        invariantFailures:
             0,
 
         compiledCharacters:
@@ -344,7 +334,7 @@ function canonicalPageSageNewGeneration(
         expressionFailureCount:
             0,
 
-        lastFallback:
+        lastInvariantFailure:
             null,
 
         lastError:
@@ -360,15 +350,6 @@ function canonicalPageSageNewGeneration(
 function prepareCanonicalPageSageGeneration(
     newSeed
 ) {
-    if (
-        !canonicalPageSageFeatureEnabled()
-    ) {
-        canonicalPageSageActiveGeneration =
-            null;
-
-        return null;
-    }
-
     setCanonicalPageSageAnotherBusy(
         true
     );
@@ -1566,50 +1547,6 @@ function executeSagePageManifestPreview(
 }
 
 
-function canonicalPageSageServerEnabled() {
-    return (
-        $("main.activity")
-            .first()
-            .attr(
-                "data-canonical-page-sage-enabled"
-            ) === "true"
-    );
-}
-
-
-function canonicalPageSageFeatureEnabled() {
-    /*
-     * A live JavaScript boolean remains the strongest diagnostic override.
-     * It can explicitly enable or disable the feature for the current page.
-     */
-    if (
-        typeof window.xronosCanonicalPageSage ===
-        "boolean"
-    ) {
-        return window.xronosCanonicalPageSage;
-    }
-
-    /*
-     * The server-controlled rollout takes precedence over browser storage.
-     * A historical localStorage value of "false" therefore cannot block a
-     * global rollout.
-     */
-    if (canonicalPageSageServerEnabled()) {
-        return true;
-    }
-
-    try {
-        return (
-            window.localStorage.getItem(
-                canonicalPageSageStorageKey
-            ) === "true"
-        );
-    } catch (err) {
-        return false;
-    }
-}
-
-
 function canonicalPageSageExpressionEntries(
     manifest
 ) {
@@ -1655,39 +1592,37 @@ function canonicalPageSageSimpleError(err) {
 }
 
 
-function canonicalPageSageFallback(
-    legacyCode,
+function canonicalPageSageInvariantFailure(
+    requestedCode,
     reason
 ) {
     /*
-     * Canonical-only enforcement boundary.
+     * Canonical invariant boundary.
      *
-     * Historically this helper escaped to the older stateless Sage executor
-     * whenever canonical identity or mapping failed. That allowed a canonical
-     * integrity failure to silently switch execution models.
-     *
-     * Keep this helper temporarily so every existing unresolved branch stays
-     * explicit and observable, but reject instead of executing legacy Sage.
-     * Browser validation can then expose any legitimate call class that still
-     * needs deterministic canonical mapping.
+     * Every live MathJax Sage call must resolve to a deterministic canonical
+     * operation. Missing identity, ambiguous mapping, or invalid lifecycle
+     * state is rejected explicitly and recorded for diagnostics.
      */
     canonicalPageSageRuntime
-        .lastFallback = reason;
+        .invariantFailures += 1;
+
+    canonicalPageSageRuntime
+        .lastInvariantFailure = reason;
 
     var code =
         reason &&
         reason.code
             ? reason.code
-            : "canonical-only-unresolved-call";
+            : "canonical-unresolved-call";
 
     var message =
         reason &&
         reason.message
             ? reason.message
-            : "Canonical Sage could not resolve this call without legacy execution.";
+            : "Canonical Sage could not resolve this call to a valid canonical operation.";
 
     return Promise.reject(
-        canonicalPageSageFallbackError(
+        canonicalPageSageInvariantError(
             code,
             message,
             {
@@ -1698,15 +1633,15 @@ function canonicalPageSageFallback(
                  * Record shape only. Do not expose authored Sage code in
                  * coordinator-visible diagnostics.
                  */
-                legacyCodeCharacters:
-                    legacyCode === undefined ||
-                    legacyCode === null
+                requestedCodeCharacters:
+                    requestedCode === undefined ||
+                    requestedCode === null
                         ? 0
                         : String(
-                            legacyCode
+                            requestedCode
                         ).length,
 
-                legacyExecutionBlocked:
+                canonicalInvariant:
                     true
             }
         )
@@ -1714,22 +1649,22 @@ function canonicalPageSageFallback(
 }
 
 
-function canonicalPageSageFallbackError(
+function canonicalPageSageInvariantError(
     code,
     message,
     details
 ) {
     return {
         ename:
-            "XronosCanonicalPageSageFallback",
+            "XronosCanonicalPageSageInvariantError",
 
         evalue:
             message,
 
-        xronosCanonicalFallback:
+        xronosCanonicalInvariant:
             true,
 
-        fallbackCode:
+        invariantCode:
             code,
 
         details:
@@ -1845,9 +1780,9 @@ function initialCanonicalPageSageFailureDetails(
             err && err.ename
                 ? err.ename
                 : null,
-        fallbackCode:
-            err && err.fallbackCode
-                ? err.fallbackCode
+        invariantCode:
+            err && err.invariantCode
+                ? err.invariantCode
                 : null
     };
 }
@@ -1858,17 +1793,17 @@ function reportInitialCanonicalPageSageFailure(
 ) {
     if (
         err &&
-        err.xronosCanonicalFallback
+        err.xronosCanonicalInvariant
     ) {
         canonicalPageSageRuntime.status =
-            "fallback";
+            "invariant-failure";
     }
 
     pageRuntime.component(
         "sage-initial",
         err &&
-        err.xronosCanonicalFallback
-            ? "fallback"
+        err.xronosCanonicalInvariant
+            ? "invariant-failure"
             : "failed",
         initialCanonicalPageSageFailureDetails(
             err
@@ -1883,35 +1818,35 @@ function executeInitialCanonicalPageSage() {
 
     if (
         canonicalPageSageRuntime
-            .permanentFallbackReason
+            .permanentFailureReason
     ) {
         reportInitialCanonicalPageSageFailure(
             canonicalPageSageRuntime
-                .permanentFallbackReason
+                .permanentFailureReason
         );
 
         return Promise.reject(
             canonicalPageSageRuntime
-                .permanentFallbackReason
+                .permanentFailureReason
         );
     }
 
     if (!manifest) {
         canonicalPageSageRuntime
-            .permanentFallbackReason =
-                canonicalPageSageFallbackError(
+            .permanentFailureReason =
+                canonicalPageSageInvariantError(
                     "missing-snapshot",
                     "The pre-MathJax Sage manifest was not captured."
                 );
 
         reportInitialCanonicalPageSageFailure(
             canonicalPageSageRuntime
-                .permanentFallbackReason
+                .permanentFailureReason
         );
 
         return Promise.reject(
             canonicalPageSageRuntime
-                .permanentFallbackReason
+                .permanentFailureReason
         );
     }
 
@@ -1930,20 +1865,20 @@ function executeInitialCanonicalPageSage() {
 
     if (expressionEntries.length === 0) {
         canonicalPageSageRuntime
-            .permanentFallbackReason =
-                canonicalPageSageFallbackError(
+            .permanentFailureReason =
+                canonicalPageSageInvariantError(
                     "empty-manifest",
                     "The initial Sage manifest contains no expressions."
                 );
 
         reportInitialCanonicalPageSageFailure(
             canonicalPageSageRuntime
-                .permanentFallbackReason
+                .permanentFailureReason
         );
 
         return Promise.reject(
             canonicalPageSageRuntime
-                .permanentFallbackReason
+                .permanentFailureReason
         );
     }
 
@@ -1956,8 +1891,8 @@ function executeInitialCanonicalPageSage() {
 
     if (parseErrors.length > 0) {
         canonicalPageSageRuntime
-            .permanentFallbackReason =
-                canonicalPageSageFallbackError(
+            .permanentFailureReason =
+                canonicalPageSageInvariantError(
                     "manifest-parse-error",
                     "The initial Sage manifest contains an expression parse error.",
                     {
@@ -1968,12 +1903,12 @@ function executeInitialCanonicalPageSage() {
 
         reportInitialCanonicalPageSageFailure(
             canonicalPageSageRuntime
-                .permanentFallbackReason
+                .permanentFailureReason
         );
 
         return Promise.reject(
             canonicalPageSageRuntime
-                .permanentFallbackReason
+                .permanentFailureReason
         );
     }
 
@@ -2023,10 +1958,10 @@ function executeInitialCanonicalPageSage() {
                             canonicalPageSageMaxCompiledUtf8Bytes
                         ) {
                             canonicalPageSageRuntime
-                                .permanentFallbackReason =
-                                    canonicalPageSageFallbackError(
+                                .permanentFailureReason =
+                                    canonicalPageSageInvariantError(
                                         "compiled-size-limit",
-                                        "The canonical Sage page program exceeds the temporary live-integration size limit.",
+                                        "The canonical Sage page program exceeds the configured request safety limit.",
                                         {
                                             compiledUtf8Bytes:
                                                 compiledUtf8Bytes,
@@ -2038,7 +1973,7 @@ function executeInitialCanonicalPageSage() {
 
                             reject(
                                 canonicalPageSageRuntime
-                                    .permanentFallbackReason
+                                    .permanentFailureReason
                             );
 
                             return;
@@ -2221,10 +2156,10 @@ function executeInitialCanonicalPageSage() {
             function(err) {
                 if (
                     err &&
-                    err.xronosCanonicalFallback
+                    err.xronosCanonicalInvariant
                 ) {
                     canonicalPageSageRuntime.status =
-                        "fallback";
+                        "invariant-failure";
                 } else {
                     canonicalPageSageRuntime.status =
                         "error";
@@ -2238,7 +2173,7 @@ function executeInitialCanonicalPageSage() {
                 /*
                  * Network, authorization, and response parsing errors may be
                  * retried through the existing grouped Sage retry controls.
-                 * Permanent eligibility fallbacks remain cached separately.
+                 * Permanent eligibility failures remain cached separately.
                  */
                 canonicalPageSageRuntime.initialPromise =
                     null;
@@ -2257,18 +2192,18 @@ function executeInitialCanonicalPageSage() {
 
 
 
-function canonicalPageSageGenerationFallback(
+function canonicalPageSageGenerationInvariantFailure(
     generation,
-    legacyCode,
+    requestedCode,
     reason
 ) {
     if (generation) {
-        generation.legacyFallbacks += 1;
-        generation.lastFallback = reason;
+        generation.invariantFailures += 1;
+        generation.lastInvariantFailure = reason;
     }
 
-    return canonicalPageSageFallback(
-        legacyCode,
+    return canonicalPageSageInvariantFailure(
+        requestedCode,
         reason
     );
 }
@@ -2621,7 +2556,7 @@ function executeCanonicalPageSageGeneration(
             canonicalPageSageActiveGeneration
     ) {
         return Promise.reject(
-            canonicalPageSageFallbackError(
+            canonicalPageSageInvariantError(
                 "stale-generation",
                 "The requested canonical Sage generation is no longer active."
             )
@@ -2630,11 +2565,11 @@ function executeCanonicalPageSageGeneration(
 
     if (
         generation
-            .permanentFallbackReason
+            .permanentFailureReason
     ) {
         return Promise.reject(
             generation
-                .permanentFallbackReason
+                .permanentFailureReason
         );
     }
 
@@ -2646,15 +2581,15 @@ function executeCanonicalPageSageGeneration(
     }
 
     if (!manifest) {
-        generation.permanentFallbackReason =
-            canonicalPageSageFallbackError(
+        generation.permanentFailureReason =
+            canonicalPageSageInvariantError(
                 "missing-snapshot",
                 "The pre-MathJax Sage manifest was not captured."
             );
 
         return Promise.reject(
             generation
-                .permanentFallbackReason
+                .permanentFailureReason
         );
     }
 
@@ -2666,15 +2601,15 @@ function executeCanonicalPageSageGeneration(
     if (
         expressionEntries.length === 0
     ) {
-        generation.permanentFallbackReason =
-            canonicalPageSageFallbackError(
+        generation.permanentFailureReason =
+            canonicalPageSageInvariantError(
                 "empty-manifest",
                 "The Sage page manifest contains no expressions."
             );
 
         return Promise.reject(
             generation
-                .permanentFallbackReason
+                .permanentFailureReason
         );
     }
 
@@ -2686,8 +2621,8 @@ function executeCanonicalPageSageGeneration(
         );
 
     if (parseErrors.length > 0) {
-        generation.permanentFallbackReason =
-            canonicalPageSageFallbackError(
+        generation.permanentFailureReason =
+            canonicalPageSageInvariantError(
                 "manifest-parse-error",
                 "The Sage page manifest contains an expression parse error.",
                 {
@@ -2698,7 +2633,7 @@ function executeCanonicalPageSageGeneration(
 
         return Promise.reject(
             generation
-                .permanentFallbackReason
+                .permanentFailureReason
         );
     }
 
@@ -2742,10 +2677,10 @@ function executeCanonicalPageSageGeneration(
         compiledUtf8Bytes >
         canonicalPageSageMaxCompiledUtf8Bytes
     ) {
-        generation.permanentFallbackReason =
-            canonicalPageSageFallbackError(
+        generation.permanentFailureReason =
+            canonicalPageSageInvariantError(
                 "compiled-size-limit",
-                "The canonical Sage page program exceeds the temporary live-integration size limit.",
+                "The canonical Sage page program exceeds the configured request safety limit.",
                 {
                     compiledUtf8Bytes:
                         compiledUtf8Bytes,
@@ -2763,7 +2698,7 @@ function executeCanonicalPageSageGeneration(
 
         return Promise.reject(
             generation
-                .permanentFallbackReason
+                .permanentFailureReason
         );
     }
 
@@ -2950,13 +2885,13 @@ function executeCanonicalPageSageGeneration(
 
                 if (
                     err &&
-                    err.xronosCanonicalFallback
+                    err.xronosCanonicalInvariant
                 ) {
                     generation.status =
-                        "fallback";
+                        "invariant-failure";
 
                     canonicalPageSageRuntime.status =
-                        "fallback";
+                        "invariant-failure";
                 } else {
                     generation.status =
                         "error";
@@ -3035,7 +2970,7 @@ function activateCanonicalPageSageGeneration(
  * page manifest.
  *
  * This is passive runtime metadata. It does not choose the execution path or
- * change fallback behavior.
+ * change canonical resolution behavior.
  */
 exports.describeMathJaxSageCall =
     function(traceEntry) {
@@ -3112,24 +3047,12 @@ exports.describeMathJaxSageCall =
  * Resolve one MathJax Sage macro call.
  *
  * The initial full MathJax pass has a proven exact ordered mapping to the
- * immutable pre-MathJax manifest. Only those first manifest-sized calls use
- * the canonical page request. Later calls intentionally retain the deployed
- * legacy behavior until deterministic dynamic generations are implemented.
+ * immutable pre-MathJax manifest. Later replay and generation calls must map
+ * deterministically to canonical manifest entries; unresolved calls are
+ * treated as canonical invariant failures.
  */
 exports.resolveMathJaxSageCall =
-    function(traceEntry, legacyCode) {
-        if (
-            !canonicalPageSageFeatureEnabled()
-        ) {
-            return canonicalPageSageFallback(
-                legacyCode,
-                {
-                    code:
-                        "feature-disabled"
-                }
-            );
-        }
-
+    function(traceEntry, requestedCode) {
         var manifest =
             initialSagePageManifestSnapshot;
 
@@ -3143,8 +3066,8 @@ exports.resolveMathJaxSageCall =
             typeof traceEntry.callIndex !==
                 "number"
         ) {
-            return canonicalPageSageFallback(
-                legacyCode,
+            return canonicalPageSageInvariantFailure(
+                requestedCode,
                 {
                     code:
                         "missing-trace-entry"
@@ -3171,8 +3094,8 @@ exports.resolveMathJaxSageCall =
                     initialEntry
                 )
             ) {
-                return canonicalPageSageFallback(
-                    legacyCode,
+                return canonicalPageSageInvariantFailure(
+                    requestedCode,
                     {
                         code:
                             "manifest-call-mismatch",
@@ -3220,13 +3143,13 @@ exports.resolveMathJaxSageCall =
                     function(err) {
                         if (
                             err &&
-                            err.xronosCanonicalFallback
+                            err.xronosCanonicalInvariant
                         ) {
-                            return canonicalPageSageFallback(
-                                legacyCode,
+                            return canonicalPageSageInvariantFailure(
+                                requestedCode,
                                 {
                                     code:
-                                        err.fallbackCode,
+                                        err.invariantCode,
 
                                     message:
                                         err.evalue,
@@ -3256,8 +3179,8 @@ exports.resolveMathJaxSageCall =
          *   3. expression plus latexify identifies exactly one immutable
          *      manifest entry.
          *
-         * Ambiguous, unknown, and genuinely dynamic calls retain the legacy
-         * path below.
+         * Ambiguous or unknown calls fall through to canonical invariant
+         * handling below.
          */
         if (
             traceEntry.callIndex >=
@@ -3265,7 +3188,7 @@ exports.resolveMathJaxSageCall =
             canonicalPageSageRuntime
                 .initialPromise &&
             !canonicalPageSageRuntime
-                .permanentFallbackReason &&
+                .permanentFailureReason &&
             !canonicalPageSageActiveGeneration
         ) {
             var replayEntry =
@@ -3293,13 +3216,13 @@ exports.resolveMathJaxSageCall =
                         function(err) {
                             if (
                                 err &&
-                                err.xronosCanonicalFallback
+                                err.xronosCanonicalInvariant
                             ) {
-                                return canonicalPageSageFallback(
-                                    legacyCode,
+                                return canonicalPageSageInvariantFailure(
+                                    requestedCode,
                                     {
                                         code:
-                                            err.fallbackCode,
+                                            err.invariantCode,
 
                                         message:
                                             err.evalue,
@@ -3350,9 +3273,9 @@ exports.resolveMathJaxSageCall =
             if (!mapping.entry) {
                 return canonicalPageSageTrackGenerationPromise(
                     generation,
-                    canonicalPageSageGenerationFallback(
+                    canonicalPageSageGenerationInvariantFailure(
                         generation,
-                        legacyCode,
+                        requestedCode,
                         mapping.reason
                     )
                 );
@@ -3377,14 +3300,14 @@ exports.resolveMathJaxSageCall =
                     function(err) {
                         if (
                             err &&
-                            err.xronosCanonicalFallback
+                            err.xronosCanonicalInvariant
                         ) {
-                            return canonicalPageSageGenerationFallback(
+                            return canonicalPageSageGenerationInvariantFailure(
                                 generation,
-                                legacyCode,
+                                requestedCode,
                                 {
                                     code:
-                                        err.fallbackCode,
+                                        err.invariantCode,
 
                                     message:
                                         err.evalue,
@@ -3417,8 +3340,8 @@ exports.resolveMathJaxSageCall =
             );
         }
 
-        return canonicalPageSageFallback(
-            legacyCode,
+        return canonicalPageSageInvariantFailure(
+            requestedCode,
             {
                 code:
                     "outside-canonical-generation",
@@ -3433,52 +3356,6 @@ exports.resolveMathJaxSageCall =
     };
 
 
-window.xronosSetCanonicalPageSageEnabled =
-    function(enabled) {
-        var value =
-            enabled === true;
-
-        try {
-            window.localStorage.setItem(
-                canonicalPageSageStorageKey,
-                value
-                    ? "true"
-                    : "false"
-            );
-        } catch (err) {
-            var storageError = {
-                enabled:
-                    false,
-
-                reloadRequired:
-                    false,
-
-                error:
-                    String(err)
-            };
-
-            console.log(storageError);
-
-            return storageError;
-        }
-
-        var result = {
-            enabled:
-                value,
-
-            storageKey:
-                canonicalPageSageStorageKey,
-
-            reloadRequired:
-                true
-        };
-
-        console.log(result);
-
-        return result;
-    };
-
-
 window.xronosInspectCanonicalPageSageRuntime =
     function() {
         var manifest =
@@ -3490,12 +3367,6 @@ window.xronosInspectCanonicalPageSageRuntime =
             );
 
         var result = {
-            enabled:
-                canonicalPageSageFeatureEnabled(),
-
-            serverEnabled:
-                canonicalPageSageServerEnabled(),
-
             scope:
                 "initial-pass-replays-and-explicit-another-generations",
 
@@ -3544,9 +3415,9 @@ window.xronosInspectCanonicalPageSageRuntime =
                 canonicalPageSageRuntime
                     .canonicalRejections,
 
-            legacyFallbacks:
+            invariantFailures:
                 canonicalPageSageRuntime
-                    .legacyFallbacks,
+                    .invariantFailures,
 
             compiledCharacters:
                 canonicalPageSageRuntime
@@ -3572,30 +3443,30 @@ window.xronosInspectCanonicalPageSageRuntime =
                 canonicalPageSageRuntime
                     .expressionFailureCount,
 
-            permanentFallback:
+            permanentFailure:
                 canonicalPageSageRuntime
-                    .permanentFallbackReason
+                    .permanentFailureReason
                     ? {
                         code:
                             canonicalPageSageRuntime
-                                .permanentFallbackReason
-                                .fallbackCode,
+                                .permanentFailureReason
+                                .invariantCode,
 
                         message:
                             canonicalPageSageRuntime
-                                .permanentFallbackReason
+                                .permanentFailureReason
                                 .evalue,
 
                         details:
                             canonicalPageSageRuntime
-                                .permanentFallbackReason
+                                .permanentFailureReason
                                 .details || null
                     }
                     : null,
 
-            lastFallback:
+            lastInvariantFailure:
                 canonicalPageSageRuntime
-                    .lastFallback,
+                    .lastInvariantFailure,
 
             activeGeneration:
                 canonicalPageSageActiveGeneration
@@ -3653,9 +3524,9 @@ window.xronosInspectCanonicalPageSageRuntime =
                             canonicalPageSageActiveGeneration
                                 .canonicalRejections,
 
-                        legacyFallbacks:
+                        invariantFailures:
                             canonicalPageSageActiveGeneration
-                                .legacyFallbacks,
+                                .invariantFailures,
 
                         fullPassCursor:
                             canonicalPageSageActiveGeneration
@@ -3697,30 +3568,30 @@ window.xronosInspectCanonicalPageSageRuntime =
                             canonicalPageSageActiveGeneration
                                 .expressionFailureCount,
 
-                        permanentFallback:
+                        permanentFailure:
                             canonicalPageSageActiveGeneration
-                                .permanentFallbackReason
+                                .permanentFailureReason
                                 ? {
                                     code:
                                         canonicalPageSageActiveGeneration
-                                            .permanentFallbackReason
-                                            .fallbackCode,
+                                            .permanentFailureReason
+                                            .invariantCode,
 
                                     message:
                                         canonicalPageSageActiveGeneration
-                                            .permanentFallbackReason
+                                            .permanentFailureReason
                                             .evalue,
 
                                     details:
                                         canonicalPageSageActiveGeneration
-                                            .permanentFallbackReason
+                                            .permanentFailureReason
                                             .details || null
                                 }
                                 : null,
 
-                        lastFallback:
+                        lastInvariantFailure:
                             canonicalPageSageActiveGeneration
-                                .lastFallback,
+                                .lastInvariantFailure,
 
                         lastError:
                             canonicalPageSageActiveGeneration
@@ -3915,7 +3786,7 @@ function measureExternalSageManifest(
                 compiledCode
             ),
 
-        temporaryLiveLimitUtf8Bytes:
+        requestSafetyLimitUtf8Bytes:
             canonicalPageSageMaxCompiledUtf8Bytes,
 
         exceedsTemporaryLiveLimit:
@@ -5626,41 +5497,28 @@ $(function() {
         $(this);
 
     if (
-        canonicalPageSageFeatureEnabled()
-    ) {
-        if (
-            canonicalPageSageAnotherBusy ||
-            button.data(
-                canonicalPageSageAnotherClaimDataKey
-            ) === true
-        ) {
-            canonicalPageSageIgnoredAnotherClicks += 1;
-            return;
-        }
-
-        /*
-         * Claim the UI action synchronously. Two native click events can
-         * already be queued before the first handler disables the button.
-         */
+        canonicalPageSageAnotherBusy ||
         button.data(
-            canonicalPageSageAnotherClaimDataKey,
-            true
-        );
-
-        button.prop(
-            "disabled",
-            true
-        );
-    } else {
-        $("i", this).addClass(
-            "fa-spin"
-        );
-
-        $("#show-me-another-button i").css(
-            "animation-play-state",
-            "running"
-        );
+            canonicalPageSageAnotherClaimDataKey
+        ) === true
+    ) {
+        canonicalPageSageIgnoredAnotherClicks += 1;
+        return;
     }
+
+    /*
+     * Claim the UI action synchronously. Two native click events can already
+     * be queued before the first handler disables the button.
+     */
+    button.data(
+        canonicalPageSageAnotherClaimDataKey,
+        true
+    );
+
+    button.prop(
+        "disabled",
+        true
+    );
 
     try {
         xronosShowMeAnotherSage();
@@ -5806,8 +5664,6 @@ function describeSageError(err) {
     }
 
     if (
-        ename === "SageBatchParseError" ||
-        ename === "SageBatchMissingResult" ||
         ename === "XronosSageDisplayError"
     ) {
         return {
@@ -5820,7 +5676,6 @@ function describeSageError(err) {
     }
 
     if (
-        ename === "SageBatchExpressionError" ||
         parsed.success === false
     ) {
         return {
@@ -6040,7 +5895,6 @@ function restoreCompletedAnswerMathJax() {
 
 function xronosShowMeAnotherSage() {
     if (
-        canonicalPageSageFeatureEnabled() &&
         canonicalPageSageAnotherBusy
     ) {
         canonicalPageSageIgnoredAnotherClicks += 1;

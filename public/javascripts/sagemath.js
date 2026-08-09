@@ -13,54 +13,6 @@ var currentSeedCode = "";
 var executedSageSilents = false;
 var sageSilentCode = "";
 
-var visibleSageOutputsStarted = false;
-
-var initialVisibleSageRuntime = {
-    discovered: 0,
-    started: 0,
-    applied: 0,
-    failed: 0,
-    settled: 0,
-    reportedSettled: false
-};
-
-function reportInitialVisibleSageSettled() {
-    if (
-        initialVisibleSageRuntime.reportedSettled ||
-        initialVisibleSageRuntime.settled <
-            initialVisibleSageRuntime.started
-    ) {
-        return;
-    }
-
-    initialVisibleSageRuntime.reportedSettled =
-        true;
-
-    pageRuntime.component(
-        "sage-visible-initial",
-        initialVisibleSageRuntime.failed > 0
-            ? "degraded"
-            : "settled",
-        {
-            discovered:
-                initialVisibleSageRuntime
-                    .discovered,
-            started:
-                initialVisibleSageRuntime
-                    .started,
-            applied:
-                initialVisibleSageRuntime
-                    .applied,
-            failed:
-                initialVisibleSageRuntime
-                    .failed,
-            settled:
-                initialVisibleSageRuntime
-                    .settled
-        }
-    );
-}
-
 // Browser-side exact-code cache and queue.
 // This avoids duplicate network calls from the same page load and prevents
 // a page from stampeding the local SageCell service with many simultaneous
@@ -5804,9 +5756,6 @@ return;
             null;
     }
 
-    // Recompute any visible autoevaluated Sage output when the seed changes.
-    processVisibleSageOutputs(true);
-
     reprocessMathjax();
 
     if (activatedCanonicalGeneration) {
@@ -5978,212 +5927,6 @@ pieces.push(sageSilentCode);
 
     return pieces.join("\n\n");
 };
-
-var runVisibleSageOutput = function(
-    output,
-    code,
-    initialRun
-) {
-    output.empty();
-    output.addClass("sagecell-computing");
-
-    if (initialRun) {
-        initialVisibleSageRuntime.started += 1;
-    }
-
-    exports.sage(code).then(
-        function(result) {
-            output.removeClass("sagecell-computing");
-            output.text(result);
-
-            if (initialRun) {
-                initialVisibleSageRuntime.applied += 1;
-                initialVisibleSageRuntime.settled += 1;
-
-                pageRuntime.operation(
-                    "sage-visible-output",
-                    "applied",
-                    {
-                        applied:
-                            initialVisibleSageRuntime
-                                .applied,
-                        settled:
-                            initialVisibleSageRuntime
-                                .settled,
-                        total:
-                            initialVisibleSageRuntime
-                                .started
-                    }
-                );
-
-                reportInitialVisibleSageSettled();
-            }
-
-            reprocessMathjax();
-        },
-        function(err) {
-            output.removeClass("sagecell-computing");
-            output.empty();
-            output.append(
-                buildSageErrorElement(
-                    err,
-                    function() {
-                        runVisibleSageOutput(
-                            output,
-                            code,
-                            false
-                        );
-                    }
-                )
-            );
-
-            if (initialRun) {
-                initialVisibleSageRuntime.failed += 1;
-                initialVisibleSageRuntime.settled += 1;
-
-                pageRuntime.operation(
-                    "sage-visible-output",
-                    "failed",
-                    {
-                        failed:
-                            initialVisibleSageRuntime
-                                .failed,
-                        settled:
-                            initialVisibleSageRuntime
-                                .settled,
-                        total:
-                            initialVisibleSageRuntime
-                                .started,
-                        errorName:
-                            err && err.ename
-                                ? err.ename
-                                : null
-                    }
-                );
-
-                reportInitialVisibleSageSettled();
-            }
-
-            console.log("sageOutput error=", err);
-        }
-    );
-};
-
-var processVisibleSageOutputs = function(force) {
-    if (visibleSageOutputsStarted && !force) {
-        return;
-    }
-
-    var initialRun =
-        !visibleSageOutputsStarted &&
-        !force;
-
-    visibleSageOutputsStarted = true;
-
-    var visibleOutputs =
-        $(".sageOutput");
-
-    if (initialRun) {
-        initialVisibleSageRuntime.discovered =
-            visibleOutputs.filter(
-                function() {
-                    return (
-                        $.trim(
-                            stripCDATA(
-                                $(this).text()
-                            )
-                        ).length > 0
-                    );
-                }
-            ).length;
-
-        pageRuntime.component(
-            "sage-visible-initial",
-            initialVisibleSageRuntime
-                .discovered > 0
-                ? "discovered"
-                : "not-required",
-            {
-                discovered:
-                    initialVisibleSageRuntime
-                        .discovered
-            }
-        );
-
-        if (
-            initialVisibleSageRuntime
-                .discovered === 0
-        ) {
-            initialVisibleSageRuntime
-                .reportedSettled = true;
-        }
-    }
-
-    visibleOutputs.each(function() {
-        var output = $(this);
-
-        var code = output.data("xronos-sage-code");
-        if (code === undefined) {
-            code = output.text();
-            output.data("xronos-sage-code", code);
-        }
-
-        code = stripCDATA(code);
-
-        if ($.trim(code).length == 0) {
-            return;
-        }
-
-        runVisibleSageOutput(
-            output,
-            code,
-            initialRun
-        );
-    });
-};
-
-exports.createKernel = _.once(function() {
-    // Compatibility shim.  Older code expects createKernel() to return a
-    // promise for something kernel-like, but the local /service path does
-    // not keep a persistent browser-visible kernel.
-    return new Promise(function(resolve, reject) {
-setSeed(function() {
-    executeSageSilents();
-    processVisibleSageOutputs(false);
-
-    resolve({
-execute: function(code, callbacks, options) {
-    exports.sage(code).then(
-function(result) {
-    if (callbacks &&
-callbacks.iopub &&
-callbacks.iopub.output) {
-callbacks.iopub.output({
-    msg_type: "execute_result",
-    content: {
-data: {
-    "text/plain": result
-}
-    }
-});
-    }
-},
-function(err) {
-    if (callbacks &&
-callbacks.iopub &&
-callbacks.iopub.output) {
-callbacks.iopub.output({
-    msg_type: "error",
-    content: err
-});
-    }
-}
-    );
-}
-    });
-});
-    });
-});
 
 function canBatchSageExpression(code) {
     var trimmed = $.trim(code);
@@ -6826,19 +6569,17 @@ function(err) {
 };
 
 
-window.sage = function(code) {
-    exports.sage(code).then(
-function(result) { console.log(result); },
-function(err) { console.log("err=", err); }
-    );
-};
-
 $(function() {
-    // If there are any Sage blocks on the page, initialize the local
-    // service-backed Sage compatibility layer.
-    if (($( ".sage" ).length > 0) ||
-($( ".sageOutput" ).length > 0) ||
-($('script[type="text/sagemath"]').length > 0)) {
-exports.createKernel();
+    /*
+     * Collect authored sagesilent blocks without creating the historical
+     * browser-visible kernel compatibility layer.
+     *
+     * Canonical Sage executes its immutable manifest independently. This
+     * collection remains temporarily because the legacy fallback executor
+     * still uses fullSageRequest(), and because executeSageSilents() currently
+     * owns detection that reveals the Show Me Another button.
+     */
+    if ($('script[type="text/sagemath"]').length > 0) {
+        executeSageSilents();
     }
 });

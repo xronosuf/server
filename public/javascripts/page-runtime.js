@@ -327,16 +327,6 @@ function updatePageReadiness() {
         runtime.components[
             "sage-inline-initial"
         ];
-    var legacyStandaloneSage =
-        runtime.components[
-            "sage-visible-initial"
-        ];
-    var legacyStandaloneSageOutputCount =
-        document.querySelectorAll
-            ? document.querySelectorAll(
-                ".sageOutput"
-            ).length
-            : null;
     var initialStateObservedState =
         initialState && initialState.state;
     var initialStateWatchdog =
@@ -517,17 +507,6 @@ function updatePageReadiness() {
         errorCount:
             initialMathJaxWatchdog.errorCount
     };
-    contentReady.details
-        .legacyStandaloneSageOutputs =
-            legacyStandaloneSageOutputCount;
-    contentReady.details
-        .legacyStandaloneSageState =
-            legacyStandaloneSage
-                ? legacyStandaloneSage.state
-                : legacyStandaloneSageOutputCount === 0
-                    ? "not-required"
-                    : "not-observed";
-
     interactionReady.details.dimension =
         "interaction-ready";
 
@@ -2186,16 +2165,6 @@ function benchmark(options) {
         runtime.components[
             "sage-inline-initial"
         ];
-    var legacyStandaloneSage =
-        runtime.components[
-            "sage-visible-initial"
-        ];
-    var legacyStandaloneSageOutputCount =
-        document.querySelectorAll
-            ? document.querySelectorAll(
-                ".sageOutput"
-            ).length
-            : null;
 
     options = options || {};
 
@@ -2530,20 +2499,6 @@ function benchmark(options) {
                     "results-degraded",
                     true
                 ),
-            initialVisibleSageSettled:
-                milestoneEvent(
-                    "component",
-                    "sage-visible-initial",
-                    "settled",
-                    true
-                ),
-            initialVisibleSageDegraded:
-                milestoneEvent(
-                    "component",
-                    "sage-visible-initial",
-                    "degraded",
-                    true
-                ),
             browserLoadObserved:
                 milestoneEvent(
                     "event",
@@ -2622,26 +2577,9 @@ function benchmark(options) {
                         ? initialSage.state !==
                             "not-required"
                         : null
-            },
-            legacyStandaloneOutput: {
-                state:
-                    legacyStandaloneSage
-                        ? legacyStandaloneSage.state
-                        : legacyStandaloneSageOutputCount === 0
-                            ? "not-required"
-                            : "not-observed",
-                required:
-                    legacyStandaloneSage
-                        ? legacyStandaloneSage.state !==
-                            "not-required"
-                        : legacyStandaloneSageOutputCount === null
-                            ? null
-                            : legacyStandaloneSageOutputCount > 0
             }
         },
         counts: {
-            legacyStandaloneSageOutputs:
-                legacyStandaloneSageOutputCount,
             initialStateConsumers:
                 initialState &&
                 initialState.details
@@ -3007,17 +2945,6 @@ var BENCHMARK_METRICS = {
                     .initialSageResultsAvailable ||
                 record.milestones
                     .initialSageResultsDegraded;
-
-            return milestone &&
-                milestone.navigationElapsedMs;
-        },
-    initialVisibleSageSettled:
-        function(record) {
-            var milestone =
-                record.milestones
-                    .initialVisibleSageSettled ||
-                record.milestones
-                    .initialVisibleSageDegraded;
 
             return milestone &&
                 milestone.navigationElapsedMs;

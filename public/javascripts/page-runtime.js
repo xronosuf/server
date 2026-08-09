@@ -888,6 +888,44 @@ function startInitialMathJaxReadinessWatchdog() {
 }
 
 
+var initialInlineSageTimeoutOwner =
+    null;
+
+
+function configureInitialInlineSageTimeoutOwner(
+    runner
+) {
+    if (typeof runner !== "function") {
+        record(
+            "event",
+            "initial-inline-sage-timeout-owner-configuration-failed",
+            undefined,
+            {
+                reason:
+                    "runner-not-function"
+            }
+        );
+
+        return false;
+    }
+
+    initialInlineSageTimeoutOwner =
+        runner;
+
+    record(
+        "event",
+        "initial-inline-sage-timeout-owner-configured",
+        undefined,
+        {
+            owner:
+                "main-visible-sage"
+        }
+    );
+
+    return true;
+}
+
+
 function initialInlineSageCompleted() {
     return readinessWatchdogs
         .initialInlineSage.completed;
@@ -984,6 +1022,58 @@ function startInitialInlineSageReadinessWatchdog() {
                     "degraded",
                     timeoutDetails
                 );
+
+                if (
+                    typeof initialInlineSageTimeoutOwner ===
+                        "function"
+                ) {
+                    try {
+                        var settlement =
+                            initialInlineSageTimeoutOwner(
+                                copyValue(
+                                    timeoutDetails
+                                )
+                            );
+
+                        record(
+                            "event",
+                            "initial-inline-sage-timeout-owner-invoked",
+                            undefined,
+                            {
+                                owner:
+                                    "main-visible-sage",
+                                settlement:
+                                    settlement ||
+                                    null
+                            }
+                        );
+                    } catch (err) {
+                        record(
+                            "event",
+                            "initial-inline-sage-timeout-owner-failed",
+                            undefined,
+                            {
+                                owner:
+                                    "main-visible-sage",
+                                message:
+                                    err &&
+                                    err.message
+                                        ? err.message
+                                        : String(err)
+                            }
+                        );
+                    }
+                } else {
+                    record(
+                        "event",
+                        "initial-inline-sage-timeout-owner-missing",
+                        undefined,
+                        {
+                            owner:
+                                "main-visible-sage"
+                        }
+                    );
+                }
             },
             watchdog.deadlineMilliseconds
         );
@@ -3114,6 +3204,8 @@ var api = {
         completeInitialMathJaxProcess,
     beginInitialInlineSageRetry:
         beginInitialInlineSageRetry,
+    configureInitialInlineSageTimeoutOwner:
+        configureInitialInlineSageTimeoutOwner,
     configureMathJaxStartupUi:
         configureMathJaxStartupUi,
     requestMathJaxStartupUiFinalization:
@@ -3163,6 +3255,8 @@ window.xronosCompleteInitialMathJaxProcess =
     completeInitialMathJaxProcess;
 window.xronosBeginInitialInlineSageRetry =
     beginInitialInlineSageRetry;
+window.xronosConfigureInitialInlineSageTimeoutOwner =
+    configureInitialInlineSageTimeoutOwner;
 window.xronosConfigureMathJaxStartupUi =
     configureMathJaxStartupUi;
 window.xronosRequestMathJaxStartupUiFinalization =

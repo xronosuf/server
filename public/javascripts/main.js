@@ -730,6 +730,8 @@ var initialInlineSageRuntime = {
     processComplete: false,
     reportedDiscovered: false,
     reportedTerminal: false,
+    deadlineExceeded: false,
+    deadline: null,
     placeholders: {}
 };
 
@@ -753,7 +755,13 @@ function initialInlineSageDetails() {
             initialInlineSageRuntime.settled,
         processComplete:
             initialInlineSageRuntime
-                .processComplete
+                .processComplete,
+        deadlineExceeded:
+            initialInlineSageRuntime
+                .deadlineExceeded,
+        deadline:
+            initialInlineSageRuntime
+                .deadline
     };
 }
 
@@ -849,11 +857,173 @@ function discoverInitialInlineSage(
             terminal: false,
             terminalState: null,
             failed: false,
-            terminalHistory: []
+            terminalHistory: [],
+            timeoutHandler: null
         };
 
     initialInlineSageRuntime
         .discovered += 1;
+}
+
+
+function registerInitialInlineSageTimeoutHandler(
+    placeholderId,
+    handler
+) {
+    var placeholder =
+        initialInlineSageRuntime
+            .placeholders[
+                placeholderId
+            ];
+
+    if (
+        !placeholder ||
+        typeof handler !== "function"
+    ) {
+        return false;
+    }
+
+    placeholder.timeoutHandler =
+        handler;
+
+    return true;
+}
+
+
+function replaceInitialInlineSageDeadlineFallback(
+    placeholderId
+) {
+    var nodes =
+        document.querySelectorAll(
+            '[id="' + placeholderId + '"]'
+        );
+
+    Array.prototype.forEach.call(
+        nodes,
+        function(node) {
+            while (node.firstChild) {
+                node.removeChild(
+                    node.firstChild
+                );
+            }
+
+            var message =
+                document.createElement(
+                    "span"
+                );
+
+            message.className =
+                "xronos-sage-error " +
+                "xronos-sage-error-transient";
+
+            message.setAttribute(
+                "role",
+                "alert"
+            );
+
+            message.appendChild(
+                document.createTextNode(
+                    "The computation took too long to display. " +
+                    "Reload the page and try again."
+                )
+            );
+
+            node.appendChild(message);
+        }
+    );
+
+    return nodes.length;
+}
+
+
+function settleInitialInlineSageDeadline(
+    details
+) {
+    var unresolved = 0;
+    var handlersInvoked = 0;
+    var directFallbacks = 0;
+
+    initialInlineSageRuntime
+        .deadlineExceeded = true;
+
+    initialInlineSageRuntime.deadline =
+        details && details.deadline
+            ? details.deadline
+            : null;
+
+    Object.keys(
+        initialInlineSageRuntime
+            .placeholders
+    ).forEach(function(placeholderId) {
+        var placeholder =
+            initialInlineSageRuntime
+                .placeholders[
+                    placeholderId
+                ];
+
+        if (
+            !placeholder ||
+            placeholder.terminal
+        ) {
+            return;
+        }
+
+        unresolved += 1;
+
+        if (
+            typeof placeholder
+                .timeoutHandler ===
+                "function"
+        ) {
+            handlersInvoked += 1;
+
+            placeholder.timeoutHandler(
+                details || null
+            );
+
+            return;
+        }
+
+        directFallbacks += 1;
+
+        replaceInitialInlineSageDeadlineFallback(
+            placeholderId
+        );
+
+        settleInitialInlineSage(
+            placeholderId,
+            "deadline-fallback",
+            true
+        );
+    });
+
+    pageRuntime.operation(
+        "sage-inline-initial",
+        "deadline-fallback-requested",
+        {
+            unresolved:
+                unresolved,
+            handlersInvoked:
+                handlersInvoked,
+            directFallbacks:
+                directFallbacks,
+            deadlineCode:
+                details &&
+                details.deadline &&
+                details.deadline.code
+                    ? details.deadline.code
+                    : null
+        }
+    );
+
+    return {
+        unresolved:
+            unresolved,
+        handlersInvoked:
+            handlersInvoked,
+        directFallbacks:
+            directFallbacks
+    };
 }
 
 
@@ -987,6 +1157,10 @@ function reopenInitialInlineSage(
         .reportedTerminal = false;
     initialInlineSageRuntime
         .reportedDiscovered = false;
+    initialInlineSageRuntime
+        .deadlineExceeded = false;
+    initialInlineSageRuntime
+        .deadline = null;
 
     pageRuntime.operation(
         "sage-placeholder",
@@ -999,6 +1173,73 @@ function reopenInitialInlineSage(
             priorTerminalAttempts:
                 placeholder
                     .terminalHistory.length
+        }
+    );
+
+    return true;
+}
+
+
+function reopenInitialInlineSageLateResult(
+    placeholderId
+) {
+    var placeholder =
+        initialInlineSageRuntime
+            .placeholders[
+                placeholderId
+            ];
+
+    if (
+        !placeholder ||
+        !placeholder.terminal ||
+        !placeholder.failed ||
+        placeholder.terminalState !==
+            "deadline-fallback"
+    ) {
+        return false;
+    }
+
+    /*
+     * This is not a new request attempt. The original request simply
+     * produced its visible result after the display deadline.
+     *
+     * Preserve:
+     *   - placeholder.attempt
+     *   - placeholder.started
+     *   - deadlineExceeded/deadline
+     *   - terminalHistory
+     *
+     * Only reopen the current terminal accounting so the late result
+     * can progress through MathML application and rerender.
+     */
+    placeholder.terminal = false;
+    placeholder.terminalState = null;
+    placeholder.failed = false;
+
+    initialInlineSageRuntime
+        .settled -= 1;
+    initialInlineSageRuntime
+        .failed -= 1;
+
+    initialInlineSageRuntime
+        .reportedTerminal = false;
+    initialInlineSageRuntime
+        .reportedDiscovered = false;
+
+    pageRuntime.operation(
+        "sage-placeholder",
+        "late-result-reopened",
+        {
+            placeholderId:
+                placeholderId,
+            attempt:
+                placeholder.attempt,
+            priorTerminalAttempts:
+                placeholder
+                    .terminalHistory.length,
+            deadlineExceeded:
+                initialInlineSageRuntime
+                    .deadlineExceeded
         }
     );
 
@@ -1029,6 +1270,17 @@ function completeInitialInlineSageDiscovery() {
 
     reportInitialInlineSageProgress();
 }
+
+
+var initialInlineSageTimeoutOwnerConfigured =
+    pageRuntime
+        .configureInitialInlineSageTimeoutOwner(
+            function(details) {
+                return settleInitialInlineSageDeadline(
+                    details
+                );
+            }
+        );
 
 
 var pencil = require('./pencil');
@@ -2294,7 +2546,10 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
                     ) {
                         settleInitialInlineSage(
                             placeholderId,
-                            "fallback-shown",
+                            err &&
+                            err.xronosInitialInlineDeadline
+                                ? "deadline-fallback"
+                                : "fallback-shown",
                             true
                         );
                     }
@@ -2304,7 +2559,73 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
             ]);
         };
 
+        if (
+            sageCallRuntime
+                .initialManifestCall
+        ) {
+            registerInitialInlineSageTimeoutHandler(
+                placeholderId,
+                function(deadlineDetails) {
+                    pageRuntime.operation(
+                        "sage-placeholder",
+                        "deadline-fallback-requested",
+                        sagePlaceholderDetails({
+                            deadlineCode:
+                                deadlineDetails &&
+                                deadlineDetails
+                                    .deadline &&
+                                deadlineDetails
+                                    .deadline.code
+                                    ? deadlineDetails
+                                        .deadline.code
+                                    : null
+                        })
+                    );
+
+                    showError({
+                        ename:
+                            "SageCellRequestError",
+                        evalue:
+                            "initial inline Sage display deadline exceeded",
+                        status:
+                            "timeout",
+                        httpStatus:
+                            0,
+                        xronosInitialInlineDeadline:
+                            true
+                    });
+                }
+            );
+        }
+
+
         var renderResult = function(result) {
+            var currentInitialPlaceholder =
+                sageCallRuntime
+                    .initialManifestCall
+                    ? initialInlineSageRuntime
+                        .placeholders[
+                            placeholderId
+                        ]
+                    : null;
+
+            if (
+                currentInitialPlaceholder &&
+                currentInitialPlaceholder
+                    .terminal &&
+                currentInitialPlaceholder
+                    .terminalState ===
+                    "deadline-fallback"
+            ) {
+                if (
+                    reopenInitialInlineSageLateResult(
+                        placeholderId
+                    )
+                ) {
+                    reportInitialInlineSageProgress();
+                }
+            }
+
             pageRuntime.operation(
                 "sage-placeholder",
                 "result-resolved",

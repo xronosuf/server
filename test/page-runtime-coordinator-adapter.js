@@ -2330,6 +2330,168 @@ describe(
         });
 
 
+        it("keeps deadline-tagged inline Sage degradation timed out", function() {
+            var coordinator =
+                adapter.create();
+
+            adapter.signalDeadline(
+                coordinator,
+                "sage-inline-initial"
+            );
+
+            var timedOut =
+                coordinator.inspect()
+                    .tasks[
+                        "sage-inline-initial"
+                    ];
+
+            assert.strictEqual(
+                timedOut.state,
+                "timed-out"
+            );
+
+            adapter.signalTransition(
+                coordinator,
+                "components",
+                "sage-inline-initial",
+                "degraded",
+                {
+                    expected: 2,
+                    failed: 2,
+                    settled: 2,
+                    deadlineExceeded: true,
+                    deadline: {
+                        code:
+                            "XR-SAGE-INLINE-INITIAL-101"
+                    }
+                }
+            );
+
+            var afterFallback =
+                coordinator.inspect()
+                    .tasks[
+                        "sage-inline-initial"
+                    ];
+
+            assert.strictEqual(
+                afterFallback.state,
+                "timed-out"
+            );
+
+            assert.strictEqual(
+                afterFallback.operationId,
+                timedOut.operationId
+            );
+
+            assert.strictEqual(
+                coordinator.inspect().events.some(
+                    function(event) {
+                        return (
+                            event.type ===
+                                "task-recovered" &&
+                            event.taskId ===
+                                "sage-inline-initial"
+                        );
+                    }
+                ),
+                false
+            );
+
+            /*
+             * Additional deadline-tagged degraded settlements may arrive as
+             * individual visible placeholders finish timeout fallback. They
+             * must leave the original operation timed out.
+             */
+            adapter.signalTransition(
+                coordinator,
+                "components",
+                "sage-inline-initial",
+                "degraded",
+                {
+                    expected: 2,
+                    failed: 1,
+                    settled: 2,
+                    deadlineExceeded: true,
+                    deadline: {
+                        code:
+                            "XR-SAGE-INLINE-INITIAL-101"
+                    }
+                }
+            );
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks[
+                        "sage-inline-initial"
+                    ].state,
+                "timed-out"
+            );
+
+            /*
+             * Once every visible placeholder genuinely recovers, settled maps
+             * to succeeded and allow-late-success recovers this SAME timed-out
+             * operation.
+             */
+            adapter.signalTransition(
+                coordinator,
+                "components",
+                "sage-inline-initial",
+                "settled",
+                {
+                    expected: 2,
+                    failed: 0,
+                    settled: 2,
+                    deadlineExceeded: true,
+                    deadline: {
+                        code:
+                            "XR-SAGE-INLINE-INITIAL-101"
+                    }
+                }
+            );
+
+            var recovered =
+                coordinator.inspect()
+                    .tasks[
+                        "sage-inline-initial"
+                    ];
+
+            assert.strictEqual(
+                recovered.state,
+                "succeeded"
+            );
+
+            assert.strictEqual(
+                recovered.operationId,
+                timedOut.operationId
+            );
+
+            assert.strictEqual(
+                recovered.attempt,
+                timedOut.attempt
+            );
+
+            assert.strictEqual(
+                coordinator.inspect().events.some(
+                    function(event) {
+                        return (
+                            event.type ===
+                                "task-recovered" &&
+                            event.taskId ===
+                                "sage-inline-initial" &&
+                            event.details
+                                .fromState ===
+                                "timed-out" &&
+                            event.details
+                                .toState ===
+                                "succeeded"
+                        );
+                    }
+                ),
+                true
+            );
+        });
+
+
         it("rearms degraded initial inline Sage for visible retry", function() {
             var coordinator =
                 adapter.create();

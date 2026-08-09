@@ -10,27 +10,16 @@ var seedCallbacks = [];
 var seed = null;
 var currentSeedCode = "";
 
-var executedSageSilents = false;
-var sageSilentCode = "";
 
 // Browser-side exact-code cache and queue.
 // This avoids duplicate network calls from the same page load and prevents
 // a page from stampeding the local SageCell service with many simultaneous
 // requests during MathJax/Xronos startup.
-var sageRequestCache = {};
-var sageRequestInFlight = {};
-var sageQueue = Promise.resolve();
 var sageAuthRefreshInFlight = null;
 
 // Browser-side batching for expression-style Sage requests.
 // Many Xronos pages ask for many display values after one large common setup.
 // We batch those display expressions into one SageCell request when possible.
-var sageBatchItems = [];
-var sageBatchTimer = null;
-var sageBatchDelay = 75;
-var sageBatchMaxItems = 8;
-var sageBatchMaxEstimatedChars = 65000;
-var sageBatchNextId = 0;
 
 var sagePageManifestCompilerVersion = 4;
 
@@ -4154,238 +4143,6 @@ function sagePreviewErrorSummary(err) {
 
 
 /*
- * Compare the canonical page program with the currently deployed legacy
- * expression path. Normal page execution remains unchanged.
- */
-window.xronosCompareSagePageManifestPreview =
-    function() {
-        var manifest =
-            preferredSagePageManifestProbe();
-
-        var expressionEntries =
-            manifest.entries.filter(
-                function(entry) {
-                    return (
-                        entry.kind ===
-                        "expression"
-                    );
-                }
-            );
-
-        return executeSagePageManifestPreview(
-            manifest
-        ).then(
-            function(canonicalExecution) {
-                var canonicalResults =
-                    canonicalExecution.results;
-
-                var comparisons =
-                    expressionEntries.map(
-                        function(entry) {
-                            var legacyCode =
-                                entry.latexify
-                                    ? "latex(" +
-                                      entry.expression +
-                                      ")"
-                                    : entry.expression;
-
-                            return exports.sage(
-                                legacyCode
-                            ).then(
-                                function(result) {
-                                    var canonical =
-                                        canonicalResults[
-                                            entry.stableId
-                                        ];
-
-                                    var canonicalOk =
-                                        !!(
-                                            canonical &&
-                                            canonical.ok
-                                        );
-
-                                    var canonicalValue =
-                                        canonicalOk
-                                            ? String(
-                                                canonical.result
-                                            )
-                                            : null;
-
-                                    var legacyValue =
-                                        String(result);
-
-                                    return {
-                                        stableId:
-                                            entry.stableId,
-                                        expression:
-                                            entry.expression,
-                                        consumer:
-                                            entry.consumer,
-                                        canonicalOk:
-                                            canonicalOk,
-                                        legacyOk:
-                                            true,
-                                        canonicalValue:
-                                            canonicalValue,
-                                        legacyValue:
-                                            legacyValue,
-                                        matches:
-                                            canonicalOk &&
-                                            canonicalValue ===
-                                                legacyValue,
-                                        canonicalError:
-                                            canonicalOk
-                                                ? null
-                                                : canonical ||
-                                                  null,
-                                        legacyError:
-                                            null
-                                    };
-                                },
-                                function(err) {
-                                    var canonical =
-                                        canonicalResults[
-                                            entry.stableId
-                                        ];
-
-                                    var canonicalOk =
-                                        !!(
-                                            canonical &&
-                                            canonical.ok
-                                        );
-
-                                    return {
-                                        stableId:
-                                            entry.stableId,
-                                        expression:
-                                            entry.expression,
-                                        consumer:
-                                            entry.consumer,
-                                        canonicalOk:
-                                            canonicalOk,
-                                        legacyOk:
-                                            false,
-                                        canonicalValue:
-                                            canonicalOk
-                                                ? String(
-                                                    canonical.result
-                                                )
-                                                : null,
-                                        legacyValue:
-                                            null,
-                                        matches:
-                                            false,
-                                        canonicalError:
-                                            canonicalOk
-                                                ? null
-                                                : canonical ||
-                                                  null,
-                                        legacyError:
-                                            sagePreviewErrorSummary(
-                                                err
-                                            )
-                                    };
-                                }
-                            );
-                        }
-                    );
-
-                return Promise.all(
-                    comparisons
-                ).then(
-                    function(results) {
-                        var mismatches =
-                            results.filter(
-                                function(result) {
-                                    return !result.matches;
-                                }
-                            );
-
-                        var canonicalSuccesses =
-                            results.filter(
-                                function(result) {
-                                    return result.canonicalOk;
-                                }
-                            ).length;
-
-                        var legacySuccesses =
-                            results.filter(
-                                function(result) {
-                                    return result.legacyOk;
-                                }
-                            ).length;
-
-                        var answerKeys =
-                            results.filter(
-                                function(result) {
-                                    return (
-                                        result.consumer ===
-                                        "answer-key"
-                                    );
-                                }
-                            );
-
-                        var finalResult = {
-                            page:
-                                manifest.page,
-
-                            summary: {
-                                expressions:
-                                    results.length,
-                                canonicalSuccesses:
-                                    canonicalSuccesses,
-                                legacySuccesses:
-                                    legacySuccesses,
-                                mismatches:
-                                    mismatches.length,
-                                allValuesMatch:
-                                    mismatches.length === 0,
-                                compiledCharacters:
-                                    canonicalExecution
-                                        .compiledCharacters,
-                                compiledUtf8Bytes:
-                                    canonicalExecution
-                                        .compiledUtf8Bytes,
-                                compiledDebugHash:
-                                    canonicalExecution
-                                        .compiledDebugHash
-                            },
-
-                            answerKeys:
-                                answerKeys,
-
-                            mismatches:
-                                mismatches
-                        };
-
-                        /*
-                         * Emit one copyable final object.
-                         */
-                        console.log(finalResult);
-
-                        return finalResult;
-                    }
-                );
-            },
-            function(err) {
-                var failure = {
-                    page:
-                        manifest.page,
-                    executionError:
-                        sagePreviewErrorSummary(
-                            err
-                        )
-                };
-
-                console.log(failure);
-
-                return failure;
-            }
-        );
-    };
-
-
-/*
  * Validate ordered execution and error isolation using small synthetic
  * manifests submitted through the real authenticated SageCell proxy.
  */
@@ -5784,9 +5541,6 @@ return;
             );
     }
 
-    executedSageSilents = false;
-    executeSageSilents();
-
     /*
      * Queue restoration only after the new canonical generation has started.
      * These MathJax Text operations therefore consume the same result bundle
@@ -5925,75 +5679,29 @@ $(function() {
 });
 });
 
-var stripCDATA = function(code) {
-    return code.replace(/[\s\S]*#<!\[CDATA\[\s*\n((.|\n)*)\s*#\]\]>/m, "$1");
-};
+function revealShowMeAnotherForAuthoredSage() {
+    var foundRandomSage = false;
 
-var executeSageSilents = function() {
-    if (executedSageSilents == false) {
-executedSageSilents = true;
-sageSilentCode = "";
+    $('script[type="text/sagemath"]').each(function() {
+        /*
+         * Preserve the historical authored-content heuristic that exposes
+         * Another whenever a sagesilent block contains "rand". Canonical
+         * execution itself uses the immutable page manifest and does not
+         * depend on this scan.
+         */
+        if ($(this).text().match('rand')) {
+            foundRandomSage = true;
+            return false;
+        }
+    });
 
-// Collect any sagesilent blocks.  In the old SageCell-kernel path,
-// these were executed once into a persistent kernel.  In the local
-// /service path, every Sage request is stateless, so we replay these
-// blocks as setup code for each request.
-$('script[type="text/sagemath"]').each(function() {
-    var code = stripCDATA($(this).text());
-
-    // The snippet "rand" is enough to trigger the "Another..." button
-    if (code.match('rand')) {
-ensureShowMeAnotherButton().show();
+    if (foundRandomSage) {
+        ensureShowMeAnotherButton().show();
     }
 
-    if ($.trim(code).length > 0) {
-sageSilentCode = sageSilentCode + "\n\n" + code;
-    }
-});
-    }
-};
-
-var fullSageRequest = function(code) {
-    executeSageSilents();
-
-    var pieces = [];
-
-    if ($.trim(currentSeedCode).length > 0) {
-pieces.push(currentSeedCode);
-    }
-
-    if ($.trim(sageSilentCode).length > 0) {
-pieces.push(sageSilentCode);
-    }
-
-    pieces.push(code);
-
-    return pieces.join("\n\n");
-};
-
-function canBatchSageExpression(code) {
-    var trimmed = $.trim(code);
-
-    if (trimmed.length == 0) {
-return false;
-    }
-
-    // Keep batching conservative: expression-style calls only.
-    if (trimmed.indexOf("\n") >= 0 || trimmed.indexOf(";") >= 0) {
-return false;
-    }
-
-    if (/^(if|for|while|def|class|import|from|try|with|return|print)\b/.test(trimmed)) {
-return false;
-    }
-
-    // Avoid obvious assignment statements, but allow comparisons like ==, <=, >=, !=.
-    if (/(^|[^!<>=])=([^=]|$)/.test(trimmed)) {
-return false;
-    }
-
-    return true;
+    return foundRandomSage;
 }
+
 
 function sageRequestAuthData() {
     var xronosSagecellRequestData = {};
@@ -6306,144 +6014,6 @@ return response.stdout;
     return "";
 }
 
-function sageSetupRequest() {
-    // fullSageRequest("") gives the current seed plus all collected silent Sage
-    // setup blocks, without adding a meaningful final expression.
-    return fullSageRequest("");
-}
-
-function estimateCurrentSageBatchChars(extraCode) {
-    var setupLength = sageSetupRequest().length;
-    var exprLength = 0;
-
-    sageBatchItems.forEach(function(item) {
-// This estimates the compact payload after the batch-key fix below.
-exprLength += item.code.length + 80;
-    });
-
-    if (extraCode !== undefined && extraCode !== null) {
-exprLength += extraCode.length + 80;
-    }
-
-    // Add overhead for wrapper Sage code, JSON syntax, markers, and urlencoding.
-    return setupLength + exprLength + 6000;
-}
-
-function flushSageBatch() {
-    var batch = sageBatchItems;
-    sageBatchItems = [];
-    sageBatchTimer = null;
-
-    if (batch.length == 0) {
-return;
-    }
-
-    var seen = {};
-    var unique = [];
-
-    batch.forEach(function(item) {
-if (!seen[item.requestKey]) {
-    item.batchKey = "b" + (sageBatchNextId++);
-    seen[item.requestKey] = item;
-    unique.push(item);
-} else {
-    item.batchKey = seen[item.requestKey].batchKey;
-}
-    });
-
-    // Important: use compact batch keys in the Sage payload, not requestKey.
-    // requestKey contains the entire setup + expression and would bloat the
-    // request body dramatically.
-    var requestPairs = unique.map(function(item) {
-return [item.batchKey, item.code];
-    });
-
-    var batchCode = sageSetupRequest() + "\n\n" +
-"import json as _xronos_json\n" +
-"try:\n" +
-"    from sage.misc.sage_eval import sage_eval as _xronos_sage_eval\n" +
-"except Exception:\n" +
-"    _xronos_sage_eval = sage_eval\n" +
-"_xronos_requests = " + JSON.stringify(requestPairs) + "\n" +
-"_xronos_results = {}\n" +
-"for _xronos_key, _xronos_expr in _xronos_requests:\n" +
-"    try:\n" +
-"        _xronos_value = _xronos_sage_eval(_xronos_expr, locals=globals())\n" +
-"        _xronos_results[_xronos_key] = {'ok': True, 'result': str(_xronos_value)}\n" +
-"    except Exception as _xronos_e:\n" +
-"        _xronos_results[_xronos_key] = {'ok': False, 'error': repr(_xronos_e)}\n" +
-"print('__XRONOS_BATCH_RESULTS_START__')\n" +
-"print(_xronos_json.dumps(_xronos_results))\n" +
-"print('__XRONOS_BATCH_RESULTS_END__')\n";
-
-    postSageRaw(batchCode).then(
-function(response) {
-    var stdout = response.stdout || response.execute_result || "";
-    var match = stdout.match(/__XRONOS_BATCH_RESULTS_START__\s*([\s\S]*?)\s*__XRONOS_BATCH_RESULTS_END__/);
-
-    if (!match) {
-batch.forEach(function(item) {
-    delete sageRequestInFlight[item.requestKey];
-    item.reject({
-ename: "SageBatchParseError",
-evalue: "Could not find batch result markers.",
-stdout: stdout
-    });
-});
-return;
-    }
-
-    var results = JSON.parse(match[1]);
-
-    batch.forEach(function(item) {
-delete sageRequestInFlight[item.requestKey];
-
-var entry = results[item.batchKey];
-
-if (!entry) {
-    item.reject({
-ename: "SageBatchMissingResult",
-evalue: "No batch result for request."
-    });
-    return;
-}
-
-if (!entry.ok) {
-    item.reject({
-ename: "SageBatchExpressionError",
-evalue: entry.error
-    });
-    return;
-}
-
-sageRequestCache[item.requestKey] = entry.result;
-item.resolve(entry.result);
-    });
-},
-function(err) {
-    batch.forEach(function(item) {
-delete sageRequestInFlight[item.requestKey];
-item.reject(err);
-    });
-}
-    );
-}
-
-
-function clearSageClientCaches() {
-    sageRequestCache = {};
-    sageRequestInFlight = {};
-    sageBatchItems = [];
-
-    if (sageBatchTimer !== null) {
-window.clearTimeout(sageBatchTimer);
-sageBatchTimer = null;
-    }
-
-    sageQueue = Promise.resolve();
-}
-
-
 function restoreCompletedAnswerMathJax() {
     $('script[type^="math/tex"][data-initial]').each(function() {
 	var scriptElement = $(this);
@@ -6492,7 +6062,6 @@ function xronosShowMeAnotherSage() {
     );
 
     seed = undefined;
-    clearSageClientCaches();
 
     if (TinCan && TinCan.generatedAnotherVersion) {
 	TinCan.generatedAnotherVersion($("main.activity").first(), oldSeed, newSeed);
@@ -6523,106 +6092,6 @@ function xronosShowMeAnotherSage() {
 // even if the test layout is missing or hiding the button.
 window.xronosShowMeAnotherSage = xronosShowMeAnotherSage;
 
-function scheduleSageBatchFlush() {
-    if (sageBatchTimer === null) {
-sageBatchTimer = window.setTimeout(flushSageBatch, sageBatchDelay);
-    }
-}
-
-exports.sage = function(code) {
-    return new Promise(function(resolve, reject) {
-setSeed(function() {
-    var requestKey = fullSageRequest(code);
-
-    if (sageRequestCache[requestKey] !== undefined) {
-resolve(sageRequestCache[requestKey]);
-return;
-    }
-
-    if (sageRequestInFlight[requestKey] !== undefined) {
-sageRequestInFlight[requestKey].then(resolve, reject);
-return;
-    }
-
-    if (canBatchSageExpression(code)) {
-if (sageBatchItems.length > 0 &&
-    estimateCurrentSageBatchChars(code) >= sageBatchMaxEstimatedChars) {
-    if (sageBatchTimer !== null) {
-window.clearTimeout(sageBatchTimer);
-sageBatchTimer = null;
-    }
-    flushSageBatch();
-}
-
-var batchPromise = new Promise(function(innerResolve, innerReject) {
-    sageBatchItems.push({
-code: $.trim(code),
-requestKey: requestKey,
-resolve: innerResolve,
-reject: innerReject
-    });
-});
-
-sageRequestInFlight[requestKey] = batchPromise;
-
-if (sageBatchItems.length >= sageBatchMaxItems) {
-    if (sageBatchTimer !== null) {
-window.clearTimeout(sageBatchTimer);
-sageBatchTimer = null;
-    }
-    flushSageBatch();
-} else {
-    scheduleSageBatchFlush();
-}
-
-batchPromise.then(resolve, reject);
-return;
-    }
-
-    // Fallback path for statement-like or multiline Sage code.
-    var directPromise = sageQueue.then(
-function() {
-    return postSageRaw(requestKey).then(responseToResult);
-},
-function() {
-    return postSageRaw(requestKey).then(responseToResult);
-}
-    );
-
-    sageRequestInFlight[requestKey] = directPromise;
-
-    sageQueue = directPromise.then(
-function() {},
-function() {}
-    );
-
-    directPromise.then(
-function(result) {
-    delete sageRequestInFlight[requestKey];
-    sageRequestCache[requestKey] = result;
-    resolve(result);
-},
-function(err) {
-    delete sageRequestInFlight[requestKey];
-    reject(err);
-}
-    );
-});
-    });
-};
-
-
 $(function() {
-    /*
-     * Collect authored sagesilent blocks without creating the historical
-     * browser-visible kernel compatibility layer.
-     *
-     * Canonical Sage executes its immutable manifest independently. This
-     * collection remains temporarily because the legacy fallback executor
-     * still uses fullSageRequest(), and because executeSageSilents() currently
-     * owns detection that reveals the Show Me Another button.
-     */
-    if ($('script[type="text/sagemath"]').length > 0) {
-        executeSageSilents();
-    }
+    revealShowMeAnotherForAuthoredSage();
 });

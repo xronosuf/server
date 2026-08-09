@@ -1872,6 +1872,14 @@ function initialCanonicalPageSageFailureDetails(
 function reportInitialCanonicalPageSageFailure(
     err
 ) {
+    if (
+        err &&
+        err.xronosCanonicalFallback
+    ) {
+        canonicalPageSageRuntime.status =
+            "fallback";
+    }
+
     pageRuntime.component(
         "sage-initial",
         err &&

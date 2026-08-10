@@ -49,6 +49,20 @@ Remaining coordinator work:
   time after evidence supports removal;
 - create the student/instructor support-report workflow and support portal.
 
+### Deferred final answer/activity support-path acceptance
+
+- The final support policy/report code has direct unit coverage, and earlier
+  browser work validated initial-answer degradation and later recovery.
+- The audit could not establish that an `XR-ANSWER-INITIAL-101` or
+  `XR-ACTIVITY-INITIAL-101` failure was subsequently exercised end-to-end
+  through the finished unified support banner plus generated/copyable report.
+- This is not currently considered a Phase 1 blocker because the component
+  behavior and final support presentation/report pieces are independently
+  tested, but the exact integrated browser acceptance state is ambiguous.
+- During a future browser reliability pass, deliberately exercise at least one
+  of these broader coordinator failures through the completed support UI and
+  record the result. Reopen implementation only if that test exposes a defect.
+
 ## Saved state and WebSocket
 
 Completed/current:
@@ -297,6 +311,26 @@ Remaining/deferred Sage work:
   token alone;
 - remove only the dead `XRONOS_CANONICAL_PAGE_SAGE_ENABLED` `.env` entry during
   deployment cleanup, leaving unrelated `.env` entries intact.
+
+### Deferred SageCell support-trace deployment
+
+- Xronos now generates and propagates the non-secret
+  `X-Xronos-Support-Trace` correlation identity, and Xronos-side state/Sage
+  logging has been browser/log validated.
+- Source changes are already prepared in
+  `sagecell-docker-v2/patch_web_server_local_provider.py` and
+  `sagecell-docker-v2/sagecell_log.py` to log the same strictly validated
+  opaque trace at SageCell `/service` entry without logging Sage source,
+  learner identity, cookies, authorization material, or arbitrary headers.
+- The running SageCell has intentionally **not** been rebuilt or replaced for
+  this change. A disposable build showed that the current image recipe resolves
+  contemporary apt/pip dependencies, so an incidental rebuild risks unrelated
+  dependency drift.
+- Before deploying the prepared SageCell trace patch, make the SageCell image
+  build reproducible/pinned enough for a controlled maintenance change. Then
+  rebuild/deploy and validate end-to-end report -> Xronos -> SageCell trace
+  correlation.
+- Do not rebuild/recreate SageCell merely to activate this logging.
 
 ### Reliability audit classification
 
@@ -554,6 +588,31 @@ Fixture lessons:
   launch test.
 
 ## Documentation follow-up
+
+### Final project documentation reconciliation — do last
+
+After all remaining project changes are finished, fully reconcile the
+page-runtime documentation against the final repository state.
+
+At minimum:
+
+- update `CURRENT_PIPELINE.md`, `IMPLEMENTATION_STATUS.md`,
+  `COORDINATOR_DESIGN.md`, `DEGRADED_STATE_POLICY.md`,
+  `RUNTIME_OWNERSHIP_MATRIX.md`, `FEATURE_INVENTORY.md`, `TODO.md`, and the
+  current handoff wherever their status/next-step language is stale;
+- remove or rewrite statements that describe already-completed support,
+  state, answer, MathJax, Sage, or WebSocket work as future work;
+- ensure every deliberately deferred item has one durable TODO/home and enough
+  rationale that a future maintainer can understand why it was deferred;
+- clearly distinguish deployed behavior from source-only/deployment-deferred
+  behavior, especially SageCell support-trace logging;
+- reconcile test counts, browser acceptance evidence, branch checkpoints, and
+  Phase 1 completion language;
+- preserve historical design rationale where useful, but label it as history
+  rather than current implementation guidance.
+
+This documentation reconciliation is intentionally the **last** project task so
+it does not become stale again while final code changes are still being made.
 
 Create or complete:
 

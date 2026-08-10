@@ -41,6 +41,8 @@ block maintitle
       - var xronosSagecellAuth = xronosSagecellPageAuth(activity)
       script.
         window.xronosSagecellAuth = !{JSON.stringify(xronosSagecellAuth)};
+    script.
+      window.xronosSupportEmail = !{JSON.stringify(config.supportEmail || "")};
     div.lds-ring(id="loadingSpinner")
           div
           div

@@ -72,6 +72,7 @@ config.keywords       = pkg.keywords;
 config.environment    = process.env.NODE_ENV || 'test';
 
 config.port = process.env.PORT || 3000;
+config.supportEmail = process.env.XRONOS_SUPPORT_EMAIL || '';
 config.sagecellService = process.env.SAGECELL_SERVICE || 'http://127.0.0.1:8888/service';
 config.sagecellFallbackService = process.env.SAGECELL_FALLBACK_SERVICE || 'https://sagecell.sagemath.org/service';
 config.sagecellServiceMode = process.env.SAGECELL_SERVICE_MODE || 'local-with-fallback';

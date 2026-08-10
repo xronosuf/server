@@ -261,6 +261,48 @@ function copyTextToClipboard(
 }
 
 
+function supportContactLead(supportEmail) {
+    var email =
+        typeof supportEmail === "string"
+            ? supportEmail.trim()
+            : "";
+
+    if (email) {
+        return (
+            "If this problem continues, contact " +
+            email +
+            "."
+        );
+    }
+
+    return (
+        "If this problem continues, contact your instructor or course support."
+    );
+}
+
+
+function supportContactInstructions(supportEmail) {
+    var email =
+        typeof supportEmail === "string"
+            ? supportEmail.trim()
+            : "";
+
+    if (email) {
+        return (
+            "Generate and copy the diagnostic report below, then email it to " +
+            email +
+            "."
+        );
+    }
+
+    return (
+        "Generate and copy the diagnostic report below, then paste it into " +
+        "your normal email or webmail when contacting your instructor or " +
+        "course support."
+    );
+}
+
+
 function showReportModal(
     $,
     issue,
@@ -342,7 +384,9 @@ function showReportModal(
 
     body.append(
         $("<p/>").text(
-            "If this problem continues, contact your instructor or course support."
+            supportContactLead(
+                window.xronosSupportEmail
+            )
         )
     );
 
@@ -361,7 +405,9 @@ function showReportModal(
 
     var reportInstructions =
         $("<p/>").text(
-            "Generate and copy the diagnostic report below, then paste it into your normal email or webmail."
+            supportContactInstructions(
+                window.xronosSupportEmail
+            )
         );
 
     var reportButton =
@@ -702,6 +748,10 @@ function install(pageRuntime, $) {
 module.exports = {
     presentationForIssue:
         presentationForIssue,
+    supportContactLead:
+        supportContactLead,
+    supportContactInstructions:
+        supportContactInstructions,
     install:
         install
 };

@@ -111,6 +111,65 @@ describe(
         );
 
         it(
+            "shows the configured support email in the contact lead",
+            function() {
+                var result =
+                    supportUi.supportContactLead(
+                        "jnowell@ufl.edu"
+                    );
+
+                result.should.equal(
+                    "If this problem continues, contact jnowell@ufl.edu."
+                );
+            }
+        );
+
+        it(
+            "uses generic contact wording without a support email",
+            function() {
+                var result =
+                    supportUi.supportContactLead(
+                        ""
+                    );
+
+                result.should.equal(
+                    "If this problem continues, contact your instructor or course support."
+                );
+            }
+        );
+
+        it(
+            "shows the configured support email in report instructions",
+            function() {
+                var result =
+                    supportUi.supportContactInstructions(
+                        "jnowell@ufl.edu"
+                    );
+
+                result.should.match(
+                    /email it to jnowell@ufl\.edu/
+                );
+            }
+        );
+
+        it(
+            "falls back to generic support instructions without an email",
+            function() {
+                var result =
+                    supportUi.supportContactInstructions(
+                        ""
+                    );
+
+                result.should.match(
+                    /instructor or course support/
+                );
+                result.should.not.match(
+                    /email it to/
+                );
+            }
+        );
+
+        it(
             "returns no presentation without an issue",
             function() {
                 should(

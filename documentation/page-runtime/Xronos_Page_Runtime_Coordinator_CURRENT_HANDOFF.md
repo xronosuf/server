@@ -5,12 +5,11 @@ Coordinator project after a chat/session boundary.
 
 **Last reconciled:** 2026-08-09
 **Working branch:** `page-runtime-coordinator`
-**Last known local HEAD:** `eed8ae4` — `Refresh runtime coordinator checkpoint docs`
-**Last known remote HEAD:** `eed8ae4` — `Refresh runtime coordinator checkpoint docs`
-**Last known branch relation:** synchronized; current initial-answer work is uncommitted
-**Pushed?** The checkpoint through `eed8ae4` is backed up on
-`origin/page-runtime-coordinator`; the current initial-answer reconciliation is
-not yet staged, committed, or pushed.
+**Last known local HEAD:** `a717d28` — `Reconcile initial math-answer lifecycle`
+**Last known remote HEAD:** `a717d28` — `Reconcile initial math-answer lifecycle`
+**Last known branch relation:** synchronized
+**Pushed?** Yes; the checkpoint through `a717d28` is backed up on
+`origin/page-runtime-coordinator`.
 
 Always verify Git state before changing code.
 
@@ -61,8 +60,8 @@ efbdced Record failed-render browser validation
 785cd8a Block interaction after failed initial MathJax render
 ```
 
-Local and remote commits are synchronized at `eed8ae4`; the worktree contains
-the uncommitted initial math-answer reconciliation and its documentation cleanup.
+Local and remote are synchronized at `a717d28`, which includes the completed
+initial math-answer reconciliation and its documentation cleanup.
 ## 4. Coordinator foundation already completed
 
 Implemented foundation includes:
@@ -262,7 +261,7 @@ Use project-local Gulp inside `devximserver`.
 
 The host Node 8/global-Gulp environment is not a valid browser build path.
 
-Latest focused tests in the current reconciliation worktree:
+Latest focused tests for the pushed `a717d28` reconciliation:
 
 ```text
 page-runtime coordinator core:     33
@@ -343,8 +342,8 @@ Browser evidence on `testSuite/02-answers-saved-progress`:
 
 The browser run exposed one real coordinator defect: `allow-late-success`
 previously accepted late external recovery only from `timed-out`, so a second
-signal after `degraded` was counted but rejected. The current uncommitted core
-patch permits same-operation `degraded -> succeeded/not-required` recovery for
+signal after `degraded` was counted but rejected. The `a717d28` core fix permits
+same-operation `degraded -> succeeded/not-required` recovery for
 `allow-late-success` external leaves, records `task-recovered`, and uses the
 existing derived recomputation path.
 
@@ -435,13 +434,13 @@ Keep separate from the next coordinator patch:
 
 The Page Runtime Coordinator has progressed from passive observation to active
 startup ownership and explicit initial MathJax/Sage/answer-readiness lifecycle
-contracts. The pushed checkpoint through `eed8ae4` contains the completed Sage
-milestones and refreshed checkpoint docs. The current uncommitted worktree closes
-the `initial-math-answers` reconciliation with a development fault probe,
-same-operation degraded external recovery in the coordinator core, 95 focused
-passing tests, and browser proof that a forced missing answer model degrades then
-repairs to settled while interaction/page readiness recover transitively. No
-answer identity redesign or answer-specific deadline was introduced.
+contracts. The pushed checkpoint through `a717d28` contains the completed Sage milestones,
+refreshed checkpoint docs, and the closed `initial-math-answers` reconciliation:
+a development fault probe, same-operation degraded external recovery in the
+coordinator core, 95 focused passing tests, and browser proof that a forced
+missing answer model degrades then repairs to settled while interaction/page
+readiness recover transitively. No answer identity redesign or answer-specific
+deadline was introduced.
 
 The next substantive lifecycle is initial-state operation/outcome semantics,
 followed by the stable support-report contract.

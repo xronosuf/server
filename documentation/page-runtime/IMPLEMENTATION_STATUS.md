@@ -17,15 +17,14 @@ Canvas grade passback.
 
 ```text
 branch: page-runtime-coordinator
-local HEAD: eed8ae4 Refresh runtime coordinator checkpoint docs
-remote HEAD: eed8ae4 Refresh runtime coordinator checkpoint docs
-branch relation: synchronized; current initial-answer reconciliation is uncommitted
+local HEAD: a717d28 Reconcile initial math-answer lifecycle
+remote HEAD: a717d28 Reconcile initial math-answer lifecycle
+branch relation: synchronized
 ```
 
-The pushed checkpoint through `eed8ae4` includes the canonical-only Sage cleanup,
-visible reliability hardening, and refreshed coordinator checkpoint docs. The
-current worktree additionally contains the browser-validated initial math-answer
-reconciliation described below; it has not yet been staged, committed, or pushed.
+The pushed checkpoint through `a717d28` includes the canonical-only Sage cleanup,
+visible reliability hardening, refreshed coordinator checkpoint docs, and the
+browser-validated initial math-answer reconciliation described below.
 ## Current coordinator model
 
 External leaves:
@@ -252,7 +251,7 @@ Use the project-local Gulp executable inside `devximserver`.
 
 The host Node 8/global-Gulp environment cannot build the current bundle.
 
-Latest focused validation in the current uncommitted reconciliation worktree:
+Latest focused validation for the pushed `a717d28` reconciliation:
 
 ```text
 page-runtime coordinator core:     33 passing

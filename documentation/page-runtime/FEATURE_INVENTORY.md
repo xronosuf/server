@@ -91,10 +91,15 @@ behavior depends upon it.
   - browser `createKernel` / iopub emulation
   - legacy browser request queues and batching
 - Disposition: `RETAIN`
-- Current-project treatment:
+- Phase 1 treatment:
   - canonical operation identity is implemented
   - visible terminal settlement is implemented and browser-validated
-  - future work should focus on diagnostics, deployment cleanup, and
+  - retryable result-reading failure uses the visible Retry path
+  - page requests carry the non-secret Xronos support trace for server
+    correlation
+  - SageCell-side trace logging is source-ready but deployment-deferred
+- Future work:
+  - deployment cleanup, reproducible SageCell build/deploy work, and
     authorization hardening without restoring legacy execution
 
 ### Author JavaScript block
@@ -161,6 +166,23 @@ behavior depends upon it.
 - Failure UI: localized account-menu identity error
 - Ordinary content blocking: no
 - Sensitive-operation blocking: operation-specific
+
+### Runtime support and diagnostics
+
+- Browser owners: `page-runtime-support-snapshot.js`,
+  `page-runtime-support-policy.js`, `page-runtime-support-ui.js`,
+  `page-runtime-support-report.js`
+- Server correlation owners: `app.js`, `routes/state.js`
+- Role:
+  - stable subsystem-level support codes
+  - recovery guidance
+  - privacy-bounded copied diagnostics
+  - report-to-Xronos-log support-trace correlation
+  - configured support contact through `XRONOS_SUPPORT_EMAIL`
+- Disposition: `RETAIN`
+- Phase 1 status: implemented and browser-validated for the agreed support scope
+- Important boundary: support trace is diagnostic-only; SageCell-side trace
+  logging remains deployment-deferred
 
 ## Features requiring investigation
 

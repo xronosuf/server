@@ -5,11 +5,11 @@
 This is the single collection point for discoveries made during the page
 runtime inventory.
 
-After the coordinator project stabilizes, the first follow-up task will be to
-divide this list into coherent projects, priorities, and implementation
-sequences.
+Phase 1 of the Page Runtime Coordinator is complete. This file is now the
+durable collection point for work deliberately deferred beyond that Phase 1
+boundary and for unrelated follow-up discovered during the project.
 
-Items here are not commitments to include all work in the current project.
+Items here are not commitments to include all work in one future project.
 
 ## Runtime coordinator and diagnostics
 
@@ -30,24 +30,35 @@ Completed/current foundation:
 - initial-state `found`/`empty`/`failed`/`invalid-request` semantics and
   reconnect `state-resynchronization` are implemented and browser-validated;
 - state WebSocket application heartbeat, pong liveness diagnostics, timer
-  cleanup, and reconnect-backoff reset are implemented and browser-validated.
+  cleanup, and reconnect-backoff reset are implemented and browser-validated;
+- the stable support taxonomy and recovery-action policy are implemented;
+- the unified student recovery banner and **Report this problem** modal are
+  implemented;
+- the privacy-bounded support-report schema v1 and automatic copy workflow are
+  implemented and browser-validated;
+- each page runtime has a non-secret `supportTraceId` that is included in the
+  report and correlates state/Sage requests with Xronos server logs;
+- `XRONOS_SUPPORT_EMAIL` provides the server-configured support contact shown in
+  the report modal, with generic instructor/course-support wording when unset.
 
-Remaining coordinator work:
+Remaining/deferred coordinator work:
 
-- stabilize and document `window.xronosInspectPageRuntime()` as the next
-  substantive support contract;
-- reconcile remaining legacy initial-state watchdog ownership after the explicit
-  protocol has accumulated enough evidence;
-- add occurrence IDs and broader stable diagnostic coverage;
+- reconcile remaining legacy initial-state watchdog ownership only after the
+  explicit protocol has accumulated enough evidence;
+- add occurrence IDs only if they provide support value beyond the existing
+  page `supportTraceId`, runtime session ID, operation IDs, and bounded events;
 - record automatic reload/navigation causes;
 - detect unresolved visible loading indicators across non-Sage components;
-- record page metadata version, bundle version, `/version`, and relevant feature
-  modes;
+- consider support-report schema v2 enrichment with application/bundle version,
+  explicit operation/occurrence identity, resynchronization detail, canonical
+  Sage state, and derived readiness where those fields can be safely and
+  stably defined;
 - continue replacing implicit callback completion with explicit terminal
-  outcomes;
+  outcomes where doing so materially improves reliability or supportability;
 - reconcile duplicated legacy comparison/watchdog ownership one dependency at a
   time after evidence supports removal;
-- create the student/instructor support-report workflow and support portal.
+- broader support tooling or a dedicated support portal, if later needed,
+  remains separate from the completed in-page report workflow.
 
 ### Deferred final answer/activity support-path acceptance
 
@@ -589,32 +600,27 @@ Fixture lessons:
 
 ## Documentation follow-up
 
-### Final project documentation reconciliation — do last
+### Final project documentation reconciliation
 
-After all remaining project changes are finished, fully reconcile the
-page-runtime documentation against the final repository state.
+The final page-runtime documentation reconciliation was performed after the
+support-contact follow-up at committed checkpoint `2759508`.
 
-At minimum:
+The reconciliation updates the durable documents to:
 
-- update `CURRENT_PIPELINE.md`, `IMPLEMENTATION_STATUS.md`,
-  `COORDINATOR_DESIGN.md`, `DEGRADED_STATE_POLICY.md`,
-  `RUNTIME_OWNERSHIP_MATRIX.md`, `FEATURE_INVENTORY.md`, `TODO.md`, and the
-  current handoff wherever their status/next-step language is stale;
-- remove or rewrite statements that describe already-completed support,
-  state, answer, MathJax, Sage, or WebSocket work as future work;
-- ensure every deliberately deferred item has one durable TODO/home and enough
-  rationale that a future maintainer can understand why it was deferred;
-- clearly distinguish deployed behavior from source-only/deployment-deferred
-  behavior, especially SageCell support-trace logging;
-- reconcile test counts, browser acceptance evidence, branch checkpoints, and
-  Phase 1 completion language;
-- preserve historical design rationale where useful, but label it as history
-  rather than current implementation guidance.
+- treat the Phase 1 support taxonomy, recovery banner, support report, support
+  trace, and configured support contact as completed behavior;
+- remove stale language that still described completed state, answer, MathJax,
+  Sage, WebSocket, or support work as the next project target;
+- remove the obsolete state-protocol description that incorrectly collapsed
+  state-query failure into successful empty state;
+- preserve deliberately deferred work in this TODO list;
+- distinguish deployed Xronos support correlation from the source-ready but
+  deployment-deferred SageCell support-trace logger;
+- preserve the unresolved integrated answer/activity support-path browser
+  acceptance as a deferred test rather than a Phase 1 blocker.
 
-This documentation reconciliation is intentionally the **last** project task so
-it does not become stale again while final code changes are still being made.
-
-Create or complete:
+Possible future documentation artifacts, if they become useful as separate
+maintainer references:
 
 - `LIFECYCLE_MODEL.md`
 - `DIAGNOSTIC_CODE_MODEL.md`
@@ -622,5 +628,4 @@ Create or complete:
 - `SAGE_SEED_AND_CONTEXT_INVARIANTS.md`
 - `TEST_MATRIX.md`
 
-Do not finalize detailed coordinator APIs until passive instrumentation and
-runtime evidence are available.
+Do not create these merely to duplicate the reconciled durable documents above.

@@ -9,9 +9,10 @@ The original architecture inventory began at baseline commit:
 
 `b235dc15fa1d409b52ebc7038ebdf967113f0cda`
 
-The current coordinator/runtime description below is reconciled through:
+The current coordinator/runtime description below is reconciled through the
+Phase 1 implementation checkpoint:
 
-`e794671`
+`2759508`
 
 It records current behavior, current ownership boundaries, and browser-validated
 runtime contracts. Historical inventory sections are retained where still
@@ -260,24 +261,6 @@ net.
 Browser validation confirmed healthy heartbeat before and after a forced server
 restart, successful reconnect on a later attempt, backoff reset to 1 second,
 and separate state resynchronization without reopening initial-state.
-5. sends `sync` with stored data or an empty object
-
-The current implementation treats both a failed state query and a confirmed
-missing state record as an empty state:
-
-```javascript
-if (err || (!state))
-    state = {data: {}};
-```
-
-The browser therefore cannot distinguish:
-
-- confirmed no existing state
-- saved-state lookup failure
-
-This ambiguity must be resolved before fresh-session fallback can be considered
-safe.
-
 ## State protocol
 
 Relevant WebSocket operations include:
@@ -870,28 +853,63 @@ fresh attempt, and normal Sage then completed successfully.
 
 Canonical correctness failures remain separate and fail closed.
 
+## Runtime support and reporting
+
+Phase 1 adds a stable support layer on top of the lifecycle observations above.
+
+`page-runtime-support-snapshot.js` converts runtime state into a bounded
+support-policy view. `page-runtime-support-policy.js` maps active failures to
+stable student-visible support codes and explicit recovery actions.
+`page-runtime-support-ui.js` renders the unified recovery banner and
+**Report this problem** modal.
+
+The report modal builds schema-v1 diagnostics through
+`page-runtime-support-report.js`. The report:
+
+- uses an explicit allowlist rather than copying the runtime object;
+- includes the active support issue, page path, runtime session and
+  `supportTraceId`, browser metadata, selected subsystem state, and at most 30
+  recent detail-free runtime events;
+- excludes student answer contents/IDs, Sage source/code, full page state,
+  cookies, authentication material, Canvas/LTI secrets, and arbitrary event
+  details;
+- copies automatically through the Clipboard API with a legacy
+  `document.execCommand("copy")` fallback.
+
+`XRONOS_SUPPORT_EMAIL` is read through `config.js` and exposed to the page as the
+non-secret `window.xronosSupportEmail`. When configured, the support modal tells
+the student which address should receive the copied report; when unset, generic
+instructor/course-support wording remains.
+
+Each page runtime also creates a non-secret `supportTraceId`. The browser sends
+it with state `watch`, `/sagecell/auth`, and `/sagecell/service`. Xronos validates
+the trace before logging/forwarding it. The trace is diagnostic-only, is not
+authorization, and does not participate in the Sage response-cache key.
+
+Xronos-side state/Sage correlation has been browser/log validated. SageCell-side
+logging of the same trace is source-ready but deployment-deferred.
+
 ## Current architectural conclusion
 
-The runtime still contains multiple mature feature-owned internal paths, but
-startup is no longer only a passive network of callbacks.
+The runtime still contains mature feature-owned internals and deliberately
+deferred cleanup, but the revised Phase 1 goal is complete.
 
-The coordinator owns multiple startup control seams and explicit lifecycle
-contracts for the initial MathJax Process plus canonical and visible initial
-Sage.
+The coordinator now owns multiple startup control seams and explicit lifecycle
+contracts for initial MathJax, canonical and visible initial Sage, initial
+logical math-answer attachment, initial state, activity readiness, and state
+transport liveness.
 
-The `initial-math-answers` reconciliation is complete for the current scope,
-including browser-proven degraded-to-settled repair and coordinator-derived
-readiness recovery.
+Initial math-answer and initial-state reconciliation are complete for the agreed
+scope, including browser-proven degraded-to-settled answer repair, explicit
+state protocol outcomes, reconnect `state-resynchronization`, heartbeat/liveness
+tracking, and reconnect-backoff reset.
 
-Initial-state terminal semantics are also reconciled for the current scope:
-explicit outcomes distinguish success from failure, reconnect is modeled
-separately as `state-resynchronization`, and first-state/browser reconnect
-behavior is directly tested and browser-validated.
+The Phase 1 support layer is also implemented: stable support codes, recovery
+actions, unified student guidance, privacy-bounded copied diagnostics, a
+non-secret report-to-server correlation trace, and an optional
+server-configured support contact.
 
-The state WebSocket now has an 18-second heartbeat, immediate pong liveness
-tracking, clean timer ownership, and reconnect-backoff reset after successful
-open.
-
-The next substantive reconciliation target is the stable support-report
-contract, followed by evidence-based removal/demotion of duplicated legacy
-comparison/watchdog ownership.
+The project should not now expand into broad runtime migration merely because
+legacy owners still exist. Further work belongs in `TODO.md` and should be
+reopened as focused projects when production evidence or product priorities
+justify it.

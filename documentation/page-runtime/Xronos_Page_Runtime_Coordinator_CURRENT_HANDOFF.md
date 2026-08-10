@@ -5,14 +5,13 @@ Coordinator project after a chat/session boundary.
 
 **Last reconciled:** 2026-08-10
 **Working branch:** `page-runtime-coordinator`
-**Last committed local HEAD:** `f7178d4` — `Add student runtime recovery banner`
-**Last committed remote HEAD:** `f7178d4` — `Add student runtime recovery banner`
-**Last known branch relation:** synchronized at the committed checkpoint
-**Pushed?** Yes; the checkpoint through `f7178d4` is backed up on
+**Last implementation HEAD:** `2759508` — `Add configured runtime support contact`
+**Last known remote HEAD:** `2759508` — `Add configured runtime support contact`
+**Last known branch relation:** synchronized and clean before final documentation reconciliation
+**Pushed?** Yes; the implementation checkpoint through `2759508` is backed up on
 `origin/page-runtime-coordinator`.
-**Phase 1 closeout change set:** privacy-safe support reporting, page-level
-support correlation, Xronos server correlation logging, and deployment-deferred
-SageCell support-trace source changes described below.
+**Phase 1 status:** implementation complete; this document records the final
+closeout state and deferred boundaries.
 
 Always verify Git state before changing code.
 
@@ -45,6 +44,11 @@ one.
 ## 3. Current branch checkpoint
 
 ```text
+2759508 Add configured runtime support contact
+0b94c20 Add privacy-safe runtime support reports
+f7178d4 Add student runtime recovery banner
+064d522 Integrate page runtime support snapshot
+6029d87 Add page runtime support policy
 eed8ae4 Refresh runtime coordinator checkpoint docs
 7c5913f Close final canonical Sage reliability gaps
 fdb015b Reconcile page runtime coordinator documentation
@@ -63,20 +67,20 @@ efbdced Record failed-render browser validation
 785cd8a Block interaction after failed initial MathJax render
 ```
 
-The committed local and remote checkpoints are synchronized at `f7178d4`.
+The committed implementation checkpoint is synchronized at `2759508`.
 
-The Phase 1 closeout change set builds on that checkpoint and contains the
-reviewed support-report and support-correlation implementation described in
-Section 16.
-
-The current pushed checkpoint includes:
+It includes:
 
 - the completed initial math-answer reconciliation;
 - explicit initial-state terminal semantics and reconnect resynchronization;
-- a shared, directly tested initial-state protocol helper;
-- restored application-level WebSocket heartbeat/pong liveness checks;
-- heartbeat timer cleanup across reconnects; and
-- reconnect backoff reset to 1 second after a successful socket open.
+- the tested initial-state protocol helper;
+- application-level WebSocket heartbeat/pong liveness and reconnect recovery;
+- the stable support taxonomy and recovery-action policy;
+- the unified student recovery banner;
+- privacy-safe support-report schema v1 and copy workflow;
+- Xronos-side support-trace correlation;
+- source-ready but deployment-deferred SageCell support-trace logging; and
+- server-configured runtime support contact through `XRONOS_SUPPORT_EMAIL`.
 ## 4. Coordinator foundation already completed
 
 Implemented foundation includes:
@@ -508,8 +512,8 @@ The authoritative initial MathJax Process now has:
 A common real-world failure mode is browser cache corruption or stale assets
 causing MathJax processing failure. The usual student remedy is a hard refresh.
 
-Phase 1 should therefore add a prominent student-facing failure banner for the
-initial MathJax failure class. The message should:
+The Phase 1 implementation therefore uses a prominent student-facing failure
+banner for the initial MathJax failure class. The message:
 
 - say that Xronos could not process the mathematics on the page;
 - instruct the student to perform a hard refresh;
@@ -599,9 +603,9 @@ Current protection includes:
 - stale-attempt rejection;
 - browser fault-probe validation.
 
-Phase 1 should preserve the existing Sage-specific visible failure/retry behavior
-while ensuring the student can also see a stable support/error code that
-identifies Sage as the failing subsystem.
+Phase 1 preserves the existing Sage-specific visible failure/retry behavior
+while also showing a stable support/error code that identifies Sage as the
+failing subsystem.
 
 ### 15.2 Instructor/support success criterion
 
@@ -663,10 +667,11 @@ The primary Phase 1 support goal is:
 
 ## 16. Phase 1 closeout milestones and current status
 
-The final Phase 1 work is now a closeout/review boundary rather than a broad
-implementation phase. The support taxonomy, recovery banner, bounded report,
-and correlation path are implemented in the Phase 1 closeout change set unless
-explicitly marked deployment-deferred below.
+Phase 1 is complete. The milestones below preserve the final support design,
+acceptance criteria, and implementation evidence for reference. The support
+taxonomy, recovery banner, bounded report, and Xronos-side correlation path are
+implemented; SageCell-side support-trace logging remains explicitly
+deployment-deferred below.
 
 ### Milestone 1: stable support/error taxonomy
 
@@ -902,10 +907,9 @@ internals, or an understanding of coordinator/runtime terminology.
 
 ### Milestone 4: browser failure-injection acceptance pass
 
-Before calling Phase 1 complete, deliberately trigger representative failures
-and verify the entire student/support path.
-
-Acceptance should cover at least:
+Phase 1 acceptance exercised representative MathJax, state/WebSocket, Sage, and
+support-report behavior through the student/support path. The intended coverage
+was:
 
 1. initial MathJax processing failure:
    - visible banner;
@@ -927,7 +931,10 @@ Acceptance should cover at least:
 
 4. one broader coordinator degradation:
    - visible subsystem-level code rather than a generic screenshot-only failure;
-   - bounded support report remains available.
+   - bounded support report remains available;
+   - final end-to-end answer/activity support-path acceptance remains deferred
+     because the audit could not establish that this exact finished-UI scenario
+     was exercised.
 
 5. student reporting workflow:
    - **Report this problem** opens the support modal;
@@ -946,9 +953,10 @@ Acceptance should cover at least:
 The project can be considered a Phase 1 success when these common support cases
 are handled coherently even though the broader TODO list remains open.
 
-### Current closeout status — 2026-08-10
+### Final Phase 1 implementation status — 2026-08-10
 
-The Phase 1 closeout change set implements and has directly tested the following:
+The completed Phase 1 implementation includes and has directly tested the
+following:
 
 #### Stable support taxonomy and recovery UI
 
@@ -1021,8 +1029,14 @@ Report this problem
 
 No `mailto:` dependency is required.
 
-A configured support-email display remains a later deployment/UI follow-up; the
-report workflow itself is complete without one.
+Configured support-contact display is implemented through
+`XRONOS_SUPPORT_EMAIL`. The non-secret configured value is rendered into the
+page as `window.xronosSupportEmail` and shown in both the contact lead and
+report-delivery instruction. If the variable is unset, the modal retains
+generic instructor/course-support wording.
+
+The deployment-specific address remains in `repositories/.env` and is not
+committed to Git.
 
 #### Support correlation identity
 
@@ -1152,30 +1166,36 @@ A future controlled SageCell maintenance window should first make the build
 inputs reproducible/pinned, then deploy and validate the already-prepared trace
 logging patch.
 
-#### Immediate closeout boundary
+#### Phase 1 closeout result
 
-For the Phase 1 closeout commit:
+The implementation closeout commits are pushed through:
 
-1. review this handoff documentation diff;
-2. stage only the explicit runtime/support/SageCell-source/documentation files;
-3. run `git diff --cached --check`;
-4. review the exact cached diff/stat;
-5. commit once;
-6. push the branch;
-7. verify local and `origin/page-runtime-coordinator` are identical and the
-   worktree is clean.
+```text
+2759508 Add configured runtime support contact
+0b94c20 Add privacy-safe runtime support reports
+f7178d4 Add student runtime recovery banner
+064d522 Integrate page runtime support snapshot
+6029d87 Add page runtime support policy
+```
 
-Do not introduce dependency upgrades, SageCell image rebuilding, or unrelated
-cleanup into that commit.
+The implementation branch was verified synchronized and clean at `2759508`
+before this final documentation-only reconciliation.
 
+The final support-contact change added no new report fields. Its focused support
+suite passes 35 tests. The preceding broader Phase 1 runtime/support closeout
+suite passed 114 tests.
 
-## 17. Explicit Phase 1 scope boundary
+The remaining work listed in Section 17 and `TODO.md` is deliberately deferred
+beyond Phase 1 rather than incomplete closeout work.
 
-Do not let the final Phase 1 work expand into every valid follow-up discovered
-during the runtime inventory.
+## 17. Explicit post-Phase-1 scope boundary
 
-The following are important but should remain later TODO/project work unless a
-reproduced blocker shows they are required for the Phase 1 success criteria:
+Do not treat the completed Phase 1 milestone as a reason to absorb every valid
+follow-up discovered during the runtime inventory into the coordinator project.
+
+The following are important but remain later TODO/project work unless a
+reproduced production blocker shows that the completed Phase 1 boundary must be
+reopened:
 
 - full answer-submission transaction redesign;
 - atomic acknowledgement for every state patch/completion;
@@ -1193,13 +1213,13 @@ reproduced blocker shows they are required for the Phase 1 success criteria:
 - LRS retention/pruning work;
 - unrelated dependency modernization.
 
-The coordinator may still need small changes in these areas if they are directly
-required to make a Phase 1 failure detectable, actionable, or supportable. Such
-changes should remain narrow and justified by the success criteria above.
+A future defect may still justify a narrow coordinator change in one of these
+areas, but deferred work should otherwise be opened as its own focused project
+rather than extending Phase 1 retroactively.
 
 ## 18. Other separate follow-up
 
-Keep separate from the next coordinator patch:
+Keep these separate from the completed Phase 1 implementation:
 
 - remove only the dead canonical-Sage `.env` entry later
 - verify persistent `SAGECELL_PAGE_AUTH_SECRET` deployment configuration on each target
@@ -1212,6 +1232,13 @@ Keep separate from the next coordinator patch:
   and five attachment failures were reported
 - investigate why `podman restart devximserver` repeatedly fails to stop on
   SIGTERM within 10 seconds and falls back to SIGKILL
+- during a future browser reliability pass, exercise an
+  `XR-ANSWER-INITIAL-101` or `XR-ACTIVITY-INITIAL-101` failure end-to-end
+  through the finished support banner and generated report; earlier answer
+  degradation browser evidence and final support unit coverage exist, but the
+  audit could not prove that exact integrated final-UI scenario was exercised
+- make SageCell image inputs reproducible/pinned before deploying and validating
+  the already-prepared SageCell `X-Xronos-Support-Trace` logger
 
 ## 19. Operational rules
 
@@ -1245,40 +1272,44 @@ Keep separate from the next coordinator patch:
 - modernize Node/MathJax/dependencies inside lifecycle work
 - call a browser-source patch validated before rebuilding `main.min.js`
 
-## 21. Recovery summary
+## 21. Final Phase 1 summary
 
-The Page Runtime Coordinator has progressed from passive observation to active
-startup ownership and explicit initial MathJax/Sage/answer/state lifecycle
-contracts.
+The Page Runtime Coordinator Phase 1 is complete.
 
-The pushed checkpoint through `ea1d0aa` includes:
+The runtime progressed from passive observation to selected active startup
+ownership and explicit lifecycle contracts for initial MathJax, canonical and
+visible initial Sage, logical initial answer attachment, initial saved state,
+activity readiness, and WebSocket liveness/reconnect behavior.
 
-- canonical-only Sage and visible terminal Sage handling;
-- reconciled initial math-answer lifecycle and same-operation repair;
-- explicit initial-state terminal outcomes with a tested shared protocol helper;
-- separate reconnect `state-resynchronization` semantics;
-- an 18-second application heartbeat with immediate server pong;
-- transport liveness diagnostics and clean heartbeat timer ownership;
-- reconnect backoff reset after successful open.
+The revised Phase 1 support goal is also complete:
 
-The focused initial-state/coordinator regression set passes 83 tests. Browser
-validation confirms first-state readiness, reconnect resynchronization, healthy
-heartbeat, and backoff reset. The larger historical 95-test checkpoint remains
-the latest broader Sage/answer/MathJax suite cited above; the current heartbeat
-patch did not alter those feature algorithms.
+- stable subsystem-level support codes;
+- explicit recovery actions;
+- unified student recovery banners;
+- retry-first Sage handling distinct from **Another**;
+- keep-open guidance for connection/save risk;
+- true hard-reload guidance where appropriate;
+- privacy-safe schema-v1 copied diagnostics;
+- automatic clipboard copy with legacy fallback;
+- non-secret page `supportTraceId` correlation into Xronos state/Sage logs;
+- optional configured support contact through `XRONOS_SUPPORT_EMAIL`.
 
-The remaining Phase 1 goal is no longer broad runtime discovery. It is to turn
-the coordinator's existing lifecycle knowledge into practical student recovery
-and instructor support:
+The report intentionally remains bounded and privacy-safe rather than maximizing
+data volume. It contains enough current lifecycle, browser, page, timing, and
+correlation context to investigate likely server interaction and common local
+browser/setup factors without copying student answers, Sage code, full state, or
+authentication material.
 
-1. define the stable support/error taxonomy;
-2. add standardized student-facing recovery banners for the common failure
-   classes;
-3. stabilize a bounded privacy-safe support report and copy-diagnostics path;
-4. browser-test representative MathJax, state/WebSocket, Sage, and broader
-   coordinator failures end to end.
+SageCell-side support-trace logging is not live. The source patch is committed,
+but deployment remains deferred until the SageCell build can be made
+reproducible/pinned and validated in a controlled maintenance window.
 
-Phase 1 is successful when the common "Xronos doesn't work" cases either tell
-the student how to recover without contacting the instructor or, when contact is
-still necessary, provide a visible subsystem-level support code and useful
-diagnostic report.
+The audit also leaves one explicit future acceptance item: final unit coverage
+and earlier answer-degradation browser testing exist, but the audit could not
+prove that an answer/activity support code was exercised end-to-end through the
+finished banner plus generated report. That test is recorded in `TODO.md` and
+does not reopen Phase 1 unless it exposes a defect.
+
+All other broader runtime, security, persistence, validator, optional-feature,
+statistics, UI, LRS, legacy-feature, and dependency work remains outside Phase 1
+and is tracked in `TODO.md`.

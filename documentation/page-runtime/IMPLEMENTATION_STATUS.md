@@ -17,16 +17,24 @@ Canvas grade passback.
 
 ```text
 branch: page-runtime-coordinator
-local HEAD: ea1d0aa Restore WebSocket heartbeat and reconnect recovery
-remote HEAD: ea1d0aa Restore WebSocket heartbeat and reconnect recovery
+local HEAD: 2759508 Add configured runtime support contact
+remote HEAD: 2759508 Add configured runtime support contact
 branch relation: synchronized
 ```
 
-The pushed checkpoint through `ea1d0aa` includes the canonical-only Sage cleanup,
-visible reliability hardening, browser-validated initial math-answer
-reconciliation, explicit initial-state terminal semantics, reconnect
-resynchronization, and restored WebSocket heartbeat/backoff recovery described
-below.
+Phase 1 is complete at this checkpoint.
+
+The pushed implementation includes the dependency-aware coordinator foundation,
+canonical-only Sage cleanup and visible reliability hardening, initial
+math-answer reconciliation, explicit initial-state terminal semantics, reconnect
+resynchronization, WebSocket heartbeat/backoff recovery, the stable support
+taxonomy and recovery banner, privacy-safe support reporting and Xronos-side
+support correlation, and the server-configured runtime support contact.
+
+The SageCell-side support-trace logger is committed as source but deliberately
+not deployed; that deployment remains deferred in `TODO.md` until the SageCell
+image build is reproducible/pinned enough for a controlled maintenance change.
+
 ## Current coordinator model
 
 External leaves:
@@ -69,7 +77,7 @@ Derived readiness:
 | Initial math-answer attachment | Reconciled and browser-validated, including degraded-to-settled repair and derived readiness recovery |
 | Initial state | Reconciled for current scope: explicit terminal outcomes, tested protocol normalization, browser-validated reconnect resynchronization |
 | State WebSocket liveness | 18-second heartbeat, immediate pong, liveness diagnostics, reconnect timer cleanup, and 1-second post-open backoff reset implemented and browser-validated |
-| Stable support contract | Partial; next major lifecycle target |
+| Stable support contract | Implemented for Phase 1: stable codes/recovery actions, unified banner, bounded report, configured contact, and Xronos-side correlation |
 
 ## Initial MathJax Process
 
@@ -406,11 +414,68 @@ heartbeat.
 
 Nginx's 3600-second WebSocket timeout remains in place as an outer safety net.
 
-## Remaining major coordinator work
+## Phase 1 support and correlation
 
-1. stable support-report contract
-2. removal/demotion of duplicated legacy comparison/watchdog ownership where
-   evidence supports it
-3. optional-service terminality and broader cleanup
+The final Phase 1 support surface is implemented.
 
-The overall coordinator migration is not complete.
+Stable student-visible support codes include:
+
+- `XR-STATE-INITIAL-101`
+- `XR-STATE-CONNECTION-101`
+- `XR-STATE-DIFF-101`
+- `XR-MATHJAX-INITIAL-101`
+- `XR-SAGE-INLINE-INITIAL-101`
+- `XR-ANSWER-INITIAL-101`
+- `XR-ACTIVITY-INITIAL-101`
+
+Recovery actions are modeled separately:
+
+- `hard-reload`
+- `retry-then-hard-reload`
+- `keep-open-until-reconnected`
+- `keep-open-until-save-safe`
+
+`page-runtime-support-report.js` implements report schema v1 using an explicit
+privacy allowlist. Reports contain at most 30 recent runtime events and never
+copy arbitrary event `details`. Student answers, answer IDs, Sage source/code,
+full page state, cookies, authentication material, Canvas/LTI secrets, and
+arbitrary runtime objects are excluded.
+
+Each page runtime creates a non-secret `supportTraceId`. It is included in the
+copied report, sent with state `watch`, `/sagecell/auth`, and
+`/sagecell/service`, and validated before Xronos logging/forwarding. It is not
+authentication and is not part of the Sage cache key.
+
+Xronos-side browser/log correlation has been validated. SageCell source changes
+for logging the same trace are committed but deployment is deferred.
+
+The report modal supports `XRONOS_SUPPORT_EMAIL`. When configured, the modal
+shows the support address in both the contact lead and report-delivery
+instruction. When unset, generic instructor/course-support wording remains.
+The deployment-specific value stays in `repositories/.env` and is not committed.
+
+The final support-contact focused suite passes 35 tests. The preceding broader
+Phase 1 runtime/support closeout suite passed 114 tests before the contact-only
+follow-up.
+
+## Deferred beyond Phase 1
+
+The Phase 1 completion boundary does not imply that the entire historical
+runtime migration is finished.
+
+Important deferred work is tracked in `TODO.md`, including:
+
+1. evidence-based removal/demotion of duplicated legacy watchdog/comparison
+   ownership;
+2. answer-submission and grouped-validator transaction redesign;
+3. WebSocket learner-state authorization and stronger persistence
+   acknowledgement;
+4. optional-interactive terminality and startup cleanup;
+5. broader support-report enrichment only where it provides safe diagnostic
+   value;
+6. Sage authorization hardening and reproducible SageCell deployment work;
+7. unrelated statistics, UI, LRS, legacy-feature, and dependency-maintenance
+   projects.
+
+None of those items is required to reopen the completed Phase 1 support/recovery
+scope unless a reproduced production blocker shows otherwise.

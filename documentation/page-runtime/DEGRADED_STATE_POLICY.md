@@ -272,23 +272,28 @@ the token; callbacks from earlier explicit attempts are ignored and recorded.
 
 ## Diagnostic presentation
 
-Student-facing failures should use:
+Student-facing failures use:
 
-- plain-language summary
-- stable diagnostic code
-- occurrence or session ID
-- exact student action
-- recheck action where useful
-- copyable sanitized report
+- a plain-language summary;
+- a stable support code;
+- a recovery action appropriate to the failure class;
+- the page-level non-secret `supportTraceId` in the copied diagnostic report;
+- exact student action, including retry, keep-open, or hard-reload guidance;
+- a copyable sanitized report.
 
-Example:
+The Phase 1 support codes include:
 
-```text
-We could not restore your saved work.
+- `XR-STATE-INITIAL-101`
+- `XR-STATE-CONNECTION-101`
+- `XR-STATE-DIFF-101`
+- `XR-MATHJAX-INITIAL-101`
+- `XR-SAGE-INLINE-INITIAL-101`
+- `XR-ANSWER-INITIAL-101`
+- `XR-ACTIVITY-INITIAL-101`
 
-Code: XR-STATE-104
-Occurrence: 7K3M-P9Q2
-```
+Occurrence IDs remain optional future enrichment; the existing support trace,
+runtime session ID, operation identities, subsystem snapshot, and recent bounded
+events are the current correlation contract.
 
 ## Sanitization
 
@@ -312,16 +317,24 @@ operations.
 
 ## Support workflow
 
-The intended support workflow is:
+The Phase 1 support workflow is implemented as:
 
-1. Detect
-2. Diagnose
-3. Guide
-4. Verify
-5. Escalate
+1. Detect the active subsystem failure through the runtime/support snapshot.
+2. Classify it with a stable support code and recovery action.
+3. Guide the student through the unified recovery banner.
+4. Offer **Report this problem** for reportable failures.
+5. Generate and copy a bounded privacy-safe diagnostic report.
+6. Correlate the report's `supportTraceId` with Xronos server logs when server
+   interaction must be investigated.
+7. When `XRONOS_SUPPORT_EMAIL` is configured, show that support address in the
+   report modal; otherwise retain generic instructor/course-support guidance.
 
-Student UI, instructor support tools, and developer diagnostics should share
-the same error catalog and occurrence identifiers.
+The support trace is diagnostic-only and must never be treated as
+authentication.
+
+The support report is an allowlist, not a sanitized dump. It must continue to
+exclude answer contents/IDs, Sage source/code, full state, cookies,
+authentication material, LTI/Canvas secrets, and arbitrary event details.
 
 ## Initial MathJax processing errors as pedagogical failure
 
@@ -370,8 +383,9 @@ Already-supported transparent or bounded recovery includes:
 
 - expired page authorization: refresh `/sagecell/auth`, then retry the original
   Sage request once;
-- local SageCell transport failure and HTTP 502/503/504 in
-  `local-with-fallback` mode: try the configured fallback service;
+- local SageCell transport failure, missing response, and HTTP
+  408/429/500/502/503/504 in `local-with-fallback` mode: try the configured
+  fallback service;
 - same-request late visible result after the initial inline deadline: reopen and
   recover when still current;
 - explicit student Retry: create a new request attempt and ignore callbacks from

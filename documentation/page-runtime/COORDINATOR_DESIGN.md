@@ -2,16 +2,16 @@
 
 ## Status
 
-This document is the canonical design and reorientation point for the Xronos
-Page Runtime Coordinator project.
+This document records the architecture reached by the completed Phase 1 Page
+Runtime Coordinator work and the principles that should govern later focused
+extensions.
 
-It reconciles the completed runtime inventory, the existing passive readiness
-instrumentation, the degraded-state policy, and the intended dependency-aware
-execution model.
+Phase 1 is complete at committed implementation checkpoint `2759508`.
 
-The coordinator is not a clean-room replacement for the current runtime.
-It is an incremental promotion of existing observability into explicit runtime
-ownership.
+The coordinator is not a clean-room replacement for the current runtime. It is
+an incremental dependency-aware layer that promoted selected observability and
+startup boundaries into explicit runtime ownership while leaving mature feature
+algorithms in their existing modules.
 
 ## Related authoritative documents
 
@@ -31,7 +31,8 @@ terminal signals, timeouts, and intended treatment.
 
 `DEGRADED_STATE_POLICY.md` defines failure isolation and terminal-state policy.
 
-This document defines the target coordinator architecture and migration path.
+This document records the Phase 1 coordinator architecture, the migration
+principles that produced it, and the boundary for later focused extensions.
 
 ## Project goal
 
@@ -546,26 +547,26 @@ Current verified recovery examples include:
 
 ## Diagnostics interface
 
-The existing runtime inspection and benchmark interfaces must be reconciled,
-not replaced casually.
+The existing runtime inspection and benchmark interfaces remain developer-facing
+diagnostic tools and must not be replaced casually.
 
-The intended stable support interface should eventually expose:
+Phase 1 adds a separate stable student/support surface derived from runtime
+state rather than exposing arbitrary runtime objects directly.
 
-- page session metadata;
-- current readiness dimensions;
-- current page readiness;
-- registered dependencies and ownership;
-- current service states;
-- current operation states;
-- component states;
-- deadline records;
-- blocked tasks;
-- bounded diagnostic history;
-- recovery history;
-- bundle and page versions.
+The implemented support contract includes:
 
-Existing interfaces include runtime inspection and benchmark helpers. Their
-support contract must be documented before renaming or removal.
+- the active support issue and stable support code;
+- a recovery action independent of the support code;
+- the page runtime session identity;
+- the non-secret diagnostic `supportTraceId`;
+- browser/page metadata useful for support;
+- selected allowlisted subsystem observations;
+- at most 30 recent runtime events without arbitrary event `details`;
+- a schema-versioned copied report built from an explicit privacy allowlist.
+
+`window.xronosInspectPageRuntime()` remains the richer internal inspection view.
+Future support-report enrichment should preserve the separation between internal
+diagnostics and the narrower student-copyable contract.
 
 ## Migration strategy
 
@@ -629,13 +630,23 @@ For each subsystem:
 
 ### Phase 6: user-facing recovery
 
-After ownership is reliable:
+Status: completed for the agreed Phase 1 support scope.
 
-- local component error panels;
-- persistent nonpersistent-state warning;
-- reload or recovery actions;
-- support-code and copied-report workflow;
-- instructor-visible diagnostics where appropriate.
+Implemented Phase 1 recovery includes:
+
+- stable subsystem-level support codes;
+- explicit recovery actions;
+- unified student recovery banners;
+- retry-first Sage guidance distinct from **Another**;
+- keep-open guidance for active connection/save-risk conditions;
+- true hard-reload guidance for appropriate persistent failures;
+- **Report this problem**;
+- schema-v1 privacy-safe copied diagnostics;
+- non-secret report-to-Xronos-log support correlation;
+- optional configured support contact through `XRONOS_SUPPORT_EMAIL`.
+
+Broader persistence fallback, optional-component terminality, and
+instructor-specific support tooling remain separate future work in `TODO.md`.
 
 ## Testing requirements
 
@@ -689,47 +700,39 @@ The first coordinator increment will not:
 - replace MathJax or Sage;
 - introduce user-facing fatal panels before terminal outcomes are reliable.
 
-## Current implementation target
+## Phase 1 completion checkpoint
 
-The initial math-answer and initial-state reconciliation targets are complete for
-the current scope.
+The revised Phase 1 goal is complete.
 
-The answer reconciliation established:
+Implemented and validated within the agreed scope:
 
-1. authored answer `data-id`, generated persistence/DOM ID, and MathJax render
-   identity are separate contracts;
-2. ordinary MathJax replacement requires rebinding the replacement DOM node but
-   does not require redefining logical initial completion;
-3. no production answer-ID redesign is justified by the observed runtime;
-4. controlled initial missing-model failure degrades the logical answer leaf;
-5. a later legitimate MathJax pass can repair the same logical answer;
-6. `allow-late-success` external leaves support same-operation
-   `degraded -> succeeded/not-required` recovery;
-7. derived interaction/page readiness recomputes transitively after that repair;
-8. answer correctness and submission semantics remain outside this
-   initial-attachment reconciliation.
+1. dependency-aware coordinator core, operation identity, deadlines, stale
+   completion rejection, bounded history, and safe late recovery;
+2. coordinator ownership of selected startup seams;
+3. authoritative initial MathJax lifecycle and page-level pedagogical failure
+   policy;
+4. canonical-only Sage execution plus separate visible settlement, explicit
+   Retry attempt identity, and stale-attempt rejection;
+5. initial logical math-answer reconciliation including degraded-to-settled
+   repair and transitive readiness recovery;
+6. explicit initial-state protocol outcomes and reconnect
+   `state-resynchronization`;
+7. WebSocket heartbeat/liveness diagnostics and reconnect-backoff recovery;
+8. stable Phase 1 support taxonomy and recovery actions;
+9. unified student recovery banner and report modal;
+10. privacy-safe support-report schema v1 and automatic copy workflow;
+11. non-secret report-to-Xronos-log `supportTraceId` correlation;
+12. optional configured support contact through `XRONOS_SUPPORT_EMAIL`.
 
-The initial-state reconciliation established:
+The broader runtime still has legacy/internal ownership that is intentionally
+outside this completion boundary. Deferred work belongs in `TODO.md`.
 
-1. first-state results are explicit protocol outcomes: `found`, `empty`,
-   `failed`, or `invalid-request`;
-2. successful first acquisition releases queued state consumers;
-3. failed/invalid first acquisition does not fabricate fresh empty state;
-4. reconnect does not reopen or overwrite the one-shot initial-state lifecycle;
-5. reconnect state updates the synchronization shadow and records a separate
-   `state-resynchronization` operation;
-6. explicit protocol normalization is centralized in a directly tested pure
-   helper;
-7. browser validation confirms first-state readiness and reconnect
-   resynchronization.
-
-WebSocket transport reliability is also restored through an 18-second heartbeat,
-immediate server pong, liveness diagnostics, heartbeat timer cleanup, and
-successful-open reconnect-backoff reset.
-
-The next substantive lifecycle target is the stable support-report contract,
-followed by evidence-based cleanup of duplicated legacy comparison/watchdog
-ownership.
+One exact integrated browser acceptance remains deliberately deferred: the audit
+could not establish whether an `XR-ANSWER-INITIAL-101` or
+`XR-ACTIVITY-INITIAL-101` failure was exercised through the finished banner and
+copyable report after those final support layers existed. Unit coverage and
+earlier answer-degradation browser evidence exist, so this is recorded as a
+future acceptance check rather than a Phase 1 blocker.
 
 ## Reorientation checklist
 
@@ -740,6 +743,9 @@ When resuming this project:
 3. review `RUNTIME_OWNERSHIP_MATRIX.md`;
 4. review `DEGRADED_STATE_POLICY.md`;
 5. inspect the latest page-runtime commits;
-6. confirm which migration phase is active;
-7. run the focused coordinator tests before changing ownership;
-8. update this document and the ownership matrix when architecture changes.
+6. treat Phase 1 as complete unless a reproduced defect requires reopening
+   that boundary;
+7. choose a focused deferred item from `TODO.md` rather than resuming broad
+   migration by default;
+8. run the relevant focused tests before changing ownership;
+9. update this document and the ownership matrix when architecture changes.

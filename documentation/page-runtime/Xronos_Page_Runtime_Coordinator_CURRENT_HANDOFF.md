@@ -665,6 +665,76 @@ For each student-visible failure class, define:
 - whether automatic recovery is possible;
 - what diagnostic details belong in the copied support report.
 
+The support taxonomy should distinguish **stable support codes** from lower-level
+**reason/category diagnostics**.
+
+A support code answers:
+
+> Which student-relevant Xronos subsystem failed?
+
+The copied diagnostic report can then carry the more detailed reason, such as a
+Sage authorization/transient/display/code failure or a WebSocket
+`socket-closed`, `pong-stale`, or `heartbeat-send-failed` reason.
+
+Do not create a separate student-visible code for every internal exception or
+runtime event.
+
+The initial Phase 1 support-code set should be kept deliberately small and may
+include:
+
+- `XR-STATE-INITIAL-101` for initial-state acquisition failure/deadline;
+- a new stable state/WebSocket connection support code for active connection or
+  liveness loss;
+- `XR-STATE-DIFF-101` when the browser cannot construct/save the page-state
+  differential;
+- `XR-MATHJAX-INITIAL-101` for the authoritative initial MathJax failure/deadline;
+- `XR-SAGE-INLINE-INITIAL-101` for initial visible Sage settlement failure;
+- a new stable initial-answer attachment support code if initial answer
+  attachment prevents interaction;
+- a new stable activity-initialization support code if activity startup itself
+  fails.
+
+Localized developer/content diagnostics such as `XR-JS-INLINE-101`,
+`XR-JS-WATCHER-101`, and `XR-VALIDATOR-RESULT-101` should normally remain in the
+copied report or localized UI rather than becoming whole-page student banners.
+
+### Recovery-order policy
+
+When reload is the correct recovery action, the student-facing instruction must
+say **hard reload**, not merely "reload" or "refresh".
+
+The UI must explicitly explain that a hard reload is **not the same thing as
+clicking the browser's ordinary Refresh button**. The hard-reload help should
+tell the student that a hard reload forces the browser to fetch fresh Xronos
+assets rather than reusing cached files, and should provide concise
+browser/platform instructions.
+
+The recovery order should be:
+
+- **Initial MathJax failure:** hard reload immediately. The page is already
+  considered unsafe for math-dependent interaction.
+- **Transient/retryable Sage failure:** use the provided **Retry computation**
+  action first. If the problem continues, perform a true hard reload. If it
+  still continues, report the problem.
+- **Permanent/display Sage failure:** perform a true hard reload once; if the
+  problem remains, report it.
+- **State/WebSocket disconnected or liveness lost:** **do not reload yet**.
+  Keep the tab open while Xronos reconnects. Warn the student that the most
+  recent work may not yet have reached the server.
+- **State/WebSocket recovered but the page still behaves incorrectly:** perform
+  a true hard reload; report if the problem remains.
+- **Initial-state failure:** if a connection/reconnect condition is still
+  active, wait for recovery first; otherwise hard reload once, then report if
+  the problem remains.
+- **Initial-answer/activity initialization failure:** hard reload once, then
+  report if the problem remains.
+- **State differential/save failure:** keep the page open initially and avoid
+  reload while unsaved work may be stranded; recover/save if possible, then
+  hard reload only once it is safe. Report persistent failure.
+
+The "do not reload while unsaved work may be stranded" rule is the main
+exception to using hard reload as the default recovery action.
+
 ### Milestone 2: standardized student recovery banner
 
 Create one reusable student-facing error/recovery presentation for major runtime
@@ -672,6 +742,18 @@ failures.
 
 The banner should be driven by runtime/coordinator terminal outcomes rather than
 by unrelated feature-specific guesses.
+
+The standardized banner should expose recovery actions appropriate to the active
+issue, including where relevant:
+
+- **Retry computation**;
+- **Hard reload instructions**;
+- **Report this problem**.
+
+A recovered transient issue should not continue presenting an alarming active
+banner merely because its history is retained for diagnostics. In particular,
+the state/WebSocket disconnect warning should clear or be replaced after the
+socket is open, liveness is healthy, and state resynchronization has recovered.
 
 It must distinguish at least the Phase 1 high-value cases:
 
@@ -704,6 +786,98 @@ The support contract should be:
 - usable by a simple "Copy diagnostic information" UI;
 - resilient when one subsystem itself is partially failed.
 
+### Student reporting workflow
+
+The standardized failure UI should include a **Report this problem** action for
+persistent reportable failures.
+
+That action should open a modal dialog containing:
+
+- the configured Xronos support email address;
+- concise instructions telling the student to send an ordinary email using
+  their normal institutional/webmail workflow;
+- a **Generate & Copy Report** button;
+- confirmation after the diagnostic report has been copied.
+
+Do **not** use or depend on a `mailto:` link. The Phase 1 design deliberately
+avoids `mailto:` because client/browser/institutional mail-handler behavior is
+unreliable and often confusing for students.
+
+The support email address should be server-configurable rather than hard-coded
+into browser source. The initial deployment may point to the primary Xronos
+support/instructor address, while other deployments can use a departmental or
+local support address.
+
+If no support email is configured, the UI should still allow the student to
+generate and copy the diagnostic report.
+
+The generated copied text should already be usable as an email body without the
+student needing to understand the diagnostic fields. It should contain:
+
+- a human-readable Xronos problem heading;
+- the active support/error code;
+- the affected subsystem/problem summary;
+- page/repository/activity identification;
+- report timestamp;
+- recovery steps the student was asked to try where useful;
+- a clearly delimited diagnostic section.
+
+The diagnostic section should be produced from an **allowlist** of safe fields,
+not by serializing a broad runtime object and attempting to remove sensitive
+fields afterward.
+
+Useful allowlisted fields may include:
+
+- support/error code;
+- lower-level reason/category;
+- subsystem;
+- terminal state/outcome;
+- coordinator operation ID;
+- occurrence ID;
+- runtime session ID;
+- timestamp and elapsed time;
+- repository and activity path;
+- activity/content hash;
+- Xronos application/bundle/version metadata;
+- browser/user-agent and platform information useful for diagnosis;
+- browser language and timezone;
+- online/offline observation;
+- initial-state outcome;
+- state-resynchronization outcome;
+- WebSocket connection/liveness state and recent latency;
+- initial MathJax state/generation/error category;
+- canonical Sage state;
+- initial visible Sage state and error category;
+- initial math-answer state;
+- derived state/content/interaction/page readiness;
+- a bounded recent set of runtime events relevant to the failure.
+
+The report must exclude by default:
+
+- authentication tokens;
+- cookies;
+- Canvas/LTI secrets;
+- Sage authorization tokens;
+- server environment values;
+- a full page-state/DATABASE dump;
+- student answer contents;
+- arbitrary Sage source/code;
+- unbounded console/runtime logs;
+- any other data not needed to diagnose the support condition.
+
+The student should be able to complete the reporting workflow with essentially:
+
+```text
+Report this problem
+-> Generate & Copy Report
+-> open normal email/webmail
+-> paste
+-> send to the displayed support address
+```
+
+They should not need developer tools, console access, knowledge of their browser
+internals, or an understanding of coordinator/runtime terminology.
+
 ### Milestone 4: browser failure-injection acceptance pass
 
 Before calling Phase 1 complete, deliberately trigger representative failures
@@ -732,6 +906,20 @@ Acceptance should cover at least:
 4. one broader coordinator degradation:
    - visible subsystem-level code rather than a generic screenshot-only failure;
    - bounded support report remains available.
+
+5. student reporting workflow:
+   - **Report this problem** opens the support modal;
+   - configured support address is displayed without relying on `mailto:`;
+   - **Generate & Copy Report** produces a bounded allowlisted report;
+   - no tokens, secrets, full page-state dumps, or answer contents are copied;
+   - the student can paste the result directly into ordinary email/webmail.
+
+6. hard-reload guidance:
+   - instructions explicitly distinguish a true hard reload from ordinary
+     browser Refresh;
+   - MathJax and persistent Sage paths present the correct hard-reload guidance;
+   - active state/WebSocket disconnect paths explicitly warn the student not to
+     reload while unsaved work may be stranded.
 
 The project can be considered a Phase 1 success when these common support cases
 are handled coherently even though the broader TODO list remains open.

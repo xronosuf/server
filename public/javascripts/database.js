@@ -5,6 +5,7 @@ var $ = require('jquery');
 var _ = require('underscore');
 var async = require('async');
 var jsondiffpatch = require('jsondiffpatch');
+var initialStateProtocol = require("./initial-state-protocol");
 
 var chat = require('./chat');
 var users = require('./users');
@@ -477,15 +478,27 @@ function connectToServer() {
             }
         );
 
-        pageRuntime.operation(
-            "initial-state",
-            "requested",
-            {
-                attempt: attempt,
-                activityHashAvailable:
-                    findActivityHash() !== undefined
-            }
-        );
+        if (DATABASE === undefined) {
+            pageRuntime.operation(
+                "initial-state",
+                "requested",
+                {
+                    attempt: attempt,
+                    activityHashAvailable:
+                        findActivityHash() !== undefined
+                }
+            );
+        } else {
+            pageRuntime.operation(
+                "state-resynchronization",
+                "requested",
+                {
+                    attempt: attempt,
+                    activityHashAvailable:
+                        findActivityHash() !== undefined
+                }
+            );
+        }
 
 	console.log( "WebSocket open!");
 	saveWorkStatus( 'save' );	
@@ -506,49 +519,40 @@ function connectToServer() {
 	}
     };
 
-    handlers.sync = function(remoteDatabase) {
-        pageRuntime.operation(
-            "initial-state",
-            "sync-received",
-            {
-                callbackCount:
-                    fetcherCallbacks.length,
-                identifierCount:
-                    remoteDatabase &&
-                    typeof remoteDatabase === "object"
-                        ? Object.keys(remoteDatabase).length
-                        : undefined,
-                firstSync:
-                    DATABASE === undefined
+    function releaseInitialState(
+        remoteDatabase,
+        outcome,
+        source
+    ) {
+        SHADOW = jsondiffpatch.clone(remoteDatabase);
+        DATABASE = {};
+
+        _.each(
+            remoteDatabase,
+            function(database, identifier) {
+                if (identifier in DATABASE) {
+                    _.extend(
+                        DATABASE[identifier],
+                        database
+                    );
+                } else {
+                    DATABASE[identifier] = database;
+                }
             }
         );
 
-	SHADOW = jsondiffpatch.clone(remoteDatabase);
-	
-	if (DATABASE === undefined) {
-	    DATABASE = {};
-	    
-	    _.each( remoteDatabase,
-		    function( database, identifier, list ) {
-			// It's possible that, for some reason, I've
-			// already made changes to the database, so I
-			// just want to merge in the remote
-			if (identifier in DATABASE)
-			    _.extend( DATABASE[identifier], database );
-			else {
-			    DATABASE[identifier] = database;
-			}
-		    });
-	    
-	    synchronizePageWithDatabase();
+        synchronizePageWithDatabase();
 
         pageRuntime.operation(
             "initial-state",
             "available",
             {
+                outcome: outcome,
+                source: source,
                 delivery: "queued-callbacks",
-                callbackCount:
-                    fetcherCallbacks.length
+                callbackCount: fetcherCallbacks.length,
+                identifierCount:
+                    initialStateProtocol.stateIdentifierCount(remoteDatabase)
             }
         );
 
@@ -556,31 +560,149 @@ function connectToServer() {
             "initial-state-delivery",
             "releasing-callbacks",
             {
-                callbackCount:
-                    fetcherCallbacks.length
+                callbackCount: fetcherCallbacks.length,
+                outcome: outcome
             }
         );
-	    
-	    _.each( fetcherCallbacks, function(fetcher) {
+
+        _.each(fetcherCallbacks, function(fetcher) {
             pageRuntime.operation(
                 "initial-state-consumer:" +
                     fetcher.consumer,
                 "releasing"
             );
 
-		fetcher.callback(DATABASE);
+            fetcher.callback(DATABASE);
 
             pageRuntime.operation(
                 "initial-state-consumer:" +
                     fetcher.consumer,
                 "available",
                 {
-                    delivery: "queued-callback"
+                    delivery: "queued-callback",
+                    outcome: outcome
                 }
             );
-	    });
+        });
+    }
 
-	}
+    function recordStateResynchronization(
+        state,
+        outcome,
+        remoteDatabase,
+        reason,
+        source
+    ) {
+        pageRuntime.operation(
+            "state-resynchronization",
+            state,
+            {
+                outcome: outcome,
+                reason: reason,
+                source: source,
+                identifierCount:
+                    initialStateProtocol.stateIdentifierCount(remoteDatabase)
+            }
+        );
+    }
+
+    handlers.initialStateResult = function(result) {
+        result =
+            initialStateProtocol.normalizeClientResult(
+                result
+            );
+
+        var outcome = result.outcome;
+        var remoteDatabase = result.data;
+        var reason = result.reason;
+
+        if (
+            outcome === "found" ||
+            outcome === "empty"
+        ) {
+            if (DATABASE === undefined) {
+                pageRuntime.operation(
+                    "initial-state",
+                    "result-received",
+                    {
+                        outcome: outcome,
+                        identifierCount:
+                            initialStateProtocol.stateIdentifierCount(
+                                remoteDatabase
+                            )
+                    }
+                );
+
+                releaseInitialState(
+                    remoteDatabase,
+                    outcome,
+                    "initial-state-result"
+                );
+                return;
+            }
+
+            SHADOW = jsondiffpatch.clone(remoteDatabase);
+
+            recordStateResynchronization(
+                "available",
+                outcome,
+                remoteDatabase,
+                undefined,
+                "initial-state-result"
+            );
+            return;
+        }
+
+        if (DATABASE === undefined) {
+            pageRuntime.operation(
+                "initial-state",
+                "failed",
+                {
+                    outcome: outcome,
+                    reason: reason
+                }
+            );
+            return;
+        }
+
+        recordStateResynchronization(
+            "failed",
+            outcome,
+            undefined,
+            reason,
+            "initial-state-result"
+        );
+    };
+
+    /*
+     * `sync` remains the ordinary differential/resynchronization
+     * protocol. The first-state path now uses
+     * `initial-state-result`.
+     *
+     * Keep a compatibility path for an older server so initial
+     * fetchData() consumers cannot be stranded during a mixed deploy.
+     */
+    handlers.sync = function(remoteDatabase) {
+        if (DATABASE === undefined) {
+            handlers.initialStateResult({
+                outcome:
+                    initialStateProtocol.stateIdentifierCount(remoteDatabase) > 0
+                        ? "found"
+                        : "empty",
+                data: remoteDatabase
+            });
+            return;
+        }
+
+        SHADOW = jsondiffpatch.clone(remoteDatabase);
+
+        recordStateResynchronization(
+            "available",
+            "sync",
+            remoteDatabase,
+            undefined,
+            "sync"
+        );
     };
 
     handlers.outOfSync = function() {

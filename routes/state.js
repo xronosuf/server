@@ -7,6 +7,7 @@ var repositories = require('./repositories');
 var mongo = require('mongodb');
 var unique = require('uniq');
 var config = require('../config');
+var initialStateProtocol = require('../public/javascripts/initial-state-protocol');
 const Redis = require("ioredis");
 
 var CANON = require('canon');
@@ -214,21 +215,58 @@ handlers.watch = function(userId, activityHash) {
 	}
     });	
     
-    if (!activityHash)
-	return;
-    
+    if (!activityHash) {
+        socket.sendJSON(
+            'initial-state-result',
+            initialStateProtocol.serverResult(
+                activityHash,
+                null,
+                null
+            )
+        );
+        return;
+    }
+
     socket.activityHash = activityHash;
-    
-    var roomName = `/users/${userId}/state/${activityHash}`;
+
+    var roomName =
+        `/users/${userId}/state/${activityHash}`;
     socket.activityRoom = roomName;
-    activityRooms.join( roomName, socket );
-    
-    mdb.State.findOne({activityHash: activityHash, user: userId}, function(err, state) {
-	if (err || (!state))
-	    state = {data: {}};
-	socket.shadow = state.data;
-	socket.sendJSON('sync', state.data);
-    });
+    activityRooms.join(roomName, socket);
+
+    mdb.State.findOne(
+        {
+            activityHash: activityHash,
+            user: userId
+        },
+        function(err, state) {
+            var result =
+                initialStateProtocol.serverResult(
+                    activityHash,
+                    err,
+                    state
+                );
+
+            if (result.outcome === 'failed') {
+                winston.error(
+                    "Initial page-state lookup failed " +
+                    "for activity hash."
+                );
+            }
+
+            if (
+                result.outcome === 'found' ||
+                result.outcome === 'empty'
+            ) {
+                socket.shadow = result.data;
+            }
+
+            socket.sendJSON(
+                'initial-state-result',
+                result
+            );
+        }
+    );
 };
     
 handlers.wantDifferential = function() {

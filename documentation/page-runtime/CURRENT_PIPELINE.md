@@ -149,11 +149,11 @@ activity.fetchData(function() {
 });
 ```
 
-`fetchData()` stores its callback until `database.js` receives the initial
-WebSocket `sync` message.
+`fetchData()` stores its callback until `database.js` receives a successful
+explicit `initial-state-result` (`found` or `empty`).
 
-If initial state synchronization never reaches `sync`, the following may never
-initialize:
+If initial state synchronization never reaches a successful terminal result, the
+following may never initialize:
 
 - problem environments
 - answer boxes
@@ -166,8 +166,10 @@ initialize:
 - progress monitoring
 - activity cards
 
-The underlying `fetchData()` gate still has no fallback or release path when
-initial state does not arrive. Queued consumers may therefore remain blocked.
+The underlying `fetchData()` gate deliberately does not release queued
+consumers on `failed` or `invalid-request`; doing so with fabricated `{}` could
+overwrite or diverge from saved work. Queued consumers therefore remain blocked
+until a successful `found`/`empty` result or a later valid recovery.
 
 The passive runtime coordinator now applies a 15-second diagnostic readiness
 deadline to this dependency:
@@ -183,10 +185,10 @@ degraded for diagnostic purposes. The watchdog does not:
 - manufacture empty saved state
 - release queued `fetchData()` callbacks
 - stop WebSocket reconnection
-- suppress a later valid `sync`
+- suppress a later valid state result
 - show a user-facing fallback or error
 
-If valid initial state arrives later, the readiness dimension recovers to
+If valid initial state arrives later, the readiness dimension can recover to
 `ready`. The timeout remains recorded as historical diagnostic metadata.
 
 ## Browser state connection
@@ -195,13 +197,22 @@ The browser currently:
 
 1. opens the main page WebSocket
 2. sends `watch(learnerId, activityHash)`
-3. waits for the server to send `sync`
-4. initializes the browser database
-5. records initial state as available
-6. releases queued `fetchData()` callbacks
+3. waits for `initial-state-result`
+4. accepts `found` or `empty` as successful first-state terminal outcomes
+5. initializes `SHADOW` and the browser database
+6. records initial state as available
+7. releases queued `fetchData()` callbacks
 
-The availability signal now precedes callback delivery so coordinator tasks can
+`failed` and `invalid-request` are explicit terminal failures and do not release
+state consumers with fabricated empty data.
+
+The availability signal precedes callback delivery so coordinator tasks can
 become eligible while the callback batch is being released.
+
+On reconnect, a later valid `initial-state-result` does not replace the live
+browser database. It refreshes `SHADOW` and records
+`state-resynchronization`, preserving local/offline changes for the ordinary
+differential synchronization path.
 
 The save-status UI currently becomes positive when the WebSocket opens, before
 initial saved-state synchronization has succeeded.
@@ -218,6 +229,37 @@ The server `watch` handler:
 2. joins user and activity rooms
 3. retrieves completion information
 4. queries `mdb.State`
+5. sends explicit `initial-state-result`:
+   - `found` with saved data
+   - `empty` with `{}`
+   - `failed` with `state-query-failed`
+   - `invalid-request` with `missing-activity-hash`
+
+The requested learner identity is not yet authorized in this route; the
+existing `BADBAD: no security checks` gap remains a high-priority security TODO.
+
+## State WebSocket heartbeat and reconnect
+
+The browser now owns an application-level heartbeat independent of initial-state
+readiness:
+
+- base reconnect backoff: 1,000 ms
+- heartbeat interval: 18,000 ms
+- stale-pong threshold: 45,000 ms
+- successful socket open resets reconnect backoff to 1,000 ms
+- heartbeat timer is owned by the active socket and cleared on close/replacement
+- browser sends `ping(timestamp)`
+- server immediately sends `pong(timestamp)`
+- browser records round-trip latency and last-pong time in
+  `state-websocket-liveness`
+
+A stale pong records transport degradation but does not currently force-close
+the socket. Nginx retains 3600-second proxy read/send timeouts as an outer safety
+net.
+
+Browser validation confirmed healthy heartbeat before and after a forced server
+restart, successful reconnect on a later attempt, backoff reset to 1 second,
+and separate state resynchronization without reopening initial-state.
 5. sends `sync` with stored data or an empty object
 
 The current implementation treats both a failed state query and a confirmed
@@ -839,5 +881,17 @@ Sage.
 
 The `initial-math-answers` reconciliation is complete for the current scope,
 including browser-proven degraded-to-settled repair and coordinator-derived
-readiness recovery. The next substantive reconciliation target is initial-state
-terminal semantics and ownership, followed by the stable support contract.
+readiness recovery.
+
+Initial-state terminal semantics are also reconciled for the current scope:
+explicit outcomes distinguish success from failure, reconnect is modeled
+separately as `state-resynchronization`, and first-state/browser reconnect
+behavior is directly tested and browser-validated.
+
+The state WebSocket now has an 18-second heartbeat, immediate pong liveness
+tracking, clean timer ownership, and reconnect-backoff reset after successful
+open.
+
+The next substantive reconciliation target is the stable support-report
+contract, followed by evidence-based removal/demotion of duplicated legacy
+comparison/watchdog ownership.

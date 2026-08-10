@@ -17,14 +17,16 @@ Canvas grade passback.
 
 ```text
 branch: page-runtime-coordinator
-local HEAD: a717d28 Reconcile initial math-answer lifecycle
-remote HEAD: a717d28 Reconcile initial math-answer lifecycle
+local HEAD: ea1d0aa Restore WebSocket heartbeat and reconnect recovery
+remote HEAD: ea1d0aa Restore WebSocket heartbeat and reconnect recovery
 branch relation: synchronized
 ```
 
-The pushed checkpoint through `a717d28` includes the canonical-only Sage cleanup,
-visible reliability hardening, refreshed coordinator checkpoint docs, and the
-browser-validated initial math-answer reconciliation described below.
+The pushed checkpoint through `ea1d0aa` includes the canonical-only Sage cleanup,
+visible reliability hardening, browser-validated initial math-answer
+reconciliation, explicit initial-state terminal semantics, reconnect
+resynchronization, and restored WebSocket heartbeat/backoff recovery described
+below.
 ## Current coordinator model
 
 External leaves:
@@ -65,8 +67,9 @@ Derived readiness:
 | Initial visible Sage settlement | Implemented and browser-validated |
 | Dynamic Sage / Another | Canonical generation path; outside initial readiness |
 | Initial math-answer attachment | Reconciled and browser-validated, including degraded-to-settled repair and derived readiness recovery |
-| Initial state | Partial; detailed terminal semantics are the next major lifecycle target |
-| Stable support contract | Partial |
+| Initial state | Reconciled for current scope: explicit terminal outcomes, tested protocol normalization, browser-validated reconnect resynchronization |
+| State WebSocket liveness | 18-second heartbeat, immediate pong, liveness diagnostics, reconnect timer cleanup, and 1-second post-open backoff reset implemented and browser-validated |
+| Stable support contract | Partial; next major lifecycle target |
 
 ## Initial MathJax Process
 
@@ -350,12 +353,64 @@ No answer-specific deadline was added: unresolved initial attachment is still
 bounded by the authoritative initial MathJax Process, and later repair remains
 available when another legitimate MathJax pass occurs.
 
+## Initial state reconciliation
+
+Initial state now has explicit terminal protocol semantics.
+
+`routes/state.js` returns `initial-state-result` with:
+
+- `found`
+- `empty`
+- `failed`
+- `invalid-request`
+
+`public/javascripts/initial-state-protocol.js` centralizes server-result and
+client-normalization policy and is covered by
+`test/initial-state-protocol.js`.
+
+Successful `found`/`empty` first acquisition initializes browser state and
+releases queued `fetchData()` consumers. Failed/invalid requests do not release
+those consumers with fabricated empty state.
+
+Reconnect no longer reopens the one-shot initial-state lifecycle. A valid later
+result updates `SHADOW`, leaves live `DATABASE` intact, and records a separate
+`state-resynchronization` operation so local changes remain eligible for
+differential synchronization.
+
+Browser validation confirmed first-state `available`/`ready`, unchanged
+initial-state timestamp across reconnect, and successful
+`state-resynchronization`.
+
+The current narrow initial-state/coordinator regression set passes 83 tests.
+
+## WebSocket heartbeat and reconnect recovery
+
+The main state socket now has application-level liveness checks:
+
+- heartbeat interval: 18,000 ms
+- stale-pong threshold: 45,000 ms
+- server `ping` handler immediately echoes `pong`
+- browser liveness diagnostics report `checking`, `healthy`, `degraded`, and
+  `stopped`
+- successful pongs record round-trip latency
+- heartbeat timer ownership is bound to the active socket and cleaned up on
+  close/reconnect
+- a successful socket `open` resets reconnect backoff to 1,000 ms
+- stale-pong degradation is diagnostic only; it does not yet force-close a
+  half-open socket
+
+Browser validation measured approximately 70 ms heartbeat latency. After a
+forced server restart, the browser reconnected on a later attempt, reset
+backoff to 1,000 ms, completed state resynchronization, and resumed healthy
+heartbeat.
+
+Nginx's 3600-second WebSocket timeout remains in place as an outer safety net.
+
 ## Remaining major coordinator work
 
-1. initial-state terminal semantics and ownership reconciliation
-2. stable support-report contract
-3. removal/demotion of duplicated legacy comparison/watchdog ownership where
+1. stable support-report contract
+2. removal/demotion of duplicated legacy comparison/watchdog ownership where
    evidence supports it
-4. optional-service terminality and broader cleanup
+3. optional-service terminality and broader cleanup
 
 The overall coordinator migration is not complete.

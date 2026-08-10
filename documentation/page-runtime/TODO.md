@@ -26,14 +26,18 @@ Completed/current foundation:
 - initial visible Sage terminal settlement and stale explicit-attempt protection
   are browser-validated;
 - initial math-answer identity, degradation, later repair, same-operation
-  coordinator recovery, and transitive readiness recovery are browser-validated.
+  coordinator recovery, and transitive readiness recovery are browser-validated;
+- initial-state `found`/`empty`/`failed`/`invalid-request` semantics and
+  reconnect `state-resynchronization` are implemented and browser-validated;
+- state WebSocket application heartbeat, pong liveness diagnostics, timer
+  cleanup, and reconnect-backoff reset are implemented and browser-validated.
 
 Remaining coordinator work:
 
-- reconcile initial-state result semantics and timeout ownership as the next
-  substantive boundary;
-- stabilize and document `window.xronosInspectPageRuntime()` as a support
-  contract;
+- stabilize and document `window.xronosInspectPageRuntime()` as the next
+  substantive support contract;
+- reconcile remaining legacy initial-state watchdog ownership after the explicit
+  protocol has accumulated enough evidence;
 - add occurrence IDs and broader stable diagnostic coverage;
 - record automatic reload/navigation causes;
 - detect unresolved visible loading indicators across non-Sage components;
@@ -47,17 +51,32 @@ Remaining coordinator work:
 
 ## Saved state and WebSocket
 
-- Distinguish:
+Completed/current:
+
+- explicit server outcomes now distinguish:
   - state found
   - state not found
   - state retrieval failed
-  - state retrieval timed out
-  - state access unauthorized
-- Stop converting state-query errors into successful empty state.
-- A passive 15-second initial-state readiness deadline now exists.
-- Add bounded initial-state retry and an explicit server outcome model.
-- Add acknowledged fresh nonpersistent fallback.
-- Add a persistent nonpersistent-session warning.
+  - invalid request
+- state-query errors no longer become successful empty state
+- reconnect state is represented separately as `state-resynchronization`
+- a passive 15-second initial-state readiness deadline remains
+- an 18-second application heartbeat with immediate pong is active
+- stale pong (>45 seconds) is reported through transport liveness diagnostics
+- heartbeat timers are cleaned up across socket replacement
+- successful open resets reconnect backoff to 1 second
+
+Remaining:
+
+- add structured `unauthorized` outcome after WebSocket ownership authorization
+  is implemented
+- decide whether bounded initial-state retry is desirable now that failures are
+  explicit
+- decide whether stale-pong degradation should eventually recycle a confirmed
+  half-open socket
+- add acknowledged fresh nonpersistent fallback only if explicit failure policy
+  requires it
+- add a persistent nonpersistent-session warning.
 - Add a dismissible recovery and reload prompt.
 - Prevent late saved-state responses from overwriting fallback work.
 - Add structured acknowledgements for patch and completion operations.
@@ -66,6 +85,11 @@ Remaining coordinator work:
 - Investigate and repair swallowed state-patch exceptions.
 - Distinguish socket-connected from state-synchronized.
 - Do not show a positive saved-state status merely because the socket opened.
+- Investigate repeated `podman restart devximserver` shutdown behavior where
+  SIGTERM does not stop the container within 10 seconds and Podman falls back to
+  SIGKILL.
+- Keep the transient state-document disappearance contradiction deferred unless
+  it reproduces in a way that blocks protocol correctness.
 
 ## Security
 
@@ -96,6 +120,11 @@ Remaining coordinator work:
     derived readiness.
   - Browser validation preserved authored `data-id`, generated persistence ID,
     and problem ID across the controlled repair.
+- Investigate the separate `testSuite/02-answers-saved-progress` attachment
+  degradation observed during state testing: five expected answer models
+  resolved, but zero attached and five attachment failures were reported.
+  Treat this as separate from state synchronization until reproduced and
+  localized.
 - Add bounded detail for repeated pre-success attachment failures without
   creating unbounded per-answer history.
 - Decide whether initial-answer readiness needs its own deadline only if

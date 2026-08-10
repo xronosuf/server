@@ -3,12 +3,12 @@
 **Purpose:** living operational handoff for continuing the Page Runtime
 Coordinator project after a chat/session boundary.
 
-**Last reconciled:** 2026-08-09
+**Last reconciled:** 2026-08-10
 **Working branch:** `page-runtime-coordinator`
-**Last known local HEAD:** `a717d28` — `Reconcile initial math-answer lifecycle`
-**Last known remote HEAD:** `a717d28` — `Reconcile initial math-answer lifecycle`
+**Last known local HEAD:** `ea1d0aa` — `Restore WebSocket heartbeat and reconnect recovery`
+**Last known remote HEAD:** `ea1d0aa` — `Restore WebSocket heartbeat and reconnect recovery`
 **Last known branch relation:** synchronized
-**Pushed?** Yes; the checkpoint through `a717d28` is backed up on
+**Pushed?** Yes; the checkpoint through `ea1d0aa` is backed up on
 `origin/page-runtime-coordinator`.
 
 Always verify Git state before changing code.
@@ -60,8 +60,16 @@ efbdced Record failed-render browser validation
 785cd8a Block interaction after failed initial MathJax render
 ```
 
-Local and remote are synchronized at `a717d28`, which includes the completed
-initial math-answer reconciliation and its documentation cleanup.
+Local and remote are synchronized at `ea1d0aa`.
+
+The current pushed checkpoint includes:
+
+- the completed initial math-answer reconciliation;
+- explicit initial-state terminal semantics and reconnect resynchronization;
+- a shared, directly tested initial-state protocol helper;
+- restored application-level WebSocket heartbeat/pong liveness checks;
+- heartbeat timer cleanup across reconnects; and
+- reconnect backoff reset to 1 second after a successful socket open.
 ## 4. Coordinator foundation already completed
 
 Implemented foundation includes:
@@ -363,31 +371,99 @@ xronosMathAnswerInitialFault
 No answer-specific timeout was added, and no production answer identity scheme
 was changed.
 
-## 13. Initial state remains unresolved
+## 13. Initial state terminal semantics
 
-Important current facts:
+This lifecycle is now reconciled for the current coordinator scope.
 
-- the browser waits for WebSocket `sync`
-- generic `fetchData()` consumers can remain blocked if sync never arrives
-- the server currently conflates lookup failure and confirmed no saved state by
-  sending empty data
-- `XR-STATE-INITIAL-101` remains the 15-second state-readiness deadline
-- late valid state can recover readiness
+Server `watch` now sends an explicit `initial-state-result` with one of:
 
-Do not design fresh nonpersistent fallback until “confirmed empty” and “lookup
-failed” can be distinguished.
+- `found`
+- `empty`
+- `failed`
+- `invalid-request`
 
-## 14. Remaining major sequence
+The browser no longer infers first-state success from an ordinary `sync`.
+`sync` remains a compatibility/differential resynchronization path.
 
-1. reconcile initial-state operation/outcome semantics
-2. stabilize the support-report contract
-3. remove/demote duplicated legacy comparison/watchdog ownership where evidence
+First acquisition behavior:
+
+- `found` or `empty` initializes `SHADOW` and `DATABASE`;
+- queued `fetchData()` consumers are released only after a successful
+  `found`/`empty` terminal result;
+- `failed` and `invalid-request` remain terminal failures and do not manufacture
+  fresh empty state.
+
+Reconnect behavior:
+
+- the one-shot `initial-state` result remains unchanged;
+- a later `initial-state-result` updates `SHADOW` only;
+- the runtime records a separate `state-resynchronization` operation;
+- live local `DATABASE` is preserved so reconnect does not erase offline/local
+  changes before differential synchronization.
+
+`XR-STATE-INITIAL-101` remains the 15-second diagnostic deadline. The legacy
+watchdog can still record timeout history, but it does not overwrite an already
+terminal degraded result. Detailed watchdog ownership cleanup remains later work.
+
+A shared pure helper now defines server/client protocol normalization:
+
+```text
+public/javascripts/initial-state-protocol.js
+test/initial-state-protocol.js
+```
+
+Focused protocol coverage includes `found`, `empty`, `failed`,
+`invalid-request`, malformed client outcomes, and identifier counting.
+
+Browser validation confirmed:
+
+- normal first acquisition uses `source: initial-state-result`;
+- `initial-state` reaches `available`;
+- `state-synchronized` reaches `ready`;
+- reconnect leaves the original `initial-state` timestamp unchanged;
+- reconnect records separate `state-resynchronization: available`.
+
+A transient test-environment contradiction was observed where a page reported a
+found state while a later standalone Mongo count showed no matching document.
+Public routing and Mongo target identity were verified. No state deletion/TTL
+path was found. This investigation is intentionally deferred because the
+protocol boundary is directly tested and the browser lifecycle is validated.
+
+## 14. WebSocket reliability
+
+Application-level heartbeat is restored.
+
+Current behavior:
+
+- browser sends `ping` every 18 seconds;
+- the server immediately echoes the timestamp in `pong`;
+- browser records `state-websocket-liveness`;
+- successful pongs report `healthy` with measured latency;
+- a pong older than 45 seconds reports `degraded`;
+- stale-pong degradation is diagnostic only and does not currently force-close
+  the socket;
+- heartbeat timers are cleared when the owning socket closes and replaced
+  cleanly on reconnect;
+- reconnect backoff resets to 1 second on every successful socket open.
+
+Browser validation confirmed a healthy ~70 ms pong on the initial connection,
+then a server restart produced multiple reconnect attempts, a successful later
+open with `reconnectBackoffMilliseconds: 1000`, a separate successful
+`state-resynchronization`, and a resumed healthy heartbeat.
+
+Nginx retains the 3600-second WebSocket proxy read/send timeout as an outer
+transport safety net rather than the primary liveness mechanism.
+
+## 15. Remaining major sequence
+
+1. stabilize the support-report contract
+2. remove/demote duplicated legacy comparison/watchdog ownership where evidence
    permits
-4. address optional-service terminality and broader cleanup afterward
+3. address optional-service terminality and broader cleanup afterward
 
 The overall coordinator project is not complete.
 
-## 15. Other separate follow-up
+## 16. Other separate follow-up
 
 Keep separate from the next coordinator patch:
 
@@ -397,8 +473,13 @@ Keep separate from the next coordinator patch:
 - coordinator-only aggregate statistics workflow
 - LRS retention/pruning and aggregate preservation
 - account/profile dropdown cleanup
+- investigate the test-page math-answer attachment degradation observed after
+  the state purge experiment: five expected models resolved, but zero attached
+  and five attachment failures were reported
+- investigate why `podman restart devximserver` repeatedly fails to stop on
+  SIGTERM within 10 seconds and falls back to SIGKILL
 
-## 16. Operational rules
+## 17. Operational rules
 
 - verify host/branch/HEAD/staged/dirty state before edits
 - use narrow guarded changes
@@ -414,7 +495,7 @@ Keep separate from the next coordinator patch:
 - avoid recursive greps into generated bundles when narrow source-file grep is
   sufficient
 
-## 17. Do not accidentally
+## 18. Do not accidentally
 
 - weaken the failed-initial-MathJax interaction block without evidence
 - conflate canonical Sage computation and visible Sage settlement
@@ -430,17 +511,28 @@ Keep separate from the next coordinator patch:
 - modernize Node/MathJax/dependencies inside lifecycle work
 - call a browser-source patch validated before rebuilding `main.min.js`
 
-## 18. Recovery summary
+## 19. Recovery summary
 
 The Page Runtime Coordinator has progressed from passive observation to active
-startup ownership and explicit initial MathJax/Sage/answer-readiness lifecycle
-contracts. The pushed checkpoint through `a717d28` contains the completed Sage milestones,
-refreshed checkpoint docs, and the closed `initial-math-answers` reconciliation:
-a development fault probe, same-operation degraded external recovery in the
-coordinator core, 95 focused passing tests, and browser proof that a forced
-missing answer model degrades then repairs to settled while interaction/page
-readiness recover transitively. No answer identity redesign or answer-specific
-deadline was introduced.
+startup ownership and explicit initial MathJax/Sage/answer/state lifecycle
+contracts.
 
-The next substantive lifecycle is initial-state operation/outcome semantics,
-followed by the stable support-report contract.
+The pushed checkpoint through `ea1d0aa` includes:
+
+- canonical-only Sage and visible terminal Sage handling;
+- reconciled initial math-answer lifecycle and same-operation repair;
+- explicit initial-state terminal outcomes with a tested shared protocol helper;
+- separate reconnect `state-resynchronization` semantics;
+- an 18-second application heartbeat with immediate server pong;
+- transport liveness diagnostics and clean heartbeat timer ownership;
+- reconnect backoff reset after successful open.
+
+The focused initial-state/coordinator regression set passes 83 tests. Browser
+validation confirms first-state readiness, reconnect resynchronization, healthy
+heartbeat, and backoff reset. The larger historical 95-test checkpoint remains
+the latest broader Sage/answer/MathJax suite cited above; the current heartbeat
+patch did not alter those feature algorithms.
+
+The next substantive coordinator lifecycle is the stable support-report
+contract, followed by evidence-based cleanup of duplicated legacy
+comparison/watchdog ownership.

@@ -691,9 +691,10 @@ The first coordinator increment will not:
 
 ## Current implementation target
 
-The initial math-answer reconciliation target is complete for the current scope.
+The initial math-answer and initial-state reconciliation targets are complete for
+the current scope.
 
-That reconciliation established:
+The answer reconciliation established:
 
 1. authored answer `data-id`, generated persistence/DOM ID, and MathJax render
    identity are separate contracts;
@@ -708,9 +709,27 @@ That reconciliation established:
 8. answer correctness and submission semantics remain outside this
    initial-attachment reconciliation.
 
-The next substantive lifecycle target is initial-state terminal semantics and
-ownership reconciliation. The same discipline applies: inventory actual
-operation outcomes and ownership before introducing fallback or retry behavior.
+The initial-state reconciliation established:
+
+1. first-state results are explicit protocol outcomes: `found`, `empty`,
+   `failed`, or `invalid-request`;
+2. successful first acquisition releases queued state consumers;
+3. failed/invalid first acquisition does not fabricate fresh empty state;
+4. reconnect does not reopen or overwrite the one-shot initial-state lifecycle;
+5. reconnect state updates the synchronization shadow and records a separate
+   `state-resynchronization` operation;
+6. explicit protocol normalization is centralized in a directly tested pure
+   helper;
+7. browser validation confirms first-state readiness and reconnect
+   resynchronization.
+
+WebSocket transport reliability is also restored through an 18-second heartbeat,
+immediate server pong, liveness diagnostics, heartbeat timer cleanup, and
+successful-open reconnect-backoff reset.
+
+The next substantive lifecycle target is the stable support-report contract,
+followed by evidence-based cleanup of duplicated legacy comparison/watchdog
+ownership.
 
 ## Reorientation checklist
 

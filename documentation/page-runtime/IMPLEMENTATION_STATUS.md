@@ -1,0 +1,481 @@
+# Page Runtime Coordinator Implementation Status
+
+## Purpose
+
+This document is the current factual implementation map for the Xronos Page
+Runtime Coordinator.
+
+Read it with `COORDINATOR_DESIGN.md`, `CURRENT_PIPELINE.md`,
+`RUNTIME_OWNERSHIP_MATRIX.md`, `DEGRADED_STATE_POLICY.md`, `FEATURE_INVENTORY.md`,
+`TODO.md`, and the current handoff.
+
+The coordinator remains an incremental dependency-aware orchestration layer. It
+does not replace MathJax, Sage evaluation, answer correctness, persistence, or
+Canvas grade passback.
+
+## Current repository checkpoint
+
+```text
+branch: page-runtime-coordinator
+local HEAD: 2759508 Add configured runtime support contact
+remote HEAD: 2759508 Add configured runtime support contact
+branch relation: synchronized
+```
+
+Phase 1 is complete at this checkpoint.
+
+The pushed implementation includes the dependency-aware coordinator foundation,
+canonical-only Sage cleanup and visible reliability hardening, initial
+math-answer reconciliation, explicit initial-state terminal semantics, reconnect
+resynchronization, WebSocket heartbeat/backoff recovery, the stable support
+taxonomy and recovery banner, privacy-safe support reporting and Xronos-side
+support correlation, and the server-configured runtime support contact.
+
+The SageCell-side support-trace logger is committed as source but deliberately
+not deployed; that deployment remains deferred in `TODO.md` until the SageCell
+image build is reproducible/pinned enough for a controlled maintenance change.
+
+## Current coordinator model
+
+External leaves:
+
+- `initial-state`
+- `mathjax-initial-process`
+- `canonical-sage`
+- `sage-inline-initial`
+- `activity`
+- `initial-math-answers`
+
+Active coordinator-owned control seams include:
+
+- document-ready activity bootstrap
+- state-dependent activity initialization release
+- MathJax startup trigger
+- MathJax Startup End UI finalization
+- document-ready static UI
+- kinetic navigation
+- references
+
+Derived readiness:
+
+- `state-synchronized`
+- `content-ready`
+- `interaction-ready`
+- `page-readiness`
+
+## Current lifecycle status
+
+| Lifecycle | Current state |
+| --- | --- |
+| Coordinator core and derived readiness | Implemented |
+| Activity/bootstrap control seams | Implemented incrementally |
+| Initial MathJax Process | Generation-bound, coordinator deadline, browser-validated failure policy |
+| Immutable Sage manifest | Implemented |
+| Canonical initial Sage operation | Implemented |
+| Initial visible Sage settlement | Implemented and browser-validated |
+| Dynamic Sage / Another | Canonical generation path; outside initial readiness |
+| Initial math-answer attachment | Reconciled and browser-validated, including degraded-to-settled repair and derived readiness recovery |
+| Initial state | Reconciled for current scope: explicit terminal outcomes, tested protocol normalization, browser-validated reconnect resynchronization |
+| State WebSocket liveness | 18-second heartbeat, immediate pong, liveness diagnostics, reconnect timer cleanup, and 1-second post-open backoff reset implemented and browser-validated |
+| Stable support contract | Implemented for Phase 1: stable codes/recovery actions, unified banner, bounded report, configured contact, and Xronos-side correlation |
+
+## Initial MathJax Process
+
+The first authoritative full `Process` is bound to one generation.
+
+Implemented behavior includes:
+
+- matching Begin/End Process generation binding
+- coordinator-owned 15-second `XR-MATHJAX-INITIAL-101` deadline
+- stale/mismatched completion rejection
+- associated parse/processing error recording
+- terminal pass, answer-discovery, and Sage-discovery metadata
+- permitted generation-safe late recovery with retained timeout history
+
+Current policy from `785cd8a` is that any parse/processing error associated with
+that authoritative initial generation makes the mathematical coursework
+untrustworthy for the page load. The leaf reports failed, affected readiness
+degrades, persistent failure UI is shown, and mathematical coursework
+interaction is blocked until reload. Browser validation is recorded by
+`efbdced`.
+
+## Canonical Sage architecture
+
+Current-publisher support is:
+
+- `sagesilent`
+- visible `\sage{...}`
+- seeded generation
+- `Another`
+- replay/reprocessing including Sage answer-key values
+
+Before MathJax transforms the page, the Sage module captures an immutable
+manifest with stable expression identity, ordering, problem identity when
+available, answer-key identity, silent setup blocks, and original source.
+
+`stripCDATA()` remains shared canonical manifest parsing infrastructure. It was
+accidentally removed with legacy code and restored in `e794671` without
+restoring legacy execution.
+
+The canonical page request has explicit identity through seed waiting,
+compilation, request, response, parsing, mapping, and terminal classification.
+
+The compiled-request safety ceiling remains:
+
+```text
+60000 UTF-8 bytes
+```
+
+This empirical ceiling was chosen after real-content auditing found practical
+requests around 35-40 KB.
+
+## Canonical-only Sage execution
+
+The following sequence removed obsolete browser execution paths:
+
+```text
+7a97229 Remove obsolete standalone Sage compatibility
+b9fed4d Enforce canonical-only browser Sage execution
+03603fe Remove legacy browser Sage executor
+43f97e0 Make canonical browser Sage unconditional
+```
+
+Removed compatibility includes:
+
+- standalone `.sage` / `.sageOutput` autoevaluation
+- embedded browser kernel / `createKernel` emulation
+- iopub emulation
+- legacy browser request queues and batching
+- legacy `exports.sage`
+- arbitrary-code canonical-to-legacy fallback
+
+Every legitimate browser Sage computation must resolve to deterministic
+canonical identity. Failure to do so is an explicit canonical invariant failure,
+not authorization to execute an arbitrary legacy string.
+
+Canonical browser Sage is now unconditional. The old
+`XRONOS_CANONICAL_PAGE_SAGE_ENABLED` deployment variable may still exist in
+`repositories/.env`, but current source no longer reads it. Later deployment
+cleanup should remove only that dead entry and preserve all unrelated `.env`
+settings.
+
+## Initial visible Sage lifecycle
+
+`canonical-sage` and `sage-inline-initial` remain separate.
+
+`canonical-sage` means canonical computation/results reached a classified
+terminal outcome.
+
+`sage-inline-initial` means every required initial visible Sage consumer reached
+explicit terminal display state.
+
+Implemented invariant:
+
+> A known failure must not leave a required initial Sage component indefinitely
+> displaying a loading spinner.
+
+The 15-second `XR-SAGE-INLINE-INITIAL-101` deadline can convert unresolved
+visible Sage work into explicit failure/fallback UI.
+
+Same-request late completion may still recover safely and preserve timeout
+history.
+
+Explicit Retry is a new visible request attempt and a new coordinator operation.
+
+`e794671` adds a per-placeholder monotonically increasing `requestAttempt`.
+Callbacks from an explicitly superseded attempt are recorded as
+`stale-attempt-ignored` and cannot mutate current DOM or lifecycle state. The
+deadline itself does not increment the request token, preserving legitimate
+same-request late recovery.
+
+Known visible attachment failures now terminate visibly:
+
+- missing MathJax `inputID` routes through display-error handling
+- missing exact placeholder DOM falls back to problem, activity, page-content,
+  or body as the visible failure destination
+
+## Sage reliability fault probe
+
+Development-only one-shot probe files:
+
+```text
+public/javascripts/sage-inline-fault-probe.js
+test/sage-inline-fault-probe.js
+```
+
+Storage key:
+
+```text
+xronosSageInlineFault
+```
+
+Supported faults:
+
+- `missing-input-id`
+- `missing-placeholder`
+- `stale-attempt`
+- `page-result-error`
+
+The request is consumed before parse/injection so a malformed or successful
+probe does not repeat on reload.
+## Browser validation through `7c5913f`
+
+After rebuilding the actual served browser bundle:
+
+### `03-basic-sage`
+
+- clean startup: PASS
+- missing input ID: visible terminal failure, no stuck spinner: PASS
+- missing placeholder: visible controlled fallback: PASS
+- stale explicit attempt: Retry attempt 2 succeeds; delayed attempt 1 later
+  reports `stale-attempt-ignored`; attempt 1 cannot overwrite attempt 2; final
+  readiness all ready and coordinator/legacy comparison matches: PASS
+- canonical page-result parsing fault: visible retryable error appears; explicit
+  Retry starts a fresh attempt and normal Sage completes successfully: PASS
+
+### `04-sage-generation-another`
+
+- normal canonical generation: PASS
+- repeated `Another`: PASS
+
+### `05-mixed-critical-lifecycle`
+
+- Sage: PASS
+- answers: PASS
+- author JavaScript interaction: PASS
+## Browser build environment
+
+The browser serves `public/javascripts/main.min.js`; changing `main.js` alone is
+not browser validation.
+
+Verified build environment:
+
+```text
+container: devximserver
+workdir: /usr/var/server
+Node v12.22.12
+npm 6.14.16
+Gulp local 4.0.2
+```
+
+Use the project-local Gulp executable inside `devximserver`.
+
+The host Node 8/global-Gulp environment cannot build the current bundle.
+
+Latest focused validation for the pushed `a717d28` reconciliation:
+
+```text
+page-runtime coordinator core:     33 passing
+page-runtime coordinator adapter:  42 passing
+initial math-answer fault probe:    5 passing
+Sage reliability policy:            4 passing
+sage-inline fault probe:            6 passing
+initial MathJax fault probe:         5 passing
+                                    ----------
+total:                              95 passing
+```
+
+The browser bundle was rebuilt with project-local Gulp inside `devximserver`,
+and host/container SHA-256 hashes matched before browser validation.
+## Fresh Sage reliability audit at `fdb015b`
+
+A final read-only Sage pipeline audit was run after the documentation
+reconciliation commit.
+
+The audit reclassified several apparent gaps as already-settled behavior:
+
+- expired page-auth tokens are automatically detected, refreshed through
+  `/sagecell/auth`, and the original Sage request is retried once;
+- persistent `SAGECELL_PAGE_AUTH_SECRET` is a deployment requirement so tokens
+  survive process restart, not missing browser recovery logic;
+- canonical invariant failures intentionally fail closed instead of restoring
+  legacy execution;
+- the 60 KB compiled-request ceiling remains an intentional safety/content
+  boundary;
+- missing input ID, missing placeholder, visible deadline settlement, and stale
+  explicit-Retry callbacks already have terminal/stale-safe handling;
+- local transport errors plus HTTP 502/503/504 already use the configured
+  fallback SageCell path in `local-with-fallback` mode.
+
+The two narrow reliability discrepancies found by the audit have now been
+resolved:
+
+1. canonical response marker/JSON parsing failures
+   (`XronosSagePageResultError`) are explicitly transient/retryable;
+2. automatic local-to-fallback switching now treats HTTP
+   408/429/500/502/503/504 as infrastructure failures, in addition to transport
+   or missing-response failures.
+
+The production predicates are factored into directly tested policy helpers.
+The focused Sage/coordinator/MathJax suite now passes 57 tests.
+
+Browser validation on `03-basic-sage` used the one-shot `page-result-error`
+probe. The first attempt produced the intended retryable result-reading error;
+clicking `Retry computation` started a fresh normal attempt and Sage completed
+successfully without a stale failure overwriting the result.
+
+The final Sage reliability audit is therefore closed without weakening
+canonical fail-closed invariants.
+
+The audit also corrected one documentation error: stale-token refresh/retry is
+already implemented and must not remain listed as future browser work.
+
+## Initial math-answer reconciliation
+
+The existing `initial-math-answers` lifecycle is now reconciled for the current
+scope.
+
+Confirmed behavior:
+
+- authored `data-id`, generated Xronos persistence/DOM ID, and transient MathJax
+  rendering identity remain distinct;
+- ordinary MathJax `Reprocess` replaces the answer DOM node but preserves the
+  authored ID, generated persistence ID, and owning problem ID in the validated
+  fixture;
+- no new answer-identity scheme is warranted by the observed runtime behavior;
+- discovery during the authoritative initial MathJax generation, model
+  resolution, attachment attempts, and contained attachment exceptions remain
+  the production ownership boundaries;
+- successful logical initial attachment remains terminal across ordinary DOM
+  replacement/rebinding;
+- a development-only one-shot `missing-answer-model` probe can target a known
+  authored answer without changing production identity semantics;
+- a forced initial missing model produces `initial-math-answers: degraded` with
+  the unresolved generated answer ID recorded;
+- a later MathJax `Reprocess` repairs that same logical answer and changes the
+  runtime component from `degraded` to `settled`;
+- coordinator external leaves using `allow-late-success` now permit same-operation
+  `degraded -> succeeded/not-required` recovery;
+- that leaf recovery recomputes `interaction-ready` and then `page-readiness`
+  from `degraded` to `succeeded`;
+- the repaired leaf retains the same attempt and operation ID, while derived
+  readiness tasks correctly begin new recomputation attempts.
+
+Browser validation on `testSuite/02-answers-saved-progress` used authored ID
+`runtimeInteger` and generated persistence ID `answer0problem2`. The controlled
+initial failure produced 2/3 attached answers and one unresolved answer; a later
+`Reprocess` produced 3/3 attached answers, zero unresolved answers, and successful
+interaction/page readiness recovery.
+
+No answer-specific deadline was added: unresolved initial attachment is still
+bounded by the authoritative initial MathJax Process, and later repair remains
+available when another legitimate MathJax pass occurs.
+
+## Initial state reconciliation
+
+Initial state now has explicit terminal protocol semantics.
+
+`routes/state.js` returns `initial-state-result` with:
+
+- `found`
+- `empty`
+- `failed`
+- `invalid-request`
+
+`public/javascripts/initial-state-protocol.js` centralizes server-result and
+client-normalization policy and is covered by
+`test/initial-state-protocol.js`.
+
+Successful `found`/`empty` first acquisition initializes browser state and
+releases queued `fetchData()` consumers. Failed/invalid requests do not release
+those consumers with fabricated empty state.
+
+Reconnect no longer reopens the one-shot initial-state lifecycle. A valid later
+result updates `SHADOW`, leaves live `DATABASE` intact, and records a separate
+`state-resynchronization` operation so local changes remain eligible for
+differential synchronization.
+
+Browser validation confirmed first-state `available`/`ready`, unchanged
+initial-state timestamp across reconnect, and successful
+`state-resynchronization`.
+
+The current narrow initial-state/coordinator regression set passes 83 tests.
+
+## WebSocket heartbeat and reconnect recovery
+
+The main state socket now has application-level liveness checks:
+
+- heartbeat interval: 18,000 ms
+- stale-pong threshold: 45,000 ms
+- server `ping` handler immediately echoes `pong`
+- browser liveness diagnostics report `checking`, `healthy`, `degraded`, and
+  `stopped`
+- successful pongs record round-trip latency
+- heartbeat timer ownership is bound to the active socket and cleaned up on
+  close/reconnect
+- a successful socket `open` resets reconnect backoff to 1,000 ms
+- stale-pong degradation is diagnostic only; it does not yet force-close a
+  half-open socket
+
+Browser validation measured approximately 70 ms heartbeat latency. After a
+forced server restart, the browser reconnected on a later attempt, reset
+backoff to 1,000 ms, completed state resynchronization, and resumed healthy
+heartbeat.
+
+Nginx's 3600-second WebSocket timeout remains in place as an outer safety net.
+
+## Phase 1 support and correlation
+
+The final Phase 1 support surface is implemented.
+
+Stable student-visible support codes include:
+
+- `XR-STATE-INITIAL-101`
+- `XR-STATE-CONNECTION-101`
+- `XR-STATE-DIFF-101`
+- `XR-MATHJAX-INITIAL-101`
+- `XR-SAGE-INLINE-INITIAL-101`
+- `XR-ANSWER-INITIAL-101`
+- `XR-ACTIVITY-INITIAL-101`
+
+Recovery actions are modeled separately:
+
+- `hard-reload`
+- `retry-then-hard-reload`
+- `keep-open-until-reconnected`
+- `keep-open-until-save-safe`
+
+`page-runtime-support-report.js` implements report schema v1 using an explicit
+privacy allowlist. Reports contain at most 30 recent runtime events and never
+copy arbitrary event `details`. Student answers, answer IDs, Sage source/code,
+full page state, cookies, authentication material, Canvas/LTI secrets, and
+arbitrary runtime objects are excluded.
+
+Each page runtime creates a non-secret `supportTraceId`. It is included in the
+copied report, sent with state `watch`, `/sagecell/auth`, and
+`/sagecell/service`, and validated before Xronos logging/forwarding. It is not
+authentication and is not part of the Sage cache key.
+
+Xronos-side browser/log correlation has been validated. SageCell source changes
+for logging the same trace are committed but deployment is deferred.
+
+The report modal supports `XRONOS_SUPPORT_EMAIL`. When configured, the modal
+shows the support address in both the contact lead and report-delivery
+instruction. When unset, generic instructor/course-support wording remains.
+The deployment-specific value stays in `repositories/.env` and is not committed.
+
+The final support-contact focused suite passes 35 tests. The preceding broader
+Phase 1 runtime/support closeout suite passed 114 tests before the contact-only
+follow-up.
+
+## Deferred beyond Phase 1
+
+The Phase 1 completion boundary does not imply that the entire historical
+runtime migration is finished.
+
+Important deferred work is tracked in `TODO.md`, including:
+
+1. evidence-based removal/demotion of duplicated legacy watchdog/comparison
+   ownership;
+2. answer-submission and grouped-validator transaction redesign;
+3. WebSocket learner-state authorization and stronger persistence
+   acknowledgement;
+4. optional-interactive terminality and startup cleanup;
+5. broader support-report enrichment only where it provides safe diagnostic
+   value;
+6. Sage authorization hardening and reproducible SageCell deployment work;
+7. unrelated statistics, UI, LRS, legacy-feature, and dependency-maintenance
+   projects.
+
+None of those items is required to reopen the completed Phase 1 support/recovery
+scope unless a reproduced production blocker shows otherwise.

@@ -7,6 +7,7 @@ var database = require('./database');
 var Expression = require('math-expressions');
 var ProgressBar = require('./progress-bar');
 var popover = require('./popover');
+var bootstrapUi = require('./bootstrap-ui');
 var Javascript = require('./javascript');
 var palette = require('./math-palette');
 
@@ -98,7 +99,7 @@ function displayTexForCorrectStudentAnswer(result, instructorAnswerTex) {
 
 function assignGlobalVariable( answerBox, text ) {
     var result = answerBox;
-    
+
     if (result.attr('data-id')) {
 	window[result.attr('data-id')] =
 	    parseFormattedInput( result.attr('data-format'), text );
@@ -123,7 +124,7 @@ exports.createMathAnswer = function(input, showInput, showAnswerButton) {
 	/*if (showInput){
 		if(showAnswerButton)
 			input.append($(templateWithShow));
-		else 
+		else
 			input.append($(template))
 
 	}
@@ -132,6 +133,14 @@ exports.createMathAnswer = function(input, showInput, showAnswerButton) {
 	}*/
 
 	input.append($(template))
+
+	/*
+	 * These controls are created after the global document-ready
+	 * Bootstrap scan. Initialize their tooltips at the component
+	 * creation boundary.
+	 */
+	bootstrapUi.installTooltips(input);
+
 	if(!showInput){
 		input.find('.show-answer-small').hide()
 		input.find('.answer-input-part').hide()
@@ -151,21 +160,21 @@ exports.connectMathAnswer = function(result, answer) {
     if (result.parents('.validator').length > 0) {
 	buttonless = true;
     }
-    
+
     // When the box changes, update the database AND any javascript variables
     var inputBox = result.find( "input.form-control" );
-    
+
     inputBox.on( 'input', function() {
 	var text = $(this).val();
 	result.persistentData( 'response', text );
-	assignGlobalVariable( result, text );	
+	assignGlobalVariable( result, text );
     });
 
     // ACCESSIBILITY: unfortunately, we prevent spacebar from opening
     // a mathjax menu.  By enabling menus in mathjax, right-clicking
     // still opens the menu.
     //inputBox.on( 'keydown', function(event) {
-    inputBox.on( 'keydown', function(event) {	
+    inputBox.on( 'keydown', function(event) {
 	if (event.keyCode == 32) {
 	    event.stopPropagation();
 	}
@@ -187,11 +196,11 @@ exports.connectMathAnswer = function(result, answer) {
     inputBox.focusout( function() { window.setTimeout( function() {
     updateMathEditButton(); }, 100 ); });
     */
-    
+
     inputBox.focus( function() {
 	$(this).attr( 'data-input-box', true );
 	updateMathEditButton();
-	
+
 	$("#math-edit-button").unbind("click");
 	$("#math-edit-button").click( function() {
 	    palette.launch( inputBox.val(),
@@ -757,6 +766,17 @@ exports.connectMathAnswer = function(result, answer) {
 	      '</button>')
 	);
 
+	/*
+	 * Statistics controls arrive asynchronously after instructor
+	 * statistics data is returned, so initialize them here rather
+	 * than relying on either page-level scan.
+	 */
+	bootstrapUi.installTooltips(
+	    result.find(
+		'button.xronos-answer-statistics-button'
+	    )
+	);
+
 	result.find('button.xronos-answer-statistics-button').click( function() {
 	    $('#' + modal.attr('id')).modal('show');
 	    return false;
@@ -773,7 +793,7 @@ exports.connectMathAnswer = function(result, answer) {
 
 	if (!('true' in successes)) successes['true'] = 0;
 	if (!('false' in successes)) successes['false'] = 0;
-	
+
 	var correctPercent = successes['true'] * 100.0 / total;
 	var incorrectPercent = successes['false'] * 100.0 / total;
 	var fraction = correctPercent;
@@ -783,13 +803,13 @@ exports.connectMathAnswer = function(result, answer) {
 	    inputBox.css('background', 'rgba(0,0,255,0.13)');
 	else
 	    inputBox.css('background', 'linear-gradient(90deg, rgba(0,0,255,0.13) ' + fraction + '%, rgba(255,0,0,0.08) ' + fraction + '%)' );
-    });	
+    });
 
-    
+
     // Tell whoever is above us that we need an answer to proceed
-    if (!buttonless)    
+    if (!buttonless)
 	result.trigger( 'ximera:answer-needed' );
-    
+
     // When the database changes, update the box
     result.persistentData( function(event) {
 		console.log("Persisting " + result.attr("id"))
@@ -840,12 +860,12 @@ exports.connectMathAnswer = function(result, answer) {
 	if (result.persistentData('correct')) {
 	    result.find('.btn-ximera-correct').show();
 	    result.find('.btn-ximera-incorrect').hide();
-	    result.find('.btn-ximera-checking').hide();			    
+	    result.find('.btn-ximera-checking').hide();
 	    result.find('.btn-ximera-submit').hide();
-		
+
 		result.find('.show-answer-small').hide();
 		result.find('.show-answer-large').hide();
-		
+
 		if ((tex.match(/\\answer/g) || []).length === 1) {
 			var answerRegExp = /\\answer\s*(\[[^\]]*\])?\s*{(.*)}/
 			var m = tex.match(answerRegExp)
@@ -868,14 +888,14 @@ exports.connectMathAnswer = function(result, answer) {
 
 	    inputBox.prop( 'disabled', true );
 	    // Disabled elements won't fire the blur event that would otherwise hide this
-	    $(result).popover('hide');	    
+	    $(result).popover('hide');
 	} else {
 	    inputBox.prop( 'disabled', false );
 
 	    // I'm doing "result.find('.btn').hide();" but avoiding the info button
 	    result.find('.btn-ximera-correct').hide();
 	    result.find('.btn-ximera-incorrect').hide();
-	    result.find('.btn-ximera-checking').hide();			    	    
+	    result.find('.btn-ximera-checking').hide();
 		result.find('.btn-ximera-submit').hide();
 
 		if (scriptElement[0] && scriptElement[0].hasAttribute("data-initial") && scriptElement.attr("data-initial") !== tex){
@@ -883,7 +903,7 @@ exports.connectMathAnswer = function(result, answer) {
 		}
 
 		mjElement.show()
-		
+
 		var showInput = !result.is('[data-onlinenoinput]')
 		var showAnswerButton = result.is('[data-onlineshowanswerbutton]')
 
@@ -902,7 +922,7 @@ exports.connectMathAnswer = function(result, answer) {
 			}
 			result.find('.answer-input-part').show()
 		}
-	    
+
 	    if ((result.persistentData('response') == result.persistentData('attempt')) &&
 		(result.persistentData('response'))) {
 		result.find('.btn-ximera-incorrect').show();
@@ -910,7 +930,7 @@ exports.connectMathAnswer = function(result, answer) {
 		result.find('.btn-ximera-submit').show();
 	    }
 	}
-	
+
     });
 
     result.find( ".btn-ximera-correct" ).click( function() {
@@ -921,7 +941,7 @@ exports.connectMathAnswer = function(result, answer) {
 	result.find( ".btn-ximera-submit" ).click();
 	return false;
 	});
-	
+
 	var correctAnswerText = answer.toMathML("");
 	correctAnswerText = correctAnswerText.replace('<none>', '').replace('</none>', '');
 	correctAnswerText = correctAnswerText.replace('<mphantom>', '<math>').replace('</mphantom>', '</math>');
@@ -967,7 +987,7 @@ exports.connectMathAnswer = function(result, answer) {
 			}
 		}
 	}
-    
+
 	result.find( ".btn-ximera-submit" ).click( function() {
 		// We're passing an "answer" from MathJax, as "jax"
 		answer.parent = {inferRow: false};
@@ -975,9 +995,9 @@ exports.connectMathAnswer = function(result, answer) {
 		var studentAnswer = parseFormattedInput(format, studentAnswerText);
 		if (studentAnswer === undefined)
 			studentAnswer = Expression.fromText( "sqrt(-1)" );
-		
+
 		var tolerance = result.attr('data-tolerance');
-		
+
 		if (tolerance) {
 			tolerance = parseFloat(tolerance);
 
@@ -997,7 +1017,7 @@ exports.connectMathAnswer = function(result, answer) {
 			var code = result.attr('data-validator');
 			try {
 				var f = Function('return ' + code + ';');
-			
+
 				correct = f.call(studentAnswer);
 				if (typeof correct === 'function')
 				correct = correct(studentAnswer, correctAnswer);
@@ -1026,9 +1046,9 @@ exports.connectMathAnswer = function(result, answer) {
 			result.find('.btn-ximera-incorrect').hide();
 			result.find('.btn-ximera-checking').show();
 			result.find('.btn-ximera-submit').hide();
-			// Disabled elements won't fire the blur event that would otherwise hide this		
+			// Disabled elements won't fire the blur event that would otherwise hide this
 			inputBox.prop( 'disabled', true );
-			
+
 			correct.then( function(value) {
 				if (value) {
 				result.persistentData( 'correct', true );
@@ -1061,7 +1081,7 @@ exports.connectMathAnswer = function(result, answer) {
 
 		TinCan.answer( result, { response: result.persistentData('response'),
 					success: result.persistentData('correct') } );
-		
+
 		return false;
 	});
 
@@ -1073,24 +1093,24 @@ exports.connectMathAnswer = function(result, answer) {
 		result.find('[aria-label="answer"]').val(correctAnswer)
 		result.find('input.form-control').focus()
 		result.find('input.form-control').trigger('input')
-		
+
 		result.find(".btn-ximera-submit").click()
 
 		return false;
 	})
 
-    
+
     inputBox.keydown(function(event){
 	if(event.keyCode == 13) {
 	    event.preventDefault();
 	    return false;
 	}
     });
-    
+
     inputBox.keyup(function(event) {
 	if (buttonless)
 	    result.closest('.validator').trigger( 'ximera:answers-changed' );
-	
+
 	if (event.keyCode == 13) {
 	    if (!buttonless)
 		result.find( ".btn-ximera-submit" ).click();
@@ -1102,7 +1122,7 @@ exports.connectMathAnswer = function(result, answer) {
 
 	return false;
     });
-    
+
     popover.bindPopover( result );
 };
 

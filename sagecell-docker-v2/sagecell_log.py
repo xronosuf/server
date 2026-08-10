@@ -31,6 +31,15 @@ stats_logger = logger.getChild("stats")
 kernel_logger = logger.getChild("kernel")
 provider_logger = logger.getChild("provider")
 
+# Xronos support correlation is intentionally logged at INFO without lowering
+# the global SageCell WARNING threshold. The value is an opaque, validated
+# per-page trace identifier and contains no Sage source or learner identity.
+support_logger = logging.getLogger("sagecell.support")
+support_logger.handlers[:] = []
+support_logger.addHandler(handler)
+support_logger.setLevel(logging.INFO)
+support_logger.propagate = False
+
 class TornadoFilter(logging.Filter):
     def filter(self, record):
         return len(record.args) != 3 or record.args[:2] != (200, 'OPTIONS / (10.0.3.1)')

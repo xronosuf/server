@@ -5,10 +5,12 @@ var $ = require('jquery');
 var _ = require('underscore');
 var async = require('async');
 var jsondiffpatch = require('jsondiffpatch');
+var initialStateProtocol = require("./initial-state-protocol");
 
 var chat = require('./chat');
 var users = require('./users');
 var debugLog = require('./debug-log');
+var pageRuntime = require('./page-runtime');
 
 var CANON = require('canon');
 var XXH = require('xxhashjs');
@@ -19,17 +21,118 @@ function checksumObject(object) {
 
 var DIFFSYNC_DEBOUNCE = 5003; // milliseconds to wait to save
 var socket = undefined;
+var connectionAttempt = 0;
 
-// Some heartbeat code to provide feedback when we aren't receiving pings
-/* BADBAD disabled pings for now
-var lastPing = undefined;
-window.setInterval( function() {
-    var interval = new Date() - lastPing;
-    if (interval > 120000) {
-	saveWorkStatus( 'error', "The connection is slow. Your work is not being saved." );
+var WEBSOCKET_BACKOFF_BASE = 1000;
+var WEBSOCKET_HEARTBEAT_INTERVAL = 18000;
+var WEBSOCKET_HEARTBEAT_STALE = 45000;
+
+var heartbeatTimer = undefined;
+var heartbeatSocket = undefined;
+var lastPongAt = undefined;
+var heartbeatDegraded = false;
+
+function stopHeartbeat(socketToStop) {
+    if (
+        socketToStop &&
+        heartbeatSocket &&
+        socketToStop !== heartbeatSocket
+    ) {
+        return false;
     }
-}, 10000);
-*/
+
+    if (heartbeatTimer !== undefined) {
+        window.clearInterval(heartbeatTimer);
+        heartbeatTimer = undefined;
+    }
+
+    heartbeatSocket = undefined;
+    lastPongAt = undefined;
+    heartbeatDegraded = false;
+
+    return true;
+}
+
+function startHeartbeat(socketForHeartbeat, attempt) {
+    stopHeartbeat();
+
+    heartbeatSocket = socketForHeartbeat;
+    lastPongAt = Date.now();
+    heartbeatDegraded = false;
+
+    pageRuntime.service(
+        "state-websocket-liveness",
+        "checking",
+        {
+            attempt: attempt,
+            heartbeatIntervalMilliseconds:
+                WEBSOCKET_HEARTBEAT_INTERVAL,
+            staleAfterMilliseconds:
+                WEBSOCKET_HEARTBEAT_STALE
+        }
+    );
+
+    function sendHeartbeat() {
+        var now;
+        var elapsed;
+
+        if (
+            heartbeatSocket !== socketForHeartbeat ||
+            socketForHeartbeat.readyState !== WebSocket.OPEN
+        ) {
+            return;
+        }
+
+        now = Date.now();
+        elapsed = now - lastPongAt;
+
+        if (
+            elapsed > WEBSOCKET_HEARTBEAT_STALE &&
+            !heartbeatDegraded
+        ) {
+            heartbeatDegraded = true;
+
+            pageRuntime.service(
+                "state-websocket-liveness",
+                "degraded",
+                {
+                    attempt: attempt,
+                    reason: "pong-stale",
+                    millisecondsSinceLastPong: elapsed,
+                    staleAfterMilliseconds:
+                        WEBSOCKET_HEARTBEAT_STALE
+                }
+            );
+        }
+
+        try {
+            socketForHeartbeat.sendJSON(
+                "ping",
+                now
+            );
+        } catch (err) {
+            if (!heartbeatDegraded) {
+                heartbeatDegraded = true;
+
+                pageRuntime.service(
+                    "state-websocket-liveness",
+                    "degraded",
+                    {
+                        attempt: attempt,
+                        reason: "heartbeat-send-failed"
+                    }
+                );
+            }
+        }
+    }
+
+    sendHeartbeat();
+
+    heartbeatTimer = window.setInterval(
+        sendHeartbeat,
+        WEBSOCKET_HEARTBEAT_INTERVAL
+    );
+}
 
 var SAVE_WORK_BUTTON_ID = '#save-work-button';
 var RESET_WORK_BUTTON_ID = '#reset-work-button';    
@@ -91,6 +194,9 @@ window.addEventListener('offline', function () {
 });
 
 function differentialSynchronization() {
+    var delta;
+    var nextShadow;
+
     if ((!socket) || (!(socket.readyState == WebSocket.OPEN))) {
 	saveWorkStatus( 'error', "Synchronization failed" );
 	connectToServer();
@@ -98,13 +204,68 @@ function differentialSynchronization() {
 	return;
     }
 
-    var delta = jsondiffpatch.diff( SHADOW, DATABASE );
+    /*
+     * Build both the outgoing delta and the next local shadow before sending
+     * anything.  jsondiffpatch rejects unsupported values such as functions.
+     * Contain that failure so one malformed consumer cannot throw out of the
+     * save loop without a visible status or runtime diagnostic.
+     */
+    try {
+	delta = jsondiffpatch.diff( SHADOW, DATABASE );
+
+	if (delta !== undefined) {
+	    nextShadow = jsondiffpatch.clone(DATABASE);
+	}
+    } catch(err) {
+	saveWorkStatus(
+	    'error',
+	    'Page state could not be saved because it contains unsupported data.'
+	);
+
+	debugLog.log(
+	    'Page state differential synchronization failed.',
+	    {
+		code: 'XR-STATE-DIFF-101',
+		errorName:
+		    err && err.name
+			? err.name
+			: undefined,
+		errorMessage:
+		    err && err.message
+			? err.message
+			: String(err)
+	    }
+	);
+
+	pageRuntime.operation(
+	    'state-differential-sync',
+	    'failed',
+	    {
+		code: 'XR-STATE-DIFF-101',
+		errorName:
+		    err && err.name
+			? err.name
+			: undefined,
+		errorMessage:
+		    err && err.message
+			? err.message
+			: String(err)
+	    }
+	);
+
+	console.error(
+	    'Page state differential synchronization failed.',
+	    err
+	);
+
+	return;
+    }
 
     if (delta !== undefined) {
 	saveWorkStatus( 'saving' );
 	socket.sendJSON( 'patch', delta, checksumObject(SHADOW) );
 	debugLog.log('Sent page state update to Xronos server.');
-	SHADOW = jsondiffpatch.clone(DATABASE);
+	SHADOW = nextShadow;
     }
 }
 
@@ -230,12 +391,45 @@ $.fn.extend({
 
 var fetcherCallbacks = [];
 
-// activity.js will use this to download the database from the server
-$.fn.extend({ fetchData: function(callback) {
-    if (DATABASE !== undefined)
+// Consumers use this to wait for the initial database from the server.
+$.fn.extend({ fetchData: function(callback, consumer) {
+    consumer = consumer || "unlabeled";
+
+    if (DATABASE !== undefined) {
+        pageRuntime.operation(
+            "initial-state-consumer:" + consumer,
+            "available",
+            {
+                delivery: "immediate"
+            }
+        );
+
 	callback(DATABASE);
-    else 
-	fetcherCallbacks.unshift( callback );
+    } else {
+        pageRuntime.operation(
+            "initial-state-consumer:" + consumer,
+            "waiting",
+            {
+                queuePosition:
+                    fetcherCallbacks.length + 1
+            }
+        );
+
+        pageRuntime.operation(
+            "initial-state",
+            "waiting",
+            {
+                queuedCallbackCount:
+                    fetcherCallbacks.length + 1,
+                latestConsumer: consumer
+            }
+        );
+
+	fetcherCallbacks.unshift({
+            callback: callback,
+            consumer: consumer
+        });
+    }
 }});
 
 function synchronizePageWithDatabase() {
@@ -245,16 +439,46 @@ function synchronizePageWithDatabase() {
 	    });
 }
 
-var backOff = 1000;
+var backOff = WEBSOCKET_BACKOFF_BASE;
 
 function connectToServer() {
+    var attempt;
+
+    connectionAttempt += 1;
+    attempt = connectionAttempt;
+
+    pageRuntime.service(
+        "state-websocket",
+        "connect-requested",
+        {
+            attempt: attempt,
+            online: navigator.onLine
+        }
+    );
+
     // If we're currently connected...
     if (socket) {
-	if (socket.readyState == WebSocket.OPEN) {	    
+	if (socket.readyState == WebSocket.OPEN) {
+            pageRuntime.service(
+                "state-websocket",
+                "already-open",
+                {
+                    attempt: attempt
+                }
+            );
+
 	    // just ignore the request to reconnect
 	    return;
 	}
 	if (socket.readyState == WebSocket.CONNECTING) {
+            pageRuntime.service(
+                "state-websocket",
+                "already-connecting",
+                {
+                    attempt: attempt
+                }
+            );
+
 	    console.log("Still connecting...");
 	    return;
 	}
@@ -270,6 +494,14 @@ function connectToServer() {
     saveWorkStatus( 'error', "Connecting..." );
     
     try {
+        pageRuntime.service(
+            "state-websocket",
+            "connecting",
+            {
+                attempt: attempt
+            }
+        );
+
 	console.log( "Attempting websocket connection...");
 	socket = new WebSocket(	websocketUrl );
 
@@ -283,14 +515,59 @@ function connectToServer() {
 	    socket.send( JSON.stringify( parameters ) );
 	};
     } catch (err) {
+        pageRuntime.service(
+            "state-websocket",
+            "construction-failed",
+            {
+                attempt: attempt,
+                errorName:
+                    err && err.name
+                        ? err.name
+                        : undefined,
+                errorMessage:
+                    err && err.message
+                        ? err.message
+                        : String(err)
+            }
+        );
+
 	saveWorkStatus( 'error', "Could not connect.  Your work is not being saved." );
     }
 
     socket.addEventListener('error', function (event) {
+        pageRuntime.service(
+            "state-websocket",
+            "error",
+            {
+                attempt: attempt
+            }
+        );
+
 	saveWorkStatus( 'error', "There was an error with the WebSocket" );
     });
 
     socket.addEventListener('close', function (event) {
+        pageRuntime.service(
+            "state-websocket",
+            "closed",
+            {
+                attempt: attempt,
+                code: event.code,
+                clean: event.wasClean
+            }
+        );
+
+        if (stopHeartbeat(event.currentTarget)) {
+            pageRuntime.service(
+                "state-websocket-liveness",
+                "stopped",
+                {
+                    attempt: attempt,
+                    reason: "socket-closed"
+                }
+            );
+        }
+
 	backOff = backOff * 2.0;
 	if (backOff > 15000) backOff = 15000;
 
@@ -304,10 +581,53 @@ function connectToServer() {
     var filename = $('main').attr('data-path');
 
     socket.addEventListener('open', function (event) {
+        backOff = WEBSOCKET_BACKOFF_BASE;
+
+        pageRuntime.service(
+            "state-websocket",
+            "open",
+            {
+                attempt: attempt,
+                reconnectBackoffMilliseconds: backOff
+            }
+        );
+
+        if (DATABASE === undefined) {
+            pageRuntime.operation(
+                "initial-state",
+                "requested",
+                {
+                    attempt: attempt,
+                    activityHashAvailable:
+                        findActivityHash() !== undefined
+                }
+            );
+        } else {
+            pageRuntime.operation(
+                "state-resynchronization",
+                "requested",
+                {
+                    attempt: attempt,
+                    activityHashAvailable:
+                        findActivityHash() !== undefined
+                }
+            );
+        }
+
 	console.log( "WebSocket open!");
 	saveWorkStatus( 'save' );	
-	socket.sendJSON( 'watch', learnerId, findActivityHash() );
+	socket.sendJSON(
+        'watch',
+        learnerId,
+        findActivityHash(),
+        pageRuntime.supportTraceId()
+    );
 	socket.sendJSON( 'want-commit', repositoryName, filename );
+
+        startHeartbeat(
+            event.currentTarget,
+            attempt
+        );
     });
 
     var handlers = {};
@@ -323,30 +643,190 @@ function connectToServer() {
 	}
     };
 
+    function releaseInitialState(
+        remoteDatabase,
+        outcome,
+        source
+    ) {
+        SHADOW = jsondiffpatch.clone(remoteDatabase);
+        DATABASE = {};
+
+        _.each(
+            remoteDatabase,
+            function(database, identifier) {
+                if (identifier in DATABASE) {
+                    _.extend(
+                        DATABASE[identifier],
+                        database
+                    );
+                } else {
+                    DATABASE[identifier] = database;
+                }
+            }
+        );
+
+        synchronizePageWithDatabase();
+
+        pageRuntime.operation(
+            "initial-state",
+            "available",
+            {
+                outcome: outcome,
+                source: source,
+                delivery: "queued-callbacks",
+                callbackCount: fetcherCallbacks.length,
+                identifierCount:
+                    initialStateProtocol.stateIdentifierCount(remoteDatabase)
+            }
+        );
+
+        pageRuntime.operation(
+            "initial-state-delivery",
+            "releasing-callbacks",
+            {
+                callbackCount: fetcherCallbacks.length,
+                outcome: outcome
+            }
+        );
+
+        _.each(fetcherCallbacks, function(fetcher) {
+            pageRuntime.operation(
+                "initial-state-consumer:" +
+                    fetcher.consumer,
+                "releasing"
+            );
+
+            fetcher.callback(DATABASE);
+
+            pageRuntime.operation(
+                "initial-state-consumer:" +
+                    fetcher.consumer,
+                "available",
+                {
+                    delivery: "queued-callback",
+                    outcome: outcome
+                }
+            );
+        });
+    }
+
+    function recordStateResynchronization(
+        state,
+        outcome,
+        remoteDatabase,
+        reason,
+        source
+    ) {
+        pageRuntime.operation(
+            "state-resynchronization",
+            state,
+            {
+                outcome: outcome,
+                reason: reason,
+                source: source,
+                identifierCount:
+                    initialStateProtocol.stateIdentifierCount(remoteDatabase)
+            }
+        );
+    }
+
+    handlers.initialStateResult = function(result) {
+        result =
+            initialStateProtocol.normalizeClientResult(
+                result
+            );
+
+        var outcome = result.outcome;
+        var remoteDatabase = result.data;
+        var reason = result.reason;
+
+        if (
+            outcome === "found" ||
+            outcome === "empty"
+        ) {
+            if (DATABASE === undefined) {
+                pageRuntime.operation(
+                    "initial-state",
+                    "result-received",
+                    {
+                        outcome: outcome,
+                        identifierCount:
+                            initialStateProtocol.stateIdentifierCount(
+                                remoteDatabase
+                            )
+                    }
+                );
+
+                releaseInitialState(
+                    remoteDatabase,
+                    outcome,
+                    "initial-state-result"
+                );
+                return;
+            }
+
+            SHADOW = jsondiffpatch.clone(remoteDatabase);
+
+            recordStateResynchronization(
+                "available",
+                outcome,
+                remoteDatabase,
+                undefined,
+                "initial-state-result"
+            );
+            return;
+        }
+
+        if (DATABASE === undefined) {
+            pageRuntime.operation(
+                "initial-state",
+                "failed",
+                {
+                    outcome: outcome,
+                    reason: reason
+                }
+            );
+            return;
+        }
+
+        recordStateResynchronization(
+            "failed",
+            outcome,
+            undefined,
+            reason,
+            "initial-state-result"
+        );
+    };
+
+    /*
+     * `sync` remains the ordinary differential/resynchronization
+     * protocol. The first-state path now uses
+     * `initial-state-result`.
+     *
+     * Keep a compatibility path for an older server so initial
+     * fetchData() consumers cannot be stranded during a mixed deploy.
+     */
     handlers.sync = function(remoteDatabase) {
-	SHADOW = jsondiffpatch.clone(remoteDatabase);
-	
-	if (DATABASE === undefined) {
-	    DATABASE = {};
-	    
-	    _.each( remoteDatabase,
-		    function( database, identifier, list ) {
-			// It's possible that, for some reason, I've
-			// already made changes to the database, so I
-			// just want to merge in the remote
-			if (identifier in DATABASE)
-			    _.extend( DATABASE[identifier], database );
-			else {
-			    DATABASE[identifier] = database;
-			}
-		    });
-	    
-	    synchronizePageWithDatabase();
-	    
-	    _.each( fetcherCallbacks, function(callback) {
-		callback(DATABASE);
-	    });
-	}
+        if (DATABASE === undefined) {
+            handlers.initialStateResult({
+                outcome:
+                    initialStateProtocol.stateIdentifierCount(remoteDatabase) > 0
+                        ? "found"
+                        : "empty",
+                data: remoteDatabase
+            });
+            return;
+        }
+
+        SHADOW = jsondiffpatch.clone(remoteDatabase);
+
+        recordStateResynchronization(
+            "available",
+            "sync",
+            remoteDatabase,
+            undefined,
+            "sync"
+        );
     };
 
     handlers.outOfSync = function() {
@@ -359,6 +839,14 @@ function connectToServer() {
 	} else {
 	    saveWorkStatus( 'saved', 'Uploaded at ' + (new Date()).toLocaleTimeString() );
 	    debugLog.log('Xronos server accepted page state update.');
+
+	    pageRuntime.operation(
+		'state-differential-sync',
+		'succeeded',
+		{
+		    reason: 'server-accepted'
+		}
+	    );
 	}
     }, 100 );
 
@@ -406,13 +894,39 @@ function connectToServer() {
 	});
     };
 
-    /*
-    handlers.pong = function(latency)  {
-	lastPing = new Date();
-	console.log( "ping: " + latency.toString() + "ms" );
-	$(SAVE_WORK_BUTTON_ID).attr( 'title', latency.toString() + "ms ping" );
+    handlers.pong = function(sentAt) {
+        var now;
+        var sentAtNumber;
+        var latency;
+
+        if (this !== heartbeatSocket) {
+            return;
+        }
+
+        now = Date.now();
+        sentAtNumber = Number(sentAt);
+        latency = undefined;
+
+        if (
+            isFinite(sentAtNumber) &&
+            sentAtNumber >= 0 &&
+            sentAtNumber <= now
+        ) {
+            latency = now - sentAtNumber;
+        }
+
+        lastPongAt = now;
+        heartbeatDegraded = false;
+
+        pageRuntime.service(
+            "state-websocket-liveness",
+            "healthy",
+            {
+                latencyMilliseconds: latency,
+                lastPongAt: new Date(now).toISOString()
+            }
+        );
     };
-    */
 
     handlers.chat = function(name, message) {
 	chat.appendToTranscript( name, message, true );
@@ -457,8 +971,22 @@ function connectToServer() {
 $(document).ready(function() {
     var activityHash = findActivityHash();
     
-    if (!activityHash)
+    if (!activityHash) {
+        pageRuntime.service(
+            "state-websocket",
+            "not-required"
+        );
+
 	return;
+    }
+
+    pageRuntime.service(
+        "state-websocket",
+        "required",
+        {
+            activityHashAvailable: true
+        }
+    );
 
     connectToServer();
 });

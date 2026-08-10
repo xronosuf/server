@@ -76,6 +76,67 @@ web_server.write_text(s)
 handlers = Path("/opt/sagecell/handlers.py")
 h = handlers.read_text()
 
+# Add the dedicated support-correlation logger to the existing log import.
+if "support_logger" not in h:
+    log_import = "from log import StatsMessage, logger, stats_logger"
+    if log_import not in h:
+        raise SystemExit(
+            "Could not find SageCell handlers log import."
+        )
+    h = h.replace(
+        log_import,
+        log_import + ", support_logger",
+        1
+    )
+
+# Log only a strictly validated opaque Xronos trace at /service entry.
+# Do not log request bodies, Sage code, cookies, auth material, or arbitrary
+# headers.
+support_trace_marker = "Xronos support correlation patch"
+if support_trace_marker not in h:
+    service_anchor = """    async def post(self):
+        if 'Origin' in self.request.headers:
+"""
+
+    service_replacement = """    async def post(self):
+        # Xronos support correlation patch.
+        support_trace = self.request.headers.get(
+            "X-Xronos-Support-Trace",
+            ""
+        )
+
+        if (
+            8 <= len(support_trace) <= 96
+            and support_trace.startswith("xr-")
+            and all(
+                (
+                    "A" <= character <= "Z"
+                    or "a" <= character <= "z"
+                    or "0" <= character <= "9"
+                    or character == "-"
+                )
+                for character in support_trace
+            )
+        ):
+            support_logger.info(
+                "XRONOS SUPPORT TRACE %s sagecell-service",
+                support_trace
+            )
+
+        if 'Origin' in self.request.headers:
+"""
+
+    if service_anchor not in h:
+        raise SystemExit(
+            "Could not find ServiceHandler.post anchor."
+        )
+
+    h = h.replace(
+        service_anchor,
+        service_replacement,
+        1
+    )
+
 # Replace ZMQChannelsHandler.send. This preserves the execution counter behavior
 # but adds modern Jupyter message fields before kernel.session.send(...).
 new_send = '''    def send(self, msg):

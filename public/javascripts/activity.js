@@ -26,8 +26,11 @@ var javascript = require('./javascript');
 var connectInteractives = require('./interactives').connectInteractives;
 
 var database = require('./database');
+var pageRuntime = require('./page-runtime');
+var bootstrapUi = require('./bootstrap-ui');
 
 var annotator = require('./annotator');
+var pageRuntime = require('./page-runtime');
 
 var installLegacyAccordionHints = function(activity) {
     var HINT_WAIT_SECONDS = 10;
@@ -139,6 +142,22 @@ var installLegacyAccordionHints = function(activity) {
     groups.forEach(function(group) {
         var button = makeButton(group.hints.length);
         var revealed = 0;
+        var exhaustButton = function() {
+            button.addClass('xronos-hints-exhausted');
+
+            /*
+             * Some frozen course styles force reveal buttons to display with
+             * !important. Use an inline important declaration so an exhausted
+             * compatibility button cannot remain visible.
+             */
+            if (button[0]) {
+                button[0].style.setProperty(
+                    'display',
+                    'none',
+                    'important'
+                );
+            }
+        };
 
         group.hints.forEach(function(hint) {
             hint.hide();
@@ -161,22 +180,82 @@ var installLegacyAccordionHints = function(activity) {
             }
 
             if (revealed >= group.hints.length) {
-                button.hide();
+                exhaustButton();
                 return false;
             }
 
-            group.hints[revealed].show();
+            var hintIndex = revealed;
+            var problemId =
+                group.problem.attr('id') || null;
+
+            pageRuntime.operation(
+                'legacy-hint-reveal',
+                'requested',
+                {
+                    problemId: problemId,
+                    hintIndex: hintIndex,
+                    totalHints: group.hints.length
+                }
+            );
+
+            group.hints[hintIndex].show();
             revealed += 1;
+
+            pageRuntime.operation(
+                'legacy-hint-reveal',
+                'displayed',
+                {
+                    problemId: problemId,
+                    hintIndex: hintIndex,
+                    revealedHints: revealed,
+                    totalHints: group.hints.length
+                }
+            );
 
             button.find('.counter').show();
             button.find('.count').text(Math.min(revealed + 1, group.hints.length).toString());
 
             if (revealed >= group.hints.length) {
-                button.hide();
+                exhaustButton();
             }
 
             if (MathJax && MathJax.Hub) {
-                MathJax.Hub.Queue(["Rerender", MathJax.Hub, group.problem[0]]);
+                pageRuntime.operation(
+                    'legacy-hint-rerender',
+                    'queued',
+                    {
+                        problemId: problemId,
+                        hintIndex: hintIndex
+                    }
+                );
+
+                MathJax.Hub.Queue(
+                    [
+                        "Rerender",
+                        MathJax.Hub,
+                        group.problem[0]
+                    ],
+                    function() {
+                        pageRuntime.operation(
+                            'legacy-hint-rerender',
+                            'completed',
+                            {
+                                problemId: problemId,
+                                hintIndex: hintIndex
+                            }
+                        );
+                    }
+                );
+            } else {
+                pageRuntime.operation(
+                    'legacy-hint-rerender',
+                    'not-required',
+                    {
+                        problemId: problemId,
+                        hintIndex: hintIndex,
+                        reason: 'mathjax-unavailable'
+                    }
+                );
             }
 
             return false;
@@ -187,15 +266,20 @@ var installLegacyAccordionHints = function(activity) {
 };
 
 
-var createActivity = function() {
-	var activity = $(this);
-	
-	$(".foldable", activity).foldable();
-	$(".accordion", activity).addClass('hidden-out-of-view')
+var activityInitializationEntries = [];
+var activityInitializationOwnerConfigured = false;
+var activityInitializationRequestScheduled = false;
 
-    //$('.activity-body', this).annotator();
-    
-    activity.fetchData( function() {
+var initializeActivity = function(activity) {
+
+        pageRuntime.component(
+            "activity",
+            "initializing",
+            {
+                path: activity.attr("data-path")
+            }
+        );
+
 	activity.persistentData( function() {
 	    if (!(activity.persistentData( 'experienced' ))) {
 		TinCan.experience(activity);
@@ -220,20 +304,323 @@ var createActivity = function() {
 	$(".select-all", activity).selectAll();
 	$(".word-choice", activity).wordChoice();
 	$(".hint", activity).hint();
-	
+
 	$(".free-response", activity).freeResponse();
-	$(".javascript-code", activity).coding();	
-	
+	$(".javascript-code", activity).coding();
+
 	$(".shuffle", activity).shuffle();
 	$(".feedback", activity).feedback();
+        var validatorCount =
+            $(".validator", activity).length;
+
+        pageRuntime.component(
+            "validators",
+            "initializing",
+            {
+                count: validatorCount
+            }
+        );
+
 	$(".validator", activity).validator();
+
+        pageRuntime.component(
+            "validators",
+            "initialized",
+            {
+                count: validatorCount
+            }
+        );
+	var inlineJavascriptCount =
+	    $(".inline-javascript", activity).length;
+
+	pageRuntime.component(
+	    "author-inline-javascript",
+	    "initializing",
+	    {
+		count: inlineJavascriptCount,
+		initialStateAvailable: true
+	    }
+	);
+
 	$(".inline-javascript", activity).javascript();
+
+	pageRuntime.component(
+	    "author-inline-javascript",
+	    inlineJavascriptCount > 0
+		? "initialized"
+		: "not-required",
+	    {
+		count: inlineJavascriptCount,
+		initialStateAvailable: true
+	    }
+	);
+
 	$('.youtube-player', activity).youtube();
-	
+
 	connectInteractives();
-	
+
 	$('.activity-card').activityCard();
-    });
+
+        var bootstrapUiResult =
+            bootstrapUi.install(
+                activity
+            );
+
+        pageRuntime.operation(
+            "activity-bootstrap-ui",
+            "completed",
+            {
+                path:
+                    activity.attr(
+                        "data-path"
+                    ),
+                dropdownsMatched:
+                    bootstrapUiResult
+                        .dropdownsMatched,
+                dropdownsInstalled:
+                    bootstrapUiResult
+                        .dropdownsInstalled,
+                tooltipsMatched:
+                    bootstrapUiResult
+                        .tooltipsMatched,
+                tooltipsInstalled:
+                    bootstrapUiResult
+                        .tooltipsInstalled
+            }
+        );
+
+        pageRuntime.component(
+            "activity",
+            "initialized",
+            {
+                path: activity.attr("data-path")
+            }
+        );
+
+};
+
+var invokeActivityInitialization = function(owner) {
+    var initializedCount = 0;
+    var failedCount = 0;
+    var firstError = null;
+
+    activityInitializationEntries.forEach(
+        function(entry) {
+            if (
+                !entry.initialStateAvailable ||
+                entry.started
+            ) {
+                return;
+            }
+
+            entry.started = true;
+            entry.owner = owner;
+
+            pageRuntime.event(
+                "activity-initialization-invoked",
+                {
+                    owner: owner,
+                    path:
+                        entry.activity.attr(
+                            "data-path"
+                        )
+                }
+            );
+
+            try {
+                initializeActivity(
+                    entry.activity
+                );
+
+                entry.completed = true;
+                initializedCount += 1;
+
+                pageRuntime.event(
+                    "activity-initialization-completed",
+                    {
+                        owner: owner,
+                        path:
+                            entry.activity.attr(
+                                "data-path"
+                            )
+                    }
+                );
+            } catch (err) {
+                failedCount += 1;
+
+                if (!firstError) {
+                    firstError = err;
+                }
+
+                pageRuntime.component(
+                    "activity",
+                    "failed",
+                    {
+                        owner: owner,
+                        path:
+                            entry.activity.attr(
+                                "data-path"
+                            ),
+                        errorName:
+                            err && err.name
+                                ? err.name
+                                : undefined,
+                        errorMessage:
+                            err && err.message
+                                ? err.message
+                                : String(err)
+                    }
+                );
+            }
+        }
+    );
+
+    if (firstError) {
+        throw firstError;
+    }
+
+    return {
+        state: "succeeded",
+        value: {
+            owner: owner,
+            registeredCount:
+                activityInitializationEntries.length,
+            initializedCount:
+                initializedCount,
+            failedCount:
+                failedCount
+        }
+    };
+};
+
+var ensureActivityInitializationOwner =
+    function() {
+        if (
+            activityInitializationOwnerConfigured
+        ) {
+            return true;
+        }
+
+        activityInitializationOwnerConfigured =
+            pageRuntime
+                .configureActivityInitialization(
+                    function() {
+                        return invokeActivityInitialization(
+                            "coordinator"
+                        );
+                    }
+                );
+
+        return activityInitializationOwnerConfigured;
+    };
+
+var scheduleActivityInitializationRequest =
+    function() {
+        if (
+            activityInitializationRequestScheduled
+        ) {
+            return;
+        }
+
+        activityInitializationRequestScheduled =
+            true;
+
+        /*
+         * Defer until all fetchData callbacks released by the same initial
+         * sync have marked their activity entries available.
+         */
+        _.defer(function() {
+            var requested =
+                ensureActivityInitializationOwner() &&
+                pageRuntime
+                    .requestActivityInitialization(
+                        {
+                            activityCount:
+                                activityInitializationEntries
+                                    .length,
+                            availableCount:
+                                activityInitializationEntries
+                                    .filter(
+                                        function(entry) {
+                                            return entry
+                                                .initialStateAvailable;
+                                        }
+                                    ).length
+                        }
+                    );
+
+            if (!requested) {
+                pageRuntime.event(
+                    "activity-initialization-legacy-fallback",
+                    {
+                        reason:
+                            activityInitializationOwnerConfigured
+                                ? "coordinator-request-rejected"
+                                : "coordinator-owner-not-configured",
+                        activityCount:
+                            activityInitializationEntries
+                                .length
+                    }
+                );
+
+                invokeActivityInitialization(
+                    "legacy-fallback"
+                );
+            }
+        });
+    };
+
+var createActivity = function() {
+
+	var activity = $(this);
+
+    pageRuntime.component(
+        "activity",
+        "waiting-for-initial-state",
+        {
+            path: activity.attr("data-path"),
+            hashAvailable:
+                activity.attr("data-hash") !== undefined
+        }
+    );
+
+	$(".foldable", activity).foldable();
+	$(".accordion", activity).addClass('hidden-out-of-view')
+
+    //$('.activity-body', this).annotator();
+
+
+    var entry = {
+        activity: activity,
+        initialStateAvailable: false,
+        started: false,
+        completed: false,
+        owner: null
+    };
+
+    activityInitializationEntries.push(
+        entry
+    );
+
+    ensureActivityInitializationOwner();
+
+    activity.fetchData(function() {
+        entry.initialStateAvailable = true;
+
+        pageRuntime.operation(
+            "initial-state-consumer:activity",
+            "coordinator-release-requested",
+            {
+                path:
+                    activity.attr("data-path"),
+                registeredCount:
+                    activityInitializationEntries
+                        .length
+            }
+        );
+
+        scheduleActivityInitializationRequest();
+    }, "activity");
 };
 
 $.fn.extend({

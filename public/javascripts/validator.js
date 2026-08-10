@@ -1,6 +1,7 @@
 var $ = require('jquery');
 var _ = require('underscore');
 var database = require('./database');
+var pageRuntime = require('./page-runtime');
 
 var answerHtml = '<div class="btn-group" style="vertical-align: center;">' +
 	'<button  type="button" class="btn btn-success btn-ximera-correct" data-toggle="tooltip" data-placement="top" title="Correct answer!" style="display: none" aria-label="correct answer" aria-live="assertive">' +
@@ -53,16 +54,57 @@ var createValidator = function() {
     });
 
     var checkAnswer = function() {
-	// BADBAD: this should check whether validation is possible -- i.e., does the validator code throw an error?
-	// this should acatually validate
+	var validatorId = validator.attr('id');
+	var correct = false;
+	var validatorFunction = window[validatorId];
+
+	/*
+	 * Persistent page state must remain JSON-serializable.  A malformed
+	 * grouped-validator expression can return its validator function instead
+	 * of invoking it.  Storing that function as `correct` causes
+	 * jsondiffpatch to reject the entire page database and prevents later
+	 * student work from being saved.
+	 */
 	try {
-	    var correct = window[validator.attr('id')]();
-	    validator.persistentData('correct', correct );
+	    if (typeof validatorFunction !== 'function') {
+		throw new TypeError(
+		    'Grouped validator function was not found.'
+		);
+	    }
+
+	    correct = validatorFunction();
+
+	    if (typeof correct !== 'boolean') {
+		throw new TypeError(
+		    'Grouped validator must return a Boolean; received ' +
+		    typeof correct + '.'
+		);
+	    }
 	} catch(err) {
-	    console.log(err);
-	    validator.persistentData('correct', false );
-	};
-	
+	    console.error(err);
+
+	    pageRuntime.operation(
+		'grouped-validator',
+		'failed',
+		{
+		    code: 'XR-VALIDATOR-RESULT-101',
+		    validatorId: validatorId,
+		    resultType: typeof correct,
+		    errorName:
+			err && err.name
+			    ? err.name
+			    : undefined,
+		    errorMessage:
+			err && err.message
+			    ? err.message
+			    : String(err)
+		}
+	    );
+
+	    correct = false;
+	}
+
+	validator.persistentData('correct', correct );
 	validator.trigger( 'ximera:attempt' );
 	
 	validator.find('.mathjaxed-input').each( function(i,e) {

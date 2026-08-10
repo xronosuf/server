@@ -48,6 +48,7 @@ var express = require('express')
   , basicAuth = require('express-basic-auth')
   , request = require('request')
   , crypto = require('crypto')
+  , sageReliabilityPolicy = require('./sage-reliability-policy')
   ;
 
 require('./summarize/summarize') // Load summarize interval
@@ -305,6 +306,20 @@ if (keys.length >= sagecellProxyCacheMaxEntries) {
     cache[key] = value;
 }
 
+function normalizeXronosSupportTrace(value) {
+    if (
+        typeof value !== "string" ||
+        value.length < 8 ||
+        value.length > 96 ||
+        !/^xr-[A-Za-z0-9-]+$/.test(value)
+    ) {
+        return null;
+    }
+
+    return value;
+}
+
+
 function sagecellProxyCacheName(source) {
     return source === "fallback" ? "FALLBACK" : "LOCAL";
 }
@@ -344,22 +359,14 @@ return false;
 }
 
 function sagecellProxyShouldFallback(err, response) {
-    var statusCode;
-
-    if (err) {
-return true;
-    }
-
-    if (!response) {
-return true;
-    }
-
-    statusCode = response.statusCode || 0;
-
-    // Treat gateway/service-unavailable style failures as infrastructure
-    // failures.  Do not fallback on normal Sage execution errors, which
-    // should be returned as HTTP 200 with success:false.
-    return statusCode === 502 || statusCode === 503 || statusCode === 504;
+    // Treat transport failure, timeout, throttling and server/gateway failures
+    // as infrastructure failures. Do not fallback on normal Sage execution
+    // errors, which should be returned as HTTP 200 with success:false.
+    return sageReliabilityPolicy
+        .sagecellProxyShouldFallback(
+            err,
+            response
+        );
 }
 
 function sagecellProxyErrorBody(source, err) {
@@ -384,12 +391,30 @@ function sagecellProxyHttpErrorBody(source, statusCode, body) {
     });
 }
 
-function sagecellProxyPost(source, serviceUrl, form, callback) {
-    sagecellProxyLog("SageCell proxy request", source, serviceUrl);
+function sagecellProxyPost(
+    source,
+    serviceUrl,
+    form,
+    supportTrace,
+    callback
+) {
+    sagecellProxyLog(
+        "SageCell proxy request",
+        "trace",
+        supportTrace || "-",
+        source,
+        serviceUrl
+    );
 
     request.post({
 url: serviceUrl,
 form: form,
+headers: supportTrace
+    ? {
+        "X-Xronos-Support-Trace":
+            supportTrace
+    }
+    : {},
 timeout: 60000
     }, function(err, response, body) {
 callback(err, response, body);
@@ -451,10 +476,22 @@ false
     );
 }
 
-function sagecellProxyTryFallback(waitingKey, cacheKey, codeLength, form, reason) {
+function sagecellProxyTryFallback(
+    waitingKey,
+    cacheKey,
+    codeLength,
+    form,
+    supportTrace,
+    reason
+) {
     sagecellProxyLog("SageCell proxy trying fallback", cacheKey, "reason", reason || "unknown");
 
-    sagecellProxyPost("fallback", config.sagecellFallbackService, form, function(err, response, body) {
+    sagecellProxyPost(
+        "fallback",
+        config.sagecellFallbackService,
+        form,
+        supportTrace,
+        function(err, response, body) {
         var statusCode;
         var contentType;
         var cacheable;
@@ -696,7 +733,21 @@ app.use(function(req, res, next) {
 
 
 app.post('/sagecell/auth', function(req, res) {
+    var supportTrace =
+        normalizeXronosSupportTrace(
+            req.get(
+                "X-Xronos-Support-Trace"
+            )
+        );
+
     var authCheck = xronosVerifySagecellPageAuth(req, { allowExpired: true });
+
+    console.log(
+        "XRONOS SUPPORT TRACE",
+        supportTrace || "-",
+        "sage-auth",
+        req.path
+    );
 
     if (!authCheck.ok) {
         console.error("Rejected SageCell page-auth refresh:", authCheck.reason);
@@ -714,8 +765,23 @@ app.post('/sagecell/auth', function(req, res) {
 
 
 app.post('/sagecell/service', function(req, res) {
+    var supportTrace =
+        normalizeXronosSupportTrace(
+            req.get(
+                "X-Xronos-Support-Trace"
+            )
+        );
+
     var authCheck = xronosVerifySagecellPageAuth(req);
     var code = (req.body && req.body.code) ? req.body.code : "";
+
+    console.log(
+        "XRONOS SUPPORT TRACE",
+        supportTrace || "-",
+        "sage-service",
+        "codeLength",
+        code.length
+    );
     var sagecellForwardBody = xronosSagecellForwardBody(req.body);
     var cacheKey = crypto.createHash('sha256').update(code).digest('hex');
 
@@ -764,25 +830,60 @@ waitingKey = "auto:" + cacheKey;
     }
 
     if (sagecellProxyInFlight[waitingKey]) {
-sagecellProxyLog("SageCell proxy cache WAIT", waitingKey, "len", code.length);
+sagecellProxyLog(
+    "SageCell proxy cache WAIT",
+    "trace",
+    supportTrace || "-",
+    waitingKey,
+    "len",
+    code.length
+);
 sagecellProxyInFlight[waitingKey].push(res);
 return;
     }
 
-    sagecellProxyLog("SageCell proxy cache MISS", waitingKey, "len", code.length, "mode", mode);
+    sagecellProxyLog(
+    "SageCell proxy cache MISS",
+    "trace",
+    supportTrace || "-",
+    waitingKey,
+    "len",
+    code.length,
+    "mode",
+    mode
+);
     sagecellProxyInFlight[waitingKey] = [res];
 
     if (mode === "remote-only") {
-sagecellProxyTryFallback(waitingKey, cacheKey, code.length, sagecellForwardBody, "remote-only mode");
+sagecellProxyTryFallback(
+    waitingKey,
+    cacheKey,
+    code.length,
+    sagecellForwardBody,
+    supportTrace,
+    "remote-only mode"
+);
 return;
     }
 
     if (mode === "local-with-fallback" && localInCooldown) {
-sagecellProxyTryFallback(waitingKey, cacheKey, code.length, sagecellForwardBody, "local cooldown");
+sagecellProxyTryFallback(
+    waitingKey,
+    cacheKey,
+    code.length,
+    sagecellForwardBody,
+    supportTrace,
+    "local cooldown"
+);
 return;
     }
 
-    sagecellProxyPost("local", config.sagecellService, sagecellForwardBody, function(err, response, body) {
+    sagecellProxyPost(
+    "local",
+    config.sagecellService,
+    sagecellForwardBody,
+    supportTrace,
+    function(err, response, body) {
 var statusCode;
 var contentType;
 var cacheable;
@@ -795,7 +896,17 @@ config.sagecellFallbackCooldownMs,
 "ms.",
 err || (response && response.statusCode)
     );
-    sagecellProxyTryFallback(waitingKey, cacheKey, code.length, sagecellForwardBody, err ? err.message : "HTTP " + (response && response.statusCode));
+    sagecellProxyTryFallback(
+        waitingKey,
+        cacheKey,
+        code.length,
+        sagecellForwardBody,
+        supportTrace,
+        err
+            ? err.message
+            : "HTTP " +
+                (response && response.statusCode)
+    );
     return;
 }
 

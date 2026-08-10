@@ -216,9 +216,93 @@ function process() {
 // Look if there is anything to process every few seconds
 setInterval( process, 10000 );
 
+function gradebookRequestPayload(req) {
+    var body = (req && req.body) || {};
+    var query = (req && req.query) || {};
+
+    return {
+        pointsEarned:
+            body.pointsEarned !== undefined
+                ? body.pointsEarned
+                : query.pointsEarned,
+        pointsPossible:
+            body.pointsPossible !== undefined
+                ? body.pointsPossible
+                : query.pointsPossible
+    };
+}
+
+function finiteGradebookNumber(value) {
+    var number;
+
+    if (
+        value === undefined ||
+        value === null ||
+        value === '' ||
+        typeof value === 'boolean'
+    ) {
+        return undefined;
+    }
+
+    number = Number(value);
+
+    if (!isFinite(number)) {
+        return undefined;
+    }
+
+    return number;
+}
+
+function validateGradebookPayload(payload) {
+    var pointsEarned = finiteGradebookNumber(
+        payload && payload.pointsEarned
+    );
+    var pointsPossible = finiteGradebookNumber(
+        payload && payload.pointsPossible
+    );
+    var normalizedScore;
+
+    if (pointsEarned === undefined) {
+        return {
+            valid: false,
+            field: 'pointsEarned',
+            message: 'pointsEarned must be a finite number.'
+        };
+    }
+
+    if (pointsPossible === undefined || pointsPossible <= 0) {
+        return {
+            valid: false,
+            field: 'pointsPossible',
+            message: 'pointsPossible must be a finite number greater than zero.'
+        };
+    }
+
+    normalizedScore = pointsEarned / pointsPossible;
+
+    if (!isFinite(normalizedScore)) {
+        return {
+            valid: false,
+            field: 'score',
+            message: 'The normalized grade must be finite.'
+        };
+    }
+
+    return {
+        valid: true,
+        pointsEarned: pointsEarned,
+        pointsPossible: pointsPossible,
+        normalizedScore: normalizedScore
+    };
+}
+
+exports.validateGradebookPayload = validateGradebookPayload;
+
 exports.record = function(req, res, next) {
     var repositoryName = req.params.repository;
     var now = Date.now();
+    var requestPayload = gradebookRequestPayload(req);
+    var payloadValidation = validateGradebookPayload(requestPayload);
 
     var buildGradeSyncStatus = function(bridges) {
         var status = {
@@ -262,7 +346,31 @@ exports.record = function(req, res, next) {
 
     if (!req.user) {
         next('No user logged in.');
+    } else if (!payloadValidation.valid) {
+        console.log(
+            'Rejected invalid gradebook payload for ' +
+            req.user._id +
+            ' (' + repositoryName + '/' + req.params.path + '): ' +
+            payloadValidation.message
+        );
+
+        res.status(400).json({
+            ok: false,
+            error: 'invalid-gradebook-payload',
+            field: payloadValidation.field,
+            message: payloadValidation.message
+        });
     } else {
+        /*
+         * Normalize the accepted values once so milestone recording and bridge
+         * calculations use the same validated numbers. This also preserves
+         * compatibility with the legacy GET route, where values may arrive
+         * through req.query instead of req.body.
+         */
+        req.body = req.body || {};
+        req.body.pointsEarned = payloadValidation.pointsEarned;
+        req.body.pointsPossible = payloadValidation.pointsPossible;
+
         console.log('gradebook.record for ' + req.user._id + ' (' + repositoryName +'/'+ req.params.path +')');
 
         mdb.LtiBridge.find( {user: req.user._id, repository: repositoryName, path:req.params.path }, function(err, bridges) {

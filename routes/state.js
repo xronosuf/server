@@ -7,6 +7,7 @@ var repositories = require('./repositories');
 var mongo = require('mongodb');
 var unique = require('uniq');
 var config = require('../config');
+var initialStateProtocol = require('../public/javascripts/initial-state-protocol');
 const Redis = require("ioredis");
 
 var CANON = require('canon');
@@ -88,6 +89,33 @@ var activityRooms = new Building("activity");
 exports.push = function(repositoryName) {
     repositoryRooms.broadcast( repositoryName, null, 'push' );
 };
+
+function normalizeSupportTrace(value) {
+    if (
+        typeof value !== "string" ||
+        value.length < 8 ||
+        value.length > 96 ||
+        !/^xr-[A-Za-z0-9-]+$/.test(value)
+    ) {
+        return null;
+    }
+
+    return value;
+}
+
+
+function supportTraceLog(socket, event) {
+    console.log(
+        "XRONOS SUPPORT TRACE",
+        socket &&
+        socket.supportTraceId
+            ? socket.supportTraceId
+            : "-",
+        "state",
+        event
+    );
+}
+
 
 var handlers = {};
 
@@ -181,8 +209,29 @@ handlers.chat = function(name, message) {
     */
 };
 
-handlers.watch = function(userId, activityHash) {
+handlers.ping = function(sentAt) {
+    this.sendJSON(
+        'pong',
+        sentAt
+    );
+};
+
+handlers.watch = function(
+    userId,
+    activityHash,
+    supportTraceId
+) {
     var socket = this;
+
+    socket.supportTraceId =
+        normalizeSupportTrace(
+            supportTraceId
+        );
+
+    supportTraceLog(
+        socket,
+        "watch"
+    );
 
     // BADBAD: Need some security here...
     console.log( "BADBAD: no security checks for " + userId );
@@ -214,21 +263,63 @@ handlers.watch = function(userId, activityHash) {
 	}
     });	
     
-    if (!activityHash)
-	return;
-    
+    if (!activityHash) {
+        socket.sendJSON(
+            'initial-state-result',
+            initialStateProtocol.serverResult(
+                activityHash,
+                null,
+                null
+            )
+        );
+        return;
+    }
+
     socket.activityHash = activityHash;
-    
-    var roomName = `/users/${userId}/state/${activityHash}`;
+
+    var roomName =
+        `/users/${userId}/state/${activityHash}`;
     socket.activityRoom = roomName;
-    activityRooms.join( roomName, socket );
-    
-    mdb.State.findOne({activityHash: activityHash, user: userId}, function(err, state) {
-	if (err || (!state))
-	    state = {data: {}};
-	socket.shadow = state.data;
-	socket.sendJSON('sync', state.data);
-    });
+    activityRooms.join(roomName, socket);
+
+    mdb.State.findOne(
+        {
+            activityHash: activityHash,
+            user: userId
+        },
+        function(err, state) {
+            var result =
+                initialStateProtocol.serverResult(
+                    activityHash,
+                    err,
+                    state
+                );
+
+            if (result.outcome === 'failed') {
+                winston.error(
+                    "Initial page-state lookup failed " +
+                    "for activity hash. " +
+                    "supportTrace=" +
+                    (
+                        socket.supportTraceId ||
+                        "-"
+                    )
+                );
+            }
+
+            if (
+                result.outcome === 'found' ||
+                result.outcome === 'empty'
+            ) {
+                socket.shadow = result.data;
+            }
+
+            socket.sendJSON(
+                'initial-state-result',
+                result
+            );
+        }
+    );
 };
     
 handlers.wantDifferential = function() {
@@ -317,6 +408,10 @@ handlers.patch = function(delta, checksum, truth) {
 	
 	mdb.State.update({activityHash: activityHash, user: userId}, {$set: {data: data}}, {upsert: true}, function (err, affected, raw) {
 	    if (err) {
+        supportTraceLog(
+            socket,
+            "state-patch-failed"
+        );
 		socket.sendJSON('patched', err);
 	    } else {
 		// tell other people in the room that we have a differential if they want it

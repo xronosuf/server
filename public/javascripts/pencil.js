@@ -36,7 +36,7 @@ $( function() {
 		}
 	    });
 	});
-    });
+    }, "pencil");
     
     var parent = $('div.container-fluid');
     

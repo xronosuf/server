@@ -454,16 +454,317 @@ open with `reconnectBackoffMilliseconds: 1000`, a separate successful
 Nginx retains the 3600-second WebSocket proxy read/send timeout as an outer
 transport safety net rather than the primary liveness mechanism.
 
-## 15. Remaining major sequence
+## 15. Phase 1 success definition
 
-1. stabilize the support-report contract
-2. remove/demote duplicated legacy comparison/watchdog ownership where evidence
-   permits
-3. address optional-service terminality and broader cleanup afterward
+The Page Runtime Coordinator project should not remain open-ended. For this first
+major project run, success is defined by two practical support outcomes rather
+than by eliminating every legacy callback or completing every follow-up item.
 
-The overall coordinator project is not complete.
+### 15.1 Student-facing success criterion
 
-## 16. Other separate follow-up
+The most common reasons a student would otherwise send a vague
+"Xronos doesn't work" message should either already be prevented or should end
+in a clear student-facing error/recovery message that tells the student what to
+do next.
+
+The four highest-value cases are:
+
+#### A. Grade synchronization / incorrect launch
+
+Status: **complete for Phase 1**.
+
+The existing grade-sync notification and associated `?` help affordance explain
+when the assignment was not launched in a way that allows Canvas grade
+synchronization.
+
+Do not reopen this area during the coordinator closeout unless a reproduced
+defect shows the current notification is incorrect or misleading.
+
+#### B. Initial MathJax/cache corruption
+
+Status: **detection and lifecycle handling are implemented; student recovery UI
+remains**.
+
+The authoritative initial MathJax Process now has:
+
+- generation identity;
+- explicit completion/failure;
+- processing-error association;
+- `XR-MATHJAX-INITIAL-101` deadline/failure diagnostics;
+- interaction blocking when the rendered mathematical page cannot be trusted;
+- safe late recovery rules where appropriate.
+
+A common real-world failure mode is browser cache corruption or stale assets
+causing MathJax processing failure. The usual student remedy is a hard refresh.
+
+Phase 1 should therefore add a prominent student-facing failure banner for the
+initial MathJax failure class. The message should:
+
+- say that Xronos could not process the mathematics on the page;
+- instruct the student to perform a hard refresh;
+- provide concise hard-refresh help/instructions;
+- display the relevant stable error/support code prominently;
+- tell the student to include that code when contacting the instructor if the
+  problem continues.
+
+Do not expose stack traces or internal MathJax implementation details to the
+student.
+
+#### C. Work did not save / server connection loss
+
+Status: **major suspected transport cause repaired; student disconnect guidance
+remains; definitive end-to-end persistence acknowledgement is deferred unless
+testing proves it necessary for Phase 1**.
+
+The historical lost-work reports may have been related to WebSocket idle
+disconnect/reconnect behavior, but this has not been proven causally.
+
+Current transport reliability now includes:
+
+- 18-second application heartbeat;
+- immediate server pong;
+- liveness diagnostics;
+- reconnect handling;
+- reconnect backoff reset after successful open;
+- state resynchronization after reconnect;
+- 3600-second nginx WebSocket timeout as an outer safety net.
+
+For Phase 1, the important student-facing behavior is:
+
+- if the runtime knows the state socket is disconnected/degraded, show a
+  prominent warning;
+- tell the student to keep the page/tab open while Xronos reconnects;
+- explicitly warn against closing the tab while disconnected because the most
+  recent work may not yet have reached the server;
+- clear or replace the warning when the connection is restored;
+- show a stable state/WebSocket support code if the problem persists.
+
+Do not claim that socket-open alone proves the latest state is durably persisted.
+
+Full state-operation acknowledgement remains a later TODO unless browser testing
+shows that Phase 1 cannot meet its support goal without it. The stronger future
+contract would be:
+
+```text
+browser state changed
+-> patch sent
+-> server accepted patch
+-> persistence succeeded
+-> client received acknowledgement
+```
+
+Wrong-account work remains a separate identity/user-behavior case. Xronos must
+not silently reassign work from one identity to another.
+
+#### D. Sage "spinning wheel of death"
+
+Status: **core reliability problem complete; presentation should be unified with
+the Phase 1 support/error-code system**.
+
+The implemented invariant is:
+
+> A known Sage failure must not leave a required visible Sage component
+> indefinitely displaying a loading spinner.
+
+Current protection includes:
+
+- canonical Sage operation identity;
+- separate visible Sage settlement;
+- retryable/permanent failure classification;
+- visible deadline settlement;
+- missing-anchor/missing-placeholder handling;
+- explicit Retry;
+- safe same-request late recovery;
+- stale-attempt rejection;
+- browser fault-probe validation.
+
+Phase 1 should preserve the existing Sage-specific visible failure/retry behavior
+while ensuring the student can also see a stable support/error code that
+identifies Sage as the failing subsystem.
+
+### 15.2 Instructor/support success criterion
+
+If a student still contacts the instructor with "Xronos doesn't work", the page
+should provide enough visible diagnostic identity that the instructor no longer
+has to infer the failing subsystem from a screenshot.
+
+The student-facing layer should be deliberately simple:
+
+- plain-language problem description;
+- concrete recovery action;
+- stable error/support code;
+- instruction to include that code when contacting the instructor.
+
+Examples of subsystem-level distinctions include:
+
+```text
+MathJax / initial math processing
+state acquisition
+WebSocket connection/liveness
+Sage computation/display
+initial answer attachment
+activity/bootstrap/readiness
+```
+
+The support/instructor layer should expose a richer bounded report behind a
+"Copy diagnostic information" or equivalent affordance.
+
+The support report should include, where available and privacy-safe:
+
+- stable support/error code;
+- affected subsystem;
+- terminal state/outcome;
+- coordinator operation ID;
+- occurrence ID;
+- timestamp and elapsed time;
+- page path/repository;
+- activity/content hash;
+- application/bundle/version metadata;
+- initial-state outcome;
+- state-resynchronization outcome;
+- WebSocket connection state;
+- heartbeat/liveness state and recent latency;
+- initial MathJax state;
+- canonical Sage state;
+- initial visible Sage state;
+- initial math-answer state;
+- derived state/content/interaction/page readiness;
+- a bounded recent diagnostic/event history relevant to the failure.
+
+The support report must not become an unbounded dump of page state, answers,
+Sage source, secrets, tokens, or other unnecessary student data.
+
+The primary Phase 1 support goal is:
+
+> A student-visible failure should identify which major runtime subsystem failed,
+> and the copied diagnostic report should give enough context to determine where
+> in that subsystem's lifecycle the failure occurred.
+
+## 16. Remaining Phase 1 milestones
+
+The remaining work for this first major coordinator project should stay focused
+on converting existing runtime knowledge into actionable student recovery and
+support diagnostics.
+
+### Milestone 1: stable support/error taxonomy
+
+Define the small set of top-level runtime failure classes that should produce
+student-visible support codes.
+
+Prefer existing `XR-*` diagnostics where they already express the correct
+failure. Do not create a second unrelated error-code vocabulary.
+
+For each student-visible failure class, define:
+
+- subsystem;
+- trigger/terminal state;
+- support/error code;
+- student message;
+- recommended student action;
+- whether interaction should remain available;
+- whether automatic recovery is possible;
+- what diagnostic details belong in the copied support report.
+
+### Milestone 2: standardized student recovery banner
+
+Create one reusable student-facing error/recovery presentation for major runtime
+failures.
+
+The banner should be driven by runtime/coordinator terminal outcomes rather than
+by unrelated feature-specific guesses.
+
+It must distinguish at least the Phase 1 high-value cases:
+
+- initial MathJax failure -> hard-refresh guidance;
+- state/WebSocket disconnection -> keep-tab-open/reconnect guidance;
+- Sage failure -> existing visible Retry/recovery plus support code;
+- other major coordinator readiness failure -> identify the subsystem and
+  provide a useful support code rather than a generic "Xronos broke" message.
+
+Avoid surfacing minor transient degradation that has already recovered unless
+the retained history is useful only in the copied diagnostic report.
+
+### Milestone 3: stable support report contract
+
+Stabilize the public support-facing runtime report, likely through
+`window.xronosInspectPageRuntime()` or a narrow wrapper around the existing
+runtime report.
+
+Separate:
+
+- contractual support fields;
+- internal/debug-only fields.
+
+The support contract should be:
+
+- bounded;
+- deterministic enough for support use;
+- privacy-safe;
+- versioned or otherwise evolvable;
+- usable by a simple "Copy diagnostic information" UI;
+- resilient when one subsystem itself is partially failed.
+
+### Milestone 4: browser failure-injection acceptance pass
+
+Before calling Phase 1 complete, deliberately trigger representative failures
+and verify the entire student/support path.
+
+Acceptance should cover at least:
+
+1. initial MathJax processing failure:
+   - visible banner;
+   - hard-refresh instruction;
+   - MathJax support code;
+   - useful copied diagnostics;
+
+2. state/WebSocket interruption:
+   - visible disconnected warning;
+   - keep-tab-open instruction;
+   - successful recovery clears/replaces warning;
+   - copied diagnostics distinguish socket/liveness/resynchronization;
+
+3. Sage known failure:
+   - no indefinite spinner;
+   - visible retry/failure state;
+   - Sage support code;
+   - copied diagnostics identify canonical/visible Sage lifecycle state;
+
+4. one broader coordinator degradation:
+   - visible subsystem-level code rather than a generic screenshot-only failure;
+   - bounded support report remains available.
+
+The project can be considered a Phase 1 success when these common support cases
+are handled coherently even though the broader TODO list remains open.
+
+## 17. Explicit Phase 1 scope boundary
+
+Do not let the final Phase 1 work expand into every valid follow-up discovered
+during the runtime inventory.
+
+The following are important but should remain later TODO/project work unless a
+reproduced blocker shows they are required for the Phase 1 success criteria:
+
+- full answer-submission transaction redesign;
+- atomic acknowledgement for every state patch/completion;
+- grouped-validator overhaul;
+- broad optional-interactive terminality cleanup;
+- coordinator aggregate statistics work;
+- account/profile dropdown cleanup;
+- WebSocket learner-state authorization;
+- SIGTERM/SIGKILL container shutdown investigation;
+- transient Mongo state-document disappearance investigation;
+- the separate newly observed math-answer attachment degradation unless it
+  reproduces as a common student-visible regression;
+- broader Sage authorization hardening;
+- removal of every legacy watchdog/comparison path;
+- LRS retention/pruning work;
+- unrelated dependency modernization.
+
+The coordinator may still need small changes in these areas if they are directly
+required to make a Phase 1 failure detectable, actionable, or supportable. Such
+changes should remain narrow and justified by the success criteria above.
+
+## 18. Other separate follow-up
 
 Keep separate from the next coordinator patch:
 
@@ -479,7 +780,7 @@ Keep separate from the next coordinator patch:
 - investigate why `podman restart devximserver` repeatedly fails to stop on
   SIGTERM within 10 seconds and falls back to SIGKILL
 
-## 17. Operational rules
+## 19. Operational rules
 
 - verify host/branch/HEAD/staged/dirty state before edits
 - use narrow guarded changes
@@ -495,7 +796,7 @@ Keep separate from the next coordinator patch:
 - avoid recursive greps into generated bundles when narrow source-file grep is
   sufficient
 
-## 18. Do not accidentally
+## 20. Do not accidentally
 
 - weaken the failed-initial-MathJax interaction block without evidence
 - conflate canonical Sage computation and visible Sage settlement
@@ -511,7 +812,7 @@ Keep separate from the next coordinator patch:
 - modernize Node/MathJax/dependencies inside lifecycle work
 - call a browser-source patch validated before rebuilding `main.min.js`
 
-## 19. Recovery summary
+## 21. Recovery summary
 
 The Page Runtime Coordinator has progressed from passive observation to active
 startup ownership and explicit initial MathJax/Sage/answer/state lifecycle
@@ -533,6 +834,18 @@ heartbeat, and backoff reset. The larger historical 95-test checkpoint remains
 the latest broader Sage/answer/MathJax suite cited above; the current heartbeat
 patch did not alter those feature algorithms.
 
-The next substantive coordinator lifecycle is the stable support-report
-contract, followed by evidence-based cleanup of duplicated legacy
-comparison/watchdog ownership.
+The remaining Phase 1 goal is no longer broad runtime discovery. It is to turn
+the coordinator's existing lifecycle knowledge into practical student recovery
+and instructor support:
+
+1. define the stable support/error taxonomy;
+2. add standardized student-facing recovery banners for the common failure
+   classes;
+3. stabilize a bounded privacy-safe support report and copy-diagnostics path;
+4. browser-test representative MathJax, state/WebSocket, Sage, and broader
+   coordinator failures end to end.
+
+Phase 1 is successful when the common "Xronos doesn't work" cases either tell
+the student how to recover without contacting the instructor or, when contact is
+still necessary, provide a visible subsystem-level support code and useful
+diagnostic report.

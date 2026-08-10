@@ -5794,6 +5794,10 @@ function refreshSageCellPageAuthorization() {
         $.ajax({
             type: "POST",
             url: "/sagecell/auth",
+            headers: {
+                "X-Xronos-Support-Trace":
+                    pageRuntime.supportTraceId()
+            },
             data: sageRequestAuthData(),
             dataType: "json",
             timeout: 15000
@@ -5844,6 +5848,10 @@ function postSageRawOnce(requestCode) {
         $.ajax({
             type: "POST",
             url: "/sagecell/service",
+            headers: {
+                "X-Xronos-Support-Trace":
+                    pageRuntime.supportTraceId()
+            },
             data: xronosSagecellRequestData,
             dataType: "json",
             timeout: 60000

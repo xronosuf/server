@@ -1,5 +1,8 @@
 "use strict";
 
+var supportReport =
+    require("./page-runtime-support-report");
+
 /*
  * Student-facing presentation for page-runtime support policy.
  *
@@ -131,7 +134,138 @@ function findExistingSageRetry($) {
 }
 
 
-function showReportModal($, issue) {
+function currentBrowserEnvironment() {
+    var timezone = null;
+
+    try {
+        if (
+            window.Intl &&
+            typeof window.Intl.DateTimeFormat ===
+                "function"
+        ) {
+            timezone =
+                window.Intl
+                    .DateTimeFormat()
+                    .resolvedOptions()
+                    .timeZone ||
+                null;
+        }
+    } catch (err) {
+        timezone = null;
+    }
+
+    return {
+        userAgent:
+            window.navigator &&
+            window.navigator.userAgent
+                ? window.navigator.userAgent
+                : null,
+        platform:
+            window.navigator &&
+            window.navigator.platform
+                ? window.navigator.platform
+                : null,
+        language:
+            window.navigator &&
+            window.navigator.language
+                ? window.navigator.language
+                : null,
+        timezone:
+            timezone,
+        online:
+            window.navigator &&
+            typeof window.navigator.onLine ===
+                "boolean"
+                ? window.navigator.onLine
+                : null
+    };
+}
+
+
+function copyTextToClipboardFallback(
+    $,
+    text,
+    callback
+) {
+    var fallback =
+        $("<textarea/>", {
+            "aria-hidden":
+                "true"
+        }).css({
+            position:
+                "fixed",
+            left:
+                "-9999px",
+            top:
+                "0"
+        }).val(text);
+
+    $("body").append(fallback);
+
+    fallback[0].focus();
+    fallback[0].select();
+
+    var copied = false;
+
+    try {
+        copied =
+            document.execCommand(
+                "copy"
+            );
+    } catch (err) {
+        copied = false;
+    }
+
+    fallback.remove();
+
+    callback(copied);
+}
+
+
+function copyTextToClipboard(
+    $,
+    text,
+    callback
+) {
+    var navigatorObject =
+        window.navigator || {};
+
+    if (
+        navigatorObject.clipboard &&
+        typeof navigatorObject.clipboard
+            .writeText === "function"
+    ) {
+        navigatorObject.clipboard
+            .writeText(text)
+            .then(
+                function() {
+                    callback(true);
+                },
+                function() {
+                    copyTextToClipboardFallback(
+                        $,
+                        text,
+                        callback
+                    );
+                }
+            );
+
+        return;
+    }
+
+    copyTextToClipboardFallback(
+        $,
+        text,
+        callback
+    );
+}
+
+
+function showReportModal(
+    $,
+    issue,
+    pageRuntime
+) {
     var existing =
         $("#xronos-runtime-support-report-modal");
 
@@ -223,6 +357,122 @@ function showReportModal($, issue) {
                     : "XR-UNKNOWN"
             )
         )
+    );
+
+    var reportInstructions =
+        $("<p/>").text(
+            "Generate and copy the diagnostic report below, then paste it into your normal email or webmail."
+        );
+
+    var reportButton =
+        $("<button/>", {
+            type:
+                "button",
+            "class":
+                "btn btn-primary"
+        }).text(
+            "Generate & Copy Report"
+        );
+
+    var reportStatus =
+        $("<p/>", {
+            "class":
+                "help-block",
+            role:
+                "status",
+            "aria-live":
+                "polite"
+        });
+
+    var reportPreview =
+        $("<textarea/>", {
+            "class":
+                "form-control",
+            rows:
+                "14",
+            readonly:
+                "readonly",
+            "aria-label":
+                "Generated Xronos diagnostic report"
+        }).hide();
+
+    reportButton.on(
+        "click",
+        function(event) {
+            event.preventDefault();
+
+            var inspection =
+                pageRuntime &&
+                typeof pageRuntime.inspect ===
+                    "function"
+                    ? pageRuntime.inspect()
+                    : {};
+
+            var support =
+                pageRuntime &&
+                typeof pageRuntime.inspectSupport ===
+                    "function"
+                    ? pageRuntime.inspectSupport()
+                    : {
+                        primaryIssue:
+                            issue || null,
+                        snapshot:
+                            {}
+                    };
+
+            var report =
+                supportReport.build({
+                    inspection:
+                        inspection,
+                    support:
+                        support,
+                    issue:
+                        issue || null,
+                    path:
+                        window.location.pathname,
+                    environment:
+                        currentBrowserEnvironment()
+                });
+
+            var formatted =
+                supportReport.format(
+                    report
+                );
+
+            reportPreview
+                .val(formatted)
+                .show();
+
+            copyTextToClipboard(
+                $,
+                formatted,
+                function(copied) {
+                    reportStatus.text(
+                        copied
+                            ? "Diagnostic report copied. Paste it into your email or webmail."
+                            : "The report is ready below. Copy it manually and paste it into your email or webmail."
+                    );
+                }
+            );
+        }
+    );
+
+    body.append(
+        reportInstructions
+    );
+
+    body.append(
+        $("<p/>").append(
+            reportButton
+        )
+    );
+
+    body.append(
+        reportStatus
+    );
+
+    body.append(
+        reportPreview
     );
 
     var footer =
@@ -426,7 +676,8 @@ function install(pageRuntime, $) {
 
                 showReportModal(
                     $,
-                    issue
+                    issue,
+                    pageRuntime
                 );
             }
         );

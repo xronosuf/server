@@ -616,7 +616,12 @@ function connectToServer() {
 
 	console.log( "WebSocket open!");
 	saveWorkStatus( 'save' );	
-	socket.sendJSON( 'watch', learnerId, findActivityHash() );
+	socket.sendJSON(
+        'watch',
+        learnerId,
+        findActivityHash(),
+        pageRuntime.supportTraceId()
+    );
 	socket.sendJSON( 'want-commit', repositoryName, filename );
 
         startHeartbeat(

@@ -5,11 +5,14 @@ Coordinator project after a chat/session boundary.
 
 **Last reconciled:** 2026-08-10
 **Working branch:** `page-runtime-coordinator`
-**Last known local HEAD:** `ea1d0aa` — `Restore WebSocket heartbeat and reconnect recovery`
-**Last known remote HEAD:** `ea1d0aa` — `Restore WebSocket heartbeat and reconnect recovery`
-**Last known branch relation:** synchronized
-**Pushed?** Yes; the checkpoint through `ea1d0aa` is backed up on
+**Last committed local HEAD:** `f7178d4` — `Add student runtime recovery banner`
+**Last committed remote HEAD:** `f7178d4` — `Add student runtime recovery banner`
+**Last known branch relation:** synchronized at the committed checkpoint
+**Pushed?** Yes; the checkpoint through `f7178d4` is backed up on
 `origin/page-runtime-coordinator`.
+**Phase 1 closeout change set:** privacy-safe support reporting, page-level
+support correlation, Xronos server correlation logging, and deployment-deferred
+SageCell support-trace source changes described below.
 
 Always verify Git state before changing code.
 
@@ -60,7 +63,11 @@ efbdced Record failed-render browser validation
 785cd8a Block interaction after failed initial MathJax render
 ```
 
-Local and remote are synchronized at `ea1d0aa`.
+The committed local and remote checkpoints are synchronized at `f7178d4`.
+
+The Phase 1 closeout change set builds on that checkpoint and contains the
+reviewed support-report and support-correlation implementation described in
+Section 16.
 
 The current pushed checkpoint includes:
 
@@ -482,8 +489,12 @@ defect shows the current notification is incorrect or misleading.
 
 #### B. Initial MathJax/cache corruption
 
-Status: **detection and lifecycle handling are implemented; student recovery UI
-remains**.
+Status: **complete for the current Phase 1 student-recovery scope**.
+
+The unified runtime support banner now presents
+`XR-MATHJAX-INITIAL-101`, explains that mathematical content failed to render,
+and gives explicit true hard-reload guidance. Browser fault-injection acceptance
+for the MathJax failure/recovery presentation has passed.
 
 The authoritative initial MathJax Process now has:
 
@@ -512,9 +523,14 @@ student.
 
 #### C. Work did not save / server connection loss
 
-Status: **major suspected transport cause repaired; student disconnect guidance
-remains; definitive end-to-end persistence acknowledgement is deferred unless
-testing proves it necessary for Phase 1**.
+Status: **transport recovery and Phase 1 student disconnect guidance are
+implemented; definitive end-to-end persistence acknowledgement remains
+deferred**.
+
+The unified runtime support banner now distinguishes active connection/liveness
+loss and state-save danger from hard-reload failures. It tells the student to
+keep the tab open and avoid reload while recent work may still be unsaved, and
+the warning clears when the underlying support condition recovers.
 
 The historical lost-work reports may have been related to WebSocket idle
 disconnect/reconnect behavior, but this has not been proven causally.
@@ -558,8 +574,13 @@ not silently reassign work from one identity to another.
 
 #### D. Sage "spinning wheel of death"
 
-Status: **core reliability problem complete; presentation should be unified with
-the Phase 1 support/error-code system**.
+Status: **complete for the current Phase 1 student-recovery scope**.
+
+The unified runtime support banner now exposes
+`XR-SAGE-INLINE-INITIAL-101`, preserves Sage-specific retry behavior through
+**Retry computations**, and keeps that recovery semantically distinct from
+**Another**. Retryable failure uses retry-first guidance and escalates to a true
+hard reload only if retry does not resolve the problem.
 
 The implemented invariant is:
 
@@ -640,11 +661,12 @@ The primary Phase 1 support goal is:
 > and the copied diagnostic report should give enough context to determine where
 > in that subsystem's lifecycle the failure occurred.
 
-## 16. Remaining Phase 1 milestones
+## 16. Phase 1 closeout milestones and current status
 
-The remaining work for this first major coordinator project should stay focused
-on converting existing runtime knowledge into actionable student recovery and
-support diagnostics.
+The final Phase 1 work is now a closeout/review boundary rather than a broad
+implementation phase. The support taxonomy, recovery banner, bounded report,
+and correlation path are implemented in the Phase 1 closeout change set unless
+explicitly marked deployment-deferred below.
 
 ### Milestone 1: stable support/error taxonomy
 
@@ -923,6 +945,229 @@ Acceptance should cover at least:
 
 The project can be considered a Phase 1 success when these common support cases
 are handled coherently even though the broader TODO list remains open.
+
+### Current closeout status — 2026-08-10
+
+The Phase 1 closeout change set implements and has directly tested the following:
+
+#### Stable support taxonomy and recovery UI
+
+Stable student-visible support codes currently include:
+
+- `XR-STATE-INITIAL-101`
+- `XR-STATE-CONNECTION-101`
+- `XR-STATE-DIFF-101`
+- `XR-MATHJAX-INITIAL-101`
+- `XR-SAGE-INLINE-INITIAL-101`
+- `XR-ANSWER-INITIAL-101`
+- `XR-ACTIVITY-INITIAL-101`
+
+Recovery actions are represented separately from support codes:
+
+- `hard-reload`
+- `retry-then-hard-reload`
+- `keep-open-until-reconnected`
+- `keep-open-until-save-safe`
+
+The unified student banner:
+
+- clears when a transient support issue recovers;
+- instructs true hard reload for MathJax and other appropriate persistent
+  failures;
+- delegates retryable visible Sage failure to **Retry computations**;
+- does not confuse **Retry computations** with Sage **Another**;
+- tells the student not to reload while a state connection/save condition may
+  strand recent work;
+- exposes **Report this problem** for reportable failures.
+
+#### Privacy-safe support report
+
+New module:
+
+```text
+public/javascripts/page-runtime-support-report.js
+```
+
+Focused tests:
+
+```text
+test/page-runtime-support-report.js
+```
+
+The support report is schema-versioned and built from an explicit allowlist.
+
+Current contract:
+
+- `reportType: xronos-support-report`
+- `schemaVersion: 1`
+- at most 30 recent runtime events
+- runtime event `details` are never copied
+- browser/runtime/subsystem fields are individually allowlisted
+- support trace and runtime session identity are included
+- student answer contents, answer IDs, Sage source/code, full page state,
+  cookies, authentication material, Canvas/LTI secrets, and arbitrary runtime
+  objects are excluded
+
+The student workflow is:
+
+```text
+Report this problem
+-> Generate & Copy Report
+-> report automatically copied when browser clipboard access succeeds
+-> legacy copy fallback attempted when the modern Clipboard API is unavailable
+   or rejects
+-> student pastes the report into normal email/webmail
+```
+
+No `mailto:` dependency is required.
+
+A configured support-email display remains a later deployment/UI follow-up; the
+report workflow itself is complete without one.
+
+#### Support correlation identity
+
+Each page runtime now creates a distinct non-secret, non-authentication
+`supportTraceId` of the form:
+
+```text
+xr-...
+```
+
+The support trace:
+
+- is distinct from the runtime session ID;
+- is included in the copied support report;
+- is sent with the state WebSocket `watch`;
+- is sent on `/sagecell/auth`;
+- is sent on `/sagecell/service`;
+- is validated server-side before logging/forwarding;
+- is never used for authorization;
+- is not included in the Sage response-cache key.
+
+Xronos server correlation has been browser/log validated. For the same browser
+failure trace, Xronos logs showed both:
+
+```text
+XRONOS SUPPORT TRACE <trace> state watch
+XRONOS SUPPORT TRACE <trace> sage-service codeLength <length>
+```
+
+This establishes report-to-Xronos-log correlation for the current deployed
+Xronos path.
+
+#### Sage retry acceptance detail
+
+The one-shot `page-result-error` browser probe intentionally faults an individual
+visible Sage placeholder after canonical page results are available.
+
+Therefore a successful visible retry does not necessarily issue a second
+`/sagecell/service` request.
+
+Browser acceptance confirmed the correct retry contract instead:
+
+```text
+attempt 1 -> retryable visible failure
+Retry computations
+-> retry-reopened, attempt 2
+-> request-started, attempt 2
+-> mml-applied
+-> rerender-completed
+-> initialSage failed = 0
+-> primaryIssue = null
+-> support banner removed
+```
+
+The page-level support trace remains unchanged across that retry.
+
+#### Clipboard acceptance
+
+After rebuilding `public/javascripts/main.min.js` with the existing
+`devximserver` dependencies, the **Generate & Copy Report** action was tested in
+the browser.
+
+The full report pasted directly from the clipboard without manual textarea
+selection.
+
+The post-review clipboard code also falls back to the legacy textarea +
+`document.execCommand("copy")` path when modern clipboard copying is unavailable
+or rejects.
+
+#### Current focused regression result
+
+The current focused Phase 1 runtime/support suite passes:
+
+```text
+114 passing
+```
+
+The served browser bundle was rebuilt successfully with the project-local Gulp
+inside `devximserver`.
+
+`public/javascripts/main.min.js` is not a tracked Git file.
+
+#### SageCell support correlation — source ready, deployment deferred
+
+The running SageCell has **not** been rebuilt or replaced for this work.
+
+Current deployed SageCell image ID:
+
+```text
+e3ece10d5b831995b4de8ddf70d5a53ca4f9469cfc5fd942f572510b575a8c32
+```
+
+Current running upstream SageCell commit:
+
+```text
+4d321e9861638247d1f4ad7df557b091d53bc89b
+```
+
+Source-only changes are prepared in:
+
+```text
+sagecell-docker-v2/patch_web_server_local_provider.py
+sagecell-docker-v2/sagecell_log.py
+```
+
+Those changes add:
+
+- a dedicated `sagecell.support` INFO logger without lowering the global root
+  logging threshold;
+- strict ASCII validation matching Xronos `[A-Za-z0-9-]`;
+- logging only of the opaque `X-Xronos-Support-Trace` value at SageCell service
+  entry;
+- no request body, Sage code, cookies, authorization material, or arbitrary
+  headers.
+
+The patch script has been statically compiled and previously tested against
+temporary copies of the current running SageCell source.
+
+Deployment is deliberately deferred because a disposable candidate image build
+showed that the current SageCell Docker recipe resolves contemporary apt/pip
+packages and is not sufficiently reproducible for an incidental rebuild during
+this Phase 1 closeout.
+
+Do not rebuild/recreate SageCell merely to activate support-trace logging.
+
+A future controlled SageCell maintenance window should first make the build
+inputs reproducible/pinned, then deploy and validate the already-prepared trace
+logging patch.
+
+#### Immediate closeout boundary
+
+For the Phase 1 closeout commit:
+
+1. review this handoff documentation diff;
+2. stage only the explicit runtime/support/SageCell-source/documentation files;
+3. run `git diff --cached --check`;
+4. review the exact cached diff/stat;
+5. commit once;
+6. push the branch;
+7. verify local and `origin/page-runtime-coordinator` are identical and the
+   worktree is clean.
+
+Do not introduce dependency upgrades, SageCell image rebuilding, or unrelated
+cleanup into that commit.
+
 
 ## 17. Explicit Phase 1 scope boundary
 

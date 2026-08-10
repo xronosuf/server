@@ -56,6 +56,56 @@ function makeSessionId() {
     );
 }
 
+
+function makeSupportTraceId() {
+    var randomPart = "";
+
+    try {
+        if (
+            window.crypto &&
+            typeof window.crypto.getRandomValues ===
+                "function"
+        ) {
+            var values =
+                new Uint32Array(4);
+
+            window.crypto.getRandomValues(
+                values
+            );
+
+            randomPart =
+                Array.prototype.map.call(
+                    values,
+                    function(value) {
+                        return (
+                            "00000000" +
+                            value.toString(16)
+                        ).slice(-8);
+                    }
+                ).join("");
+        }
+    } catch (err) {
+        randomPart = "";
+    }
+
+    if (!randomPart) {
+        randomPart =
+            Math.random()
+                .toString(36)
+                .slice(2, 12) +
+            Math.random()
+                .toString(36)
+                .slice(2, 12);
+    }
+
+    return (
+        "xr-" +
+        Date.now().toString(36) +
+        "-" +
+        randomPart
+    );
+}
+
 function copyValue(value) {
     if (value === undefined)
         return undefined;
@@ -75,6 +125,7 @@ function copyValue(value) {
 var runtime = {
     schemaVersion: 1,
     sessionId: makeSessionId(),
+    supportTraceId: makeSupportTraceId(),
     startedAt: new Date().toISOString(),
     startedAtMonotonic: nowMonotonic(),
     events: [],
@@ -1240,6 +1291,11 @@ function onSupportChange(listener) {
             );
         }
     };
+}
+
+
+function supportTraceId() {
+    return runtime.supportTraceId;
 }
 
 
@@ -3240,6 +3296,8 @@ var api = {
     operation: operation,
     component: component,
     inspect: inspect,
+    supportTraceId:
+        supportTraceId,
     supportSnapshot:
         supportSnapshot,
     inspectSupport:

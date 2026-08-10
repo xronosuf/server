@@ -182,6 +182,13 @@ handlers.chat = function(name, message) {
     */
 };
 
+handlers.ping = function(sentAt) {
+    this.sendJSON(
+        'pong',
+        sentAt
+    );
+};
+
 handlers.watch = function(userId, activityHash) {
     var socket = this;
 

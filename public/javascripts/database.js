@@ -23,16 +23,116 @@ var DIFFSYNC_DEBOUNCE = 5003; // milliseconds to wait to save
 var socket = undefined;
 var connectionAttempt = 0;
 
-// Some heartbeat code to provide feedback when we aren't receiving pings
-/* BADBAD disabled pings for now
-var lastPing = undefined;
-window.setInterval( function() {
-    var interval = new Date() - lastPing;
-    if (interval > 120000) {
-	saveWorkStatus( 'error', "The connection is slow. Your work is not being saved." );
+var WEBSOCKET_BACKOFF_BASE = 1000;
+var WEBSOCKET_HEARTBEAT_INTERVAL = 18000;
+var WEBSOCKET_HEARTBEAT_STALE = 45000;
+
+var heartbeatTimer = undefined;
+var heartbeatSocket = undefined;
+var lastPongAt = undefined;
+var heartbeatDegraded = false;
+
+function stopHeartbeat(socketToStop) {
+    if (
+        socketToStop &&
+        heartbeatSocket &&
+        socketToStop !== heartbeatSocket
+    ) {
+        return false;
     }
-}, 10000);
-*/
+
+    if (heartbeatTimer !== undefined) {
+        window.clearInterval(heartbeatTimer);
+        heartbeatTimer = undefined;
+    }
+
+    heartbeatSocket = undefined;
+    lastPongAt = undefined;
+    heartbeatDegraded = false;
+
+    return true;
+}
+
+function startHeartbeat(socketForHeartbeat, attempt) {
+    stopHeartbeat();
+
+    heartbeatSocket = socketForHeartbeat;
+    lastPongAt = Date.now();
+    heartbeatDegraded = false;
+
+    pageRuntime.service(
+        "state-websocket-liveness",
+        "checking",
+        {
+            attempt: attempt,
+            heartbeatIntervalMilliseconds:
+                WEBSOCKET_HEARTBEAT_INTERVAL,
+            staleAfterMilliseconds:
+                WEBSOCKET_HEARTBEAT_STALE
+        }
+    );
+
+    function sendHeartbeat() {
+        var now;
+        var elapsed;
+
+        if (
+            heartbeatSocket !== socketForHeartbeat ||
+            socketForHeartbeat.readyState !== WebSocket.OPEN
+        ) {
+            return;
+        }
+
+        now = Date.now();
+        elapsed = now - lastPongAt;
+
+        if (
+            elapsed > WEBSOCKET_HEARTBEAT_STALE &&
+            !heartbeatDegraded
+        ) {
+            heartbeatDegraded = true;
+
+            pageRuntime.service(
+                "state-websocket-liveness",
+                "degraded",
+                {
+                    attempt: attempt,
+                    reason: "pong-stale",
+                    millisecondsSinceLastPong: elapsed,
+                    staleAfterMilliseconds:
+                        WEBSOCKET_HEARTBEAT_STALE
+                }
+            );
+        }
+
+        try {
+            socketForHeartbeat.sendJSON(
+                "ping",
+                now
+            );
+        } catch (err) {
+            if (!heartbeatDegraded) {
+                heartbeatDegraded = true;
+
+                pageRuntime.service(
+                    "state-websocket-liveness",
+                    "degraded",
+                    {
+                        attempt: attempt,
+                        reason: "heartbeat-send-failed"
+                    }
+                );
+            }
+        }
+    }
+
+    sendHeartbeat();
+
+    heartbeatTimer = window.setInterval(
+        sendHeartbeat,
+        WEBSOCKET_HEARTBEAT_INTERVAL
+    );
+}
 
 var SAVE_WORK_BUTTON_ID = '#save-work-button';
 var RESET_WORK_BUTTON_ID = '#reset-work-button';    
@@ -339,7 +439,7 @@ function synchronizePageWithDatabase() {
 	    });
 }
 
-var backOff = 1000;
+var backOff = WEBSOCKET_BACKOFF_BASE;
 
 function connectToServer() {
     var attempt;
@@ -457,6 +557,17 @@ function connectToServer() {
             }
         );
 
+        if (stopHeartbeat(event.currentTarget)) {
+            pageRuntime.service(
+                "state-websocket-liveness",
+                "stopped",
+                {
+                    attempt: attempt,
+                    reason: "socket-closed"
+                }
+            );
+        }
+
 	backOff = backOff * 2.0;
 	if (backOff > 15000) backOff = 15000;
 
@@ -470,11 +581,14 @@ function connectToServer() {
     var filename = $('main').attr('data-path');
 
     socket.addEventListener('open', function (event) {
+        backOff = WEBSOCKET_BACKOFF_BASE;
+
         pageRuntime.service(
             "state-websocket",
             "open",
             {
-                attempt: attempt
+                attempt: attempt,
+                reconnectBackoffMilliseconds: backOff
             }
         );
 
@@ -504,6 +618,11 @@ function connectToServer() {
 	saveWorkStatus( 'save' );	
 	socket.sendJSON( 'watch', learnerId, findActivityHash() );
 	socket.sendJSON( 'want-commit', repositoryName, filename );
+
+        startHeartbeat(
+            event.currentTarget,
+            attempt
+        );
     });
 
     var handlers = {};
@@ -762,13 +881,39 @@ function connectToServer() {
 	});
     };
 
-    /*
-    handlers.pong = function(latency)  {
-	lastPing = new Date();
-	console.log( "ping: " + latency.toString() + "ms" );
-	$(SAVE_WORK_BUTTON_ID).attr( 'title', latency.toString() + "ms ping" );
+    handlers.pong = function(sentAt) {
+        var now;
+        var sentAtNumber;
+        var latency;
+
+        if (this !== heartbeatSocket) {
+            return;
+        }
+
+        now = Date.now();
+        sentAtNumber = Number(sentAt);
+        latency = undefined;
+
+        if (
+            isFinite(sentAtNumber) &&
+            sentAtNumber >= 0 &&
+            sentAtNumber <= now
+        ) {
+            latency = now - sentAtNumber;
+        }
+
+        lastPongAt = now;
+        heartbeatDegraded = false;
+
+        pageRuntime.service(
+            "state-websocket-liveness",
+            "healthy",
+            {
+                latencyMilliseconds: latency,
+                lastPongAt: new Date(now).toISOString()
+            }
+        );
     };
-    */
 
     handlers.chat = function(name, message) {
 	chat.appendToTranscript( name, message, true );

@@ -5,6 +5,8 @@ console.log("    ▄██▀██▄   ██▐██  ▐██ ██▌  �
 console.log("  ▄██▀   ▀██▄ ██▐██   ▀███▀   ██▌▀█████████▐█▌    ▀██▄██▀     ▀██");
 
 var pageRuntime = require('./page-runtime');
+var pageRuntimeSupportUi =
+    require('./page-runtime-support-ui');
 
 pageRuntime.event("bundle-evaluation-started", {
     path: window.location.pathname,
@@ -740,6 +742,8 @@ var initialInlineSageRuntime = {
     mmlApplied: 0,
     rerenderCompleted: 0,
     failed: 0,
+    retryableFailed: 0,
+    failureCategories: {},
     settled: 0,
     processComplete: false,
     reportedDiscovered: false,
@@ -765,6 +769,27 @@ function initialInlineSageDetails() {
                 .rerenderCompleted,
         failed:
             initialInlineSageRuntime.failed,
+        retryable:
+            initialInlineSageRuntime.failed > 0 &&
+            initialInlineSageRuntime.retryableFailed ===
+                initialInlineSageRuntime.failed,
+        category:
+            Object.keys(
+                initialInlineSageRuntime
+                    .failureCategories
+            ).length === 1
+                ? Object.keys(
+                    initialInlineSageRuntime
+                        .failureCategories
+                )[0]
+                : (
+                    Object.keys(
+                        initialInlineSageRuntime
+                            .failureCategories
+                    ).length > 1
+                        ? "mixed"
+                        : null
+                ),
         settled:
             initialInlineSageRuntime.settled,
         processComplete:
@@ -871,6 +896,8 @@ function discoverInitialInlineSage(
             terminal: false,
             terminalState: null,
             failed: false,
+            failureRetryable: false,
+            failureCategory: null,
             terminalHistory: [],
             timeoutHandler: null
         };
@@ -1082,7 +1109,8 @@ function updateInitialInlineSage(
 function settleInitialInlineSage(
     placeholderId,
     terminalState,
-    failed
+    failed,
+    failureInfo
 ) {
     var placeholder =
         initialInlineSageRuntime
@@ -1101,11 +1129,25 @@ function settleInitialInlineSage(
     placeholder.terminalState =
         terminalState;
     placeholder.failed = !!failed;
+    placeholder.failureRetryable =
+        !!failed &&
+        !!failureInfo &&
+        failureInfo.retryable === true;
+    placeholder.failureCategory =
+        !!failed &&
+        failureInfo &&
+        failureInfo.category
+            ? failureInfo.category
+            : null;
 
     placeholder.terminalHistory.push({
         attempt: placeholder.attempt,
         terminalState: terminalState,
-        failed: !!failed
+        failed: !!failed,
+        retryable:
+            placeholder.failureRetryable,
+        category:
+            placeholder.failureCategory
     });
 
     initialInlineSageRuntime
@@ -1114,6 +1156,31 @@ function settleInitialInlineSage(
     if (failed) {
         initialInlineSageRuntime
             .failed += 1;
+
+        if (
+            placeholder.failureRetryable
+        ) {
+            initialInlineSageRuntime
+                .retryableFailed += 1;
+        }
+
+        if (
+            placeholder.failureCategory
+        ) {
+            var categoryCount =
+                initialInlineSageRuntime
+                    .failureCategories[
+                        placeholder
+                            .failureCategory
+                    ] || 0;
+
+            initialInlineSageRuntime
+                .failureCategories[
+                    placeholder
+                        .failureCategory
+                ] =
+                categoryCount + 1;
+        }
     } else {
         initialInlineSageRuntime
             .rerenderCompleted += 1;
@@ -1158,9 +1225,42 @@ function reopenInitialInlineSage(
     placeholder.attempt += 1;
     placeholder.started = false;
     placeholder.mmlApplied = false;
+    if (
+        placeholder.failureRetryable
+    ) {
+        initialInlineSageRuntime
+            .retryableFailed -= 1;
+    }
+
+    if (
+        placeholder.failureCategory
+    ) {
+        var category =
+            placeholder.failureCategory;
+
+        initialInlineSageRuntime
+            .failureCategories[
+                category
+            ] -= 1;
+
+        if (
+            initialInlineSageRuntime
+                .failureCategories[
+                    category
+                ] <= 0
+        ) {
+            delete initialInlineSageRuntime
+                .failureCategories[
+                    category
+                ];
+        }
+    }
+
     placeholder.terminal = false;
     placeholder.terminalState = null;
     placeholder.failed = false;
+    placeholder.failureRetryable = false;
+    placeholder.failureCategory = null;
 
     initialInlineSageRuntime
         .settled -= 1;
@@ -1226,9 +1326,42 @@ function reopenInitialInlineSageLateResult(
      * Only reopen the current terminal accounting so the late result
      * can progress through MathML application and rerender.
      */
+    if (
+        placeholder.failureRetryable
+    ) {
+        initialInlineSageRuntime
+            .retryableFailed -= 1;
+    }
+
+    if (
+        placeholder.failureCategory
+    ) {
+        var category =
+            placeholder.failureCategory;
+
+        initialInlineSageRuntime
+            .failureCategories[
+                category
+            ] -= 1;
+
+        if (
+            initialInlineSageRuntime
+                .failureCategories[
+                    category
+                ] <= 0
+        ) {
+            delete initialInlineSageRuntime
+                .failureCategories[
+                    category
+                ];
+        }
+    }
+
     placeholder.terminal = false;
     placeholder.terminalState = null;
     placeholder.failed = false;
+    placeholder.failureRetryable = false;
+    placeholder.failureCategory = null;
 
     initialInlineSageRuntime
         .settled -= 1;
@@ -1432,63 +1565,11 @@ function activateInitialMathJaxInteractionBlock(details) {
             "true"
         );
 
-    if (
-        $("#xronos-mathjax-render-failure-notice")
-            .length === 0
-    ) {
-        var notice =
-            $("<div/>", {
-                id:
-                    "xronos-mathjax-render-failure-notice",
-                class:
-                    "alert alert-danger",
-                role:
-                    "alert",
-                tabindex:
-                    "-1"
-            });
-
-        notice.append(
-            $("<h2/>", {
-                class:
-                    "h4"
-            }).text(
-                "Mathematical content failed to render"
-            )
-        );
-
-        notice.append(
-            $("<p/>").text(
-                "Some or all mathematical content on this page could not be rendered correctly. Answer checking has been disabled because the page may be incomplete or misleading."
-            )
-        );
-
-        notice.append(
-            $("<p/>").text(
-                "Reload the page. If the problem continues, report this page to your instructor or course support."
-            )
-        );
-
-        var destination =
-            $("main").first();
-
-        if (destination.length === 0) {
-            destination =
-                $("#content").first();
-        }
-
-        if (destination.length === 0) {
-            destination =
-                $(".container").first();
-        }
-
-        if (destination.length === 0) {
-            destination =
-                $("body");
-        }
-
-        destination.prepend(notice);
-    }
+    /*
+     * Student-facing recovery messaging is owned by
+     * page-runtime-support-ui.js. Keep this function responsible only for
+     * the safety-critical interaction block.
+     */
 
     disableMathJaxDependentInteraction(
         document
@@ -2741,7 +2822,8 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
                                 err.xronosInitialInlineDeadline
                                     ? "deadline-fallback"
                                     : "fallback-placeholder-missing",
-                                true
+                                true,
+                                info
                             );
                         }
 
@@ -2805,7 +2887,8 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
                             err.xronosInitialInlineDeadline
                                 ? "deadline-fallback"
                                 : "fallback-shown",
-                            true
+                            true,
+                            info
                         );
                     }
 
@@ -4392,6 +4475,11 @@ $(document).ready(function() {
         "document-ready-bootstrap-ui",
         "completed",
         bootstrapUiResult
+    );
+
+    pageRuntimeSupportUi.install(
+        pageRuntime,
+        $
     );
 
     var activityBootstrapRequested =

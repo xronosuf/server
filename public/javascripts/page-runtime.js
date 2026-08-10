@@ -91,6 +91,8 @@ var passiveCoordinator =
 var lastReadinessComparisonSignature =
     null;
 
+var supportChangeListeners = [];
+
 var readinessWatchdogs = {
     initialState: {
         deadlineMilliseconds:
@@ -587,6 +589,12 @@ function transition(collectionName, name, state, details) {
         details
     );
 
+    notifySupportChange(
+        collectionName + ":" +
+        name + ":" +
+        state
+    );
+
     if (
         collectionName === "operations" &&
         name === "initial-state" &&
@@ -732,6 +740,10 @@ function startInitialStateReadinessWatchdog() {
                 watchdog.timedOutAtElapsedMs =
                     elapsedMs();
 
+                notifySupportChange(
+                    "initial-state-watchdog-timeout"
+                );
+
                 coordinatorAdapter.signalDeadline(
                     passiveCoordinator,
                     "initial-state"
@@ -810,6 +822,10 @@ function startInitialMathJaxReadinessWatchdog() {
                 watchdog.timedOut = true;
                 watchdog.timedOutAtElapsedMs =
                     elapsedMs();
+
+                notifySupportChange(
+                    "initial-mathjax-watchdog-timeout"
+                );
 
                 passiveCoordinator.record(
                     "legacy-mathjax-readiness-deadline-observed",
@@ -1148,6 +1164,85 @@ startInitialStateReadinessWatchdog();
 startInitialMathJaxReadinessWatchdog();
 startInitialInlineSageReadinessWatchdog();
 
+function notifySupportChange(reason) {
+    if (supportChangeListeners.length === 0) {
+        return;
+    }
+
+    var support =
+        inspectSupport();
+
+    supportChangeListeners
+        .slice()
+        .forEach(function(listener) {
+            try {
+                listener(
+                    support,
+                    {
+                        reason:
+                            reason || "runtime-change"
+                    }
+                );
+            } catch (err) {
+                record(
+                    "event",
+                    "support-change-listener-failed",
+                    undefined,
+                    {
+                        message:
+                            err && err.message
+                                ? err.message
+                                : String(err)
+                    }
+                );
+            }
+        });
+}
+
+
+function onSupportChange(listener) {
+    if (typeof listener !== "function") {
+        return false;
+    }
+
+    supportChangeListeners.push(listener);
+
+    try {
+        listener(
+            inspectSupport(),
+            {
+                reason: "subscribed"
+            }
+        );
+    } catch (err) {
+        record(
+            "event",
+            "support-change-listener-failed",
+            undefined,
+            {
+                message:
+                    err && err.message
+                        ? err.message
+                        : String(err)
+            }
+        );
+    }
+
+    return function unsubscribeSupportChange() {
+        var index =
+            supportChangeListeners
+                .indexOf(listener);
+
+        if (index >= 0) {
+            supportChangeListeners.splice(
+                index,
+                1
+            );
+        }
+    };
+}
+
+
 function supportSnapshot() {
     return supportSnapshotAdapter.fromRuntime(
         runtime,
@@ -1482,6 +1577,10 @@ function observeInitialMathJaxProcessError(
             readinessWatchdogs
                 .initialMathJax
                 .errorCount += 1;
+
+            notifySupportChange(
+                "initial-mathjax-error"
+            );
 
             updatePageReadiness();
         }
@@ -3145,6 +3244,8 @@ var api = {
         supportSnapshot,
     inspectSupport:
         inspectSupport,
+    onSupportChange:
+        onSupportChange,
     inspectCoordinator:
         inspectCoordinator,
     configureActivityBootstrap:

@@ -834,6 +834,14 @@ function connectToServer() {
 	} else {
 	    saveWorkStatus( 'saved', 'Uploaded at ' + (new Date()).toLocaleTimeString() );
 	    debugLog.log('Xronos server accepted page state update.');
+
+	    pageRuntime.operation(
+		'state-differential-sync',
+		'succeeded',
+		{
+		    reason: 'server-accepted'
+		}
+	    );
 	}
     }, 100 );
 

@@ -1,6 +1,12 @@
 var coordinatorAdapter = require(
     "./page-runtime-coordinator-adapter"
 );
+var supportSnapshotAdapter = require(
+    "./page-runtime-support-snapshot"
+);
+var supportPolicy = require(
+    "./page-runtime-support-policy"
+);
 
 /*
  * Passive page-runtime diagnostics.
@@ -1142,6 +1148,29 @@ startInitialStateReadinessWatchdog();
 startInitialMathJaxReadinessWatchdog();
 startInitialInlineSageReadinessWatchdog();
 
+function supportSnapshot() {
+    return supportSnapshotAdapter.fromRuntime(
+        runtime,
+        readinessWatchdogs
+    );
+}
+
+function inspectSupport() {
+    var snapshot =
+        supportSnapshot();
+    var issues =
+        supportPolicy.classify(snapshot);
+
+    return {
+        snapshot: snapshot,
+        issues: issues,
+        primaryIssue:
+            issues.length > 0
+                ? issues[0]
+                : null
+    };
+}
+
 function inspect() {
     var report =
         copyValue(runtime);
@@ -1161,6 +1190,9 @@ function inspect() {
                 passiveCoordinator,
                 currentLegacyReadiness()
             );
+
+    report.support =
+        inspectSupport();
 
     return report;
 }
@@ -3109,6 +3141,10 @@ var api = {
     operation: operation,
     component: component,
     inspect: inspect,
+    supportSnapshot:
+        supportSnapshot,
+    inspectSupport:
+        inspectSupport,
     inspectCoordinator:
         inspectCoordinator,
     configureActivityBootstrap:
@@ -3160,6 +3196,8 @@ var api = {
 window.xronosPageRuntime = api;
 window.xronosRuntimeEvent = event;
 window.xronosInspectPageRuntime = inspect;
+window.xronosInspectPageRuntimeSupport =
+    inspectSupport;
 window.xronosInspectPageRuntimeCoordinator =
     inspectCoordinator;
 window.xronosConfigureActivityBootstrap =

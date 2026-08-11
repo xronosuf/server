@@ -1001,13 +1001,29 @@ function createPassiveCoordinator(options) {
             var errorCount =
                 initialMathJaxProcess
                     .errors.length;
+            var processingErrorCount =
+                initialMathJaxProcess
+                    .errors.filter(
+                        function(error) {
+                            return (
+                                error &&
+                                error.errorType ===
+                                    "processing-error"
+                            );
+                        }
+                    ).length;
 
             /*
-             * Any error during the initial MathJax Process means the
-             * mathematical presentation cannot be trusted as authored.
+             * A localized TeX parse error may occur in generated
+             * preamble material while the authoritative MathJax Process,
+             * answer attachment, and visible page rendering still
+             * complete successfully. Preserve those errors
+             * diagnostically, but reserve page-fatal failure here for
+             * MathJax's Process-wide "Math Processing Error" signal.
+             * Timeout handling remains independent and unchanged.
              */
             var terminalState =
-                errorCount > 0
+                processingErrorCount > 0
                     ? "failed"
                     : "succeeded";
 
@@ -1020,6 +1036,8 @@ function createPassiveCoordinator(options) {
                             generation,
                         errorCount:
                             errorCount,
+                        processingErrorCount:
+                            processingErrorCount,
                         errors:
                             initialMathJaxProcess
                                 .errors.slice(),
@@ -1040,6 +1058,8 @@ function createPassiveCoordinator(options) {
                             generation,
                         errorCount:
                             errorCount,
+                        processingErrorCount:
+                            processingErrorCount,
                         terminalState:
                             terminalState
                     }

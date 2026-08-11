@@ -249,7 +249,46 @@ describe(
         );
 
         it(
-            "normalizes a completed MathJax process with errors as failed",
+            "keeps completed MathJax with only parse errors nonfatal",
+            function() {
+                var readiness = watchdogs();
+                var snapshot;
+
+                readiness.initialMathJax.completed =
+                    true;
+                readiness.initialMathJax
+                    .errorCount =
+                    1;
+                readiness.initialMathJax
+                    .processingErrorCount =
+                    0;
+                readiness.initialMathJax.generation =
+                    7;
+
+                snapshot =
+                    snapshotAdapter.fromRuntime(
+                        runtime(),
+                        readiness
+                    );
+
+                snapshot.initialMathJax
+                    .state.should.equal("completed");
+                snapshot.initialMathJax.details
+                    .errorCount.should.equal(1);
+                snapshot.initialMathJax.details
+                    .processingErrorCount.should.equal(0);
+                snapshot.initialMathJax.details
+                    .generation.should.equal(7);
+                should(
+                    supportPolicy.primaryIssue(
+                        snapshot
+                    )
+                ).equal(null);
+            }
+        );
+
+        it(
+            "normalizes completed MathJax processing errors as failed",
             function() {
                 var readiness = watchdogs();
                 var snapshot;
@@ -259,8 +298,11 @@ describe(
                 readiness.initialMathJax
                     .errorCount =
                     2;
+                readiness.initialMathJax
+                    .processingErrorCount =
+                    1;
                 readiness.initialMathJax.generation =
-                    7;
+                    8;
 
                 snapshot =
                     snapshotAdapter.fromRuntime(
@@ -273,7 +315,15 @@ describe(
                 snapshot.initialMathJax.details
                     .errorCount.should.equal(2);
                 snapshot.initialMathJax.details
-                    .generation.should.equal(7);
+                    .processingErrorCount.should.equal(1);
+                snapshot.initialMathJax.details
+                    .generation.should.equal(8);
+
+                supportPolicy.primaryIssue(
+                    snapshot
+                ).code.should.equal(
+                    "XR-MATHJAX-INITIAL-101"
+                );
             }
         );
 

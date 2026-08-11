@@ -210,6 +210,83 @@ Deferred grouped-validator defects and design work:
   behavior only as part of the later focused grouped-validator project.
 
 
+### Generated MathJax preamble pollution / compiler noise
+
+Field discovery on 2026-08-10 immediately after the Page Runtime Coordinator
+Phase 1 production deployment exposed a longstanding browser-side MathJax
+preamble problem that had previously been mostly silent.
+
+The production page
+
+`/mac1140universalproperties/universalObjectsAndProperties/functions/Practice/fxNotation-Practice1`
+
+raised `XR-MATHJAX-INITIAL-101` after a hard reload. The runtime report showed
+one initial MathJax error, but the authoritative MathJax Process itself
+completed, all 9 expected math answers resolved and attached, all 18 initial
+Sage placeholders settled and rerendered, activity initialization succeeded,
+and the state WebSocket remained healthy.
+
+Browser inspection identified the actual MathJax event as:
+
+`TeX Jax - parse error: Illegal control sequence name for \newcommand`
+
+The failing input was not an authored equation. It was a generated
+`script[type="math/tex"]` element with parent class `preamble`
+(`MathJax-Element-1` in the reproduced page), approximately 9 KB long, containing
+a large dump of macro definitions apparently derived from loaded LaTeX packages
+or XimeraLaTeX's compilation/export pipeline.
+
+The generated preamble included many package-internal definitions that were not
+written by the activity author. In particular, it contained definitions such as:
+
+```tex
+\newcommand {\?\c__siunitx_minus_tl }[0]{...}
+\newcommand {\?\c__siunitx_mu_tl }[0]{...}
+```
+
+MathJax rejected the generated command name as illegal. Despite that parse
+error, no `.MathJax_Error` elements were present in the rendered page and the
+student-visible mathematical/answer/Sage lifecycle completed successfully in
+the reproduced case.
+
+This is separate from longstanding console messages such as:
+
+`Instructor error in \answer: ParseError: Invalid location of ')'`
+
+Those arise from the Ximera answer-expression parser rather than the MathJax
+`TeX Jax - parse error` hook.
+
+Current compatibility policy:
+
+- a localized `TeX Jax - parse error` remains diagnostic but should not by
+  itself make the authoritative initial MathJax Process page-fatal or disable
+  every math-dependent interaction;
+- true MathJax `Math Processing Error`, initial Process timeout, and separately
+  observed answer/render failures remain real degraded/failure conditions;
+- this tolerance is for legacy compatibility and does not mean the generated
+  preamble is known to be correct or harmless in every possible page.
+
+Future investigation should locate the source of the generated preamble in the
+XimeraLaTeX -> published artifact -> Xronos/MathJax pipeline and determine:
+
+1. why full-LaTeX/package-internal definitions are serialized into the browser
+   MathJax preamble;
+2. which package or conversion step introduces malformed names such as
+   `\?\c__siunitx_minus_tl`;
+3. whether a parse error skips later generated definitions that a page could
+   legitimately depend on;
+4. whether the generated preamble can be filtered to only the definitions
+   actually needed by browser MathJax;
+5. whether invalid/unsupported definitions should be removed during publication
+   instead of tolerated at runtime;
+6. whether compiler/development diagnostics can flag rejected generated
+   preamble entries without student-facing noise.
+
+This production incident demonstrates both sides of the problem: the generated
+preamble is objectively producing a MathJax parse error, but treating that one
+localized error as a page-wide mathematical failure caused a false-positive
+support banner and disabled otherwise functional answer interaction.
+
 ## JavaScript authoring and randomization
 
 ### Initial author JavaScript lifecycle

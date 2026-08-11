@@ -103,7 +103,7 @@ function normalizedInitialMathJax(watchdogs) {
 
     if (watchdog.completed === true) {
         state =
-            watchdog.errorCount > 0
+            watchdog.processingErrorCount > 0
                 ? "failed"
                 : "completed";
     } else if (watchdog.timedOut === true) {
@@ -130,7 +130,9 @@ function normalizedInitialMathJax(watchdogs) {
                     ? null
                     : watchdog.generation,
             errorCount:
-                watchdog.errorCount || 0
+                watchdog.errorCount || 0,
+            processingErrorCount:
+                watchdog.processingErrorCount || 0
         }
     };
 }

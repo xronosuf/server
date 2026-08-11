@@ -160,6 +160,7 @@ var readinessWatchdogs = {
         timedOutAtElapsedMs: null,
         completed: false,
         errorCount: 0,
+        processingErrorCount: 0,
         completedAtElapsedMs: null,
         generation: null
     },
@@ -396,7 +397,7 @@ function updatePageReadiness() {
         initialMathJaxWatchdog.completed
             ? (
                 initialMathJaxWatchdog
-                    .errorCount > 0
+                    .processingErrorCount > 0
                     ? "failed"
                     : "completed"
             )
@@ -564,7 +565,10 @@ function updatePageReadiness() {
         generation:
             initialMathJaxWatchdog.generation,
         errorCount:
-            initialMathJaxWatchdog.errorCount
+            initialMathJaxWatchdog.errorCount,
+        processingErrorCount:
+            initialMathJaxWatchdog
+                .processingErrorCount
     };
     interactionReady.details.dimension =
         "interaction-ready";
@@ -1633,6 +1637,16 @@ function observeInitialMathJaxProcessError(
             readinessWatchdogs
                 .initialMathJax
                 .errorCount += 1;
+
+            if (
+                details &&
+                details.errorType ===
+                    "processing-error"
+            ) {
+                readinessWatchdogs
+                    .initialMathJax
+                    .processingErrorCount += 1;
+            }
 
             notifySupportChange(
                 "initial-mathjax-error"

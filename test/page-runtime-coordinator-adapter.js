@@ -210,7 +210,7 @@ describe(
                         {
                             generation: 11,
                             errorType:
-                                "tex-parse-error"
+                                "processing-error"
                         }
                     ),
                 true
@@ -260,9 +260,14 @@ describe(
             );
 
             assert.strictEqual(
+                result.processingErrorCount,
+                1
+            );
+
+            assert.strictEqual(
                 result.errors[0]
                     .errorType,
-                "tex-parse-error"
+                "processing-error"
             );
 
             adapter.signalTransition(

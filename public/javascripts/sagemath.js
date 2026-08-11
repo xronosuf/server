@@ -753,8 +753,8 @@ function sagePageSourceNodes(
 
     /*
      * Before MathJax startup, TeX is still stored in the author-delivered
-     * .mathjax-inline and .mathjax-block wrappers. MathJax later converts
-     * those sources into script[type^="math/tex"] nodes.
+     * .mathjax-inline, .mathjax-block, and .mathjax-env wrappers. MathJax
+     * later converts those sources into script[type^="math/tex"] nodes.
      *
      * Keep the two modes separate so settled-DOM inspection does not count
      * both a wrapper and its generated script.
@@ -765,6 +765,7 @@ function sagePageSourceNodes(
                 'script[type="text/sagemath"]',
                 '.mathjax-inline',
                 '.mathjax-block',
+                '.mathjax-env',
                 'script[type^="math/tex"]'
             ]
             : [
@@ -796,7 +797,8 @@ function sagePageSourceNodes(
                 ) === 0 &&
                 $(sourceNode).closest(
                     ".mathjax-inline, " +
-                    ".mathjax-block"
+                    ".mathjax-block, " +
+                    ".mathjax-env"
                 ).length > 0
             ) {
                 return false;
@@ -5647,6 +5649,19 @@ window.xronosTestLegacyMathTexManifestCapture =
             '<script type="math/tex; mode=display">' +
             '\\sage {a+3}' +
             '<\/script>' +
+            '</div>' +
+
+            /*
+             * htlatex emits TeX environments such as align* in a
+             * .mathjax-env wrapper before MathJax converts them to a
+             * math/tex script. The raw wrapper must participate in
+             * the immutable pre-MathJax Sage manifest.
+             */
+            '<div class="mathjax-env mathjax-align*">' +
+            '\\begin{align*}' +
+            '\\sage {a+4} &= ' +
+            '\\answer {\\sage {a+5}}' +
+            '\\end{align*}' +
             '</div>';
 
         var manifest =
@@ -5689,7 +5704,9 @@ window.xronosTestLegacyMathTexManifestCapture =
             "a",
             "a+1",
             "a+2",
-            "a+3"
+            "a+3",
+            "a+4",
+            "a+5"
         ];
 
         var exactExpressionSequence =
@@ -5726,13 +5743,15 @@ window.xronosTestLegacyMathTexManifestCapture =
                 manifest.summary
                     .silentBlocks === 1 &&
                 manifest.summary
-                    .expressions === 4 &&
+                    .expressions === 6 &&
                 manifest.summary
-                    .answerKeys === 1 &&
+                    .answerKeys === 2 &&
                 exactExpressionSequence &&
-                answerKeys.length === 1 &&
+                answerKeys.length === 2 &&
                 answerKeys[0].expression ===
-                    "a+1"
+                    "a+1" &&
+                answerKeys[1].expression ===
+                    "a+5"
         };
 
         console.log(result);

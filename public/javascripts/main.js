@@ -3579,6 +3579,7 @@ function initialMathAnswerEntry(answerId) {
             connectionAttempts: 0,
             modelResolved: false,
             attachedAtLeastOnce: false,
+            pendingDatabase: false,
             latestFailure: null
         };
     }
@@ -3591,6 +3592,7 @@ function initialMathAnswerDetails() {
         Object.keys(initialMathAnswerRuntime.answers);
     var attachedAnswers = 0;
     var modelResolvedAnswers = 0;
+    var pendingDatabaseAnswers = 0;
     var unresolvedAnswerIds = [];
     var totalConnectionAttempts = 0;
 
@@ -3603,6 +3605,9 @@ function initialMathAnswerDetails() {
 
         if (entry.modelResolved)
             modelResolvedAnswers += 1;
+
+        if (entry.pendingDatabase)
+            pendingDatabaseAnswers += 1;
 
         if (entry.attachedAtLeastOnce) {
             attachedAnswers += 1;
@@ -3620,6 +3625,8 @@ function initialMathAnswerDetails() {
             modelResolvedAnswers,
         attachedAnswers:
             attachedAnswers,
+        pendingDatabaseAnswers:
+            pendingDatabaseAnswers,
         unresolvedAnswers:
             unresolvedAnswerIds.length,
         unresolvedAnswerIds:
@@ -3642,6 +3649,15 @@ function reportInitialMathAnswerReadiness() {
         return;
 
     details = initialMathAnswerDetails();
+
+    /*
+     * MathJax may discover and resolve an answer before the initial page-state
+     * database is available. Those answers are valid but cannot yet be bound
+     * through persistentData(). Keep initial-answer readiness nonterminal until
+     * the existing fetchData() database barrier releases the queued attachment.
+     */
+    if (details.pendingDatabaseAnswers > 0)
+        return;
 
     if (details.expectedAnswers === 0) {
         state = "not-required";
@@ -4225,10 +4241,9 @@ MathJax.Hub.signal.Interest(function(message) {
                 answer = null;
             }
 
-            mathAnswerRuntime.connectionAttempts += 1;
-
             if (answer === null ||
                 answer === undefined) {
+                mathAnswerRuntime.connectionAttempts += 1;
                 mathAnswerRuntime.missingAnswerModels +=
                     1;
                 batchFailed += 1;
@@ -4253,58 +4268,140 @@ MathJax.Hub.signal.Interest(function(message) {
                 return;
             }
 
-            try {
-	        mathAnswer.connectMathAnswer(
-                    result,
-                    answer
-                );
-            } catch (attachmentError) {
-                mathAnswerRuntime.attachmentFailures +=
-                    1;
-                batchFailed += 1;
+            /*
+             * Binding an answer installs persistentData() listeners and reads
+             * the initial persisted response. That requires DATABASE to have
+             * been initialized. fetchData() already provides the exact barrier
+             * we need: immediate delivery when loaded, queued delivery before
+             * initial state arrives.
+             *
+             * Only initial-process answers need this startup gate. Later
+             * rerenders occur in the ordinary live page lifecycle and retain
+             * the existing direct attachment behavior.
+             */
+            function connectResolvedMathAnswer() {
+                var currentResult =
+                    $("#" + stableAnswerId);
+
+                if (currentResult.length === 0)
+                    currentResult = result;
+
+                if (initialProcessActive) {
+                    initialMathAnswerEntry(
+                        stableAnswerId
+                    ).pendingDatabase = false;
+                }
+
+                mathAnswerRuntime.connectionAttempts += 1;
+
+                try {
+                    mathAnswer.connectMathAnswer(
+                        currentResult,
+                        answer
+                    );
+                } catch (attachmentError) {
+                    mathAnswerRuntime.attachmentFailures +=
+                        1;
+
+                    recordInitialMathAnswerAttempt(
+                        stableAnswerId,
+                        true,
+                        false,
+                        "attachment-exception"
+                    );
+
+                    pageRuntime.operation(
+                        "math-answer-connection",
+                        "attachment-failed",
+                        {
+                            answerId: stableAnswerId,
+                            mathJaxInputId: id,
+                            errorName:
+                                attachmentError &&
+                                attachmentError.name
+                                    ? attachmentError.name
+                                    : null,
+                            errorMessage:
+                                attachmentError &&
+                                attachmentError.message
+                                    ? attachmentError.message
+                                    : String(
+                                        attachmentError
+                                    )
+                        }
+                    );
+
+                    return false;
+                }
+
+                mathAnswerRuntime.connectedAnswerIds[
+                    stableAnswerId
+                ] = true;
 
                 recordInitialMathAnswerAttempt(
                     stableAnswerId,
                     true,
-                    false,
-                    "attachment-exception"
+                    true,
+                    null
                 );
 
-                pageRuntime.operation(
-                    "math-answer-connection",
-                    "attachment-failed",
-                    {
-                        answerId: stableAnswerId,
-                        mathJaxInputId: id,
-                        errorName:
-                            attachmentError &&
-                            attachmentError.name
-                                ? attachmentError.name
-                                : null,
-                        errorMessage:
-                            attachmentError &&
-                            attachmentError.message
-                                ? attachmentError.message
-                                : String(
-                                    attachmentError
-                                )
-                    }
+                return true;
+            }
+
+            if (initialProcessActive) {
+                var initialEntry =
+                    initialMathAnswerEntry(
+                        stableAnswerId
+                    );
+
+                initialEntry.modelResolved = true;
+                initialEntry.pendingDatabase = true;
+
+                result.fetchData(
+                    function() {
+                        var connected =
+                            connectResolvedMathAnswer();
+
+                        pageRuntime.operation(
+                            "math-answer-connection",
+                            connected
+                                ? "database-gated-attached"
+                                : "database-gated-attachment-failed",
+                            {
+                                answerId:
+                                    stableAnswerId,
+                                mathJaxInputId:
+                                    id
+                            }
+                        );
+                    },
+                    "math-answer:" +
+                        stableAnswerId
                 );
+
+                /*
+                 * fetchData() invokes synchronously when DATABASE is already
+                 * available. Reflect that immediate result in the current
+                 * MathJax batch counters, but do not classify a queued database
+                 * wait as an attachment failure.
+                 */
+                if (initialEntry.attachedAtLeastOnce) {
+                    batchConnected += 1;
+                } else if (
+                    !initialEntry.pendingDatabase &&
+                    initialEntry.latestFailure
+                ) {
+                    batchFailed += 1;
+                }
 
                 return;
             }
 
-            batchConnected += 1;
-            mathAnswerRuntime.connectedAnswerIds[
-                stableAnswerId
-            ] = true;
-
-            recordInitialMathAnswerAttempt(
-                stableAnswerId,
-                true,
-                true,
-                null
-            );
+            if (connectResolvedMathAnswer()) {
+                batchConnected += 1;
+            } else {
+                batchFailed += 1;
+            }
 	});
 
         pageRuntime.operation(

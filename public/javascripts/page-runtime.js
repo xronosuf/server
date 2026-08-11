@@ -494,7 +494,7 @@ function updatePageReadiness() {
             readinessDependency(
                 "activity",
                 activity && activity.state,
-                ["initialized"],
+                ["initialized", "not-required"],
                 ["failed", "degraded"]
             ),
             readinessDependency(

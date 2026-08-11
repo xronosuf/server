@@ -256,6 +256,27 @@ function invokeActivityBootstrap(owner) {
             }
         );
 
+        /*
+         * Xourse/container pages deliberately have no .activity wrapper.
+         * They do not participate in the Ximera activity lifecycle, so
+         * explicitly settle that runtime component as not required.
+         *
+         * Ordinary Ximera activity pages still have a .activity wrapper
+         * even when they contain no answer boxes or other interactive
+         * elements, so they continue through normal activity initialization.
+         */
+        if (activityCount === 0) {
+            pageRuntime.component(
+                "activity",
+                "not-required",
+                {
+                    owner: owner,
+                    activityCount:
+                        activityCount
+                }
+            );
+        }
+
         return {
             state:
                 activityCount > 0

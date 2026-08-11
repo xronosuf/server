@@ -821,6 +821,32 @@ describe(
             );
         });
 
+        it("marks the activity task not required when the runtime reports no activity lifecycle", async function() {
+            var coordinator =
+                adapter.create();
+
+            adapter.signalTransition(
+                coordinator,
+                "components",
+                "activity",
+                "not-required",
+                {
+                    owner:
+                        "coordinator",
+                    activityCount:
+                        0
+                }
+            );
+
+            await flush();
+
+            assert.strictEqual(
+                coordinator.inspect()
+                    .tasks.activity.state,
+                "not-required"
+            );
+        });
+
         it("fails the active trigger when no runner is configured", async function() {
             var coordinator =
                 adapter.create();

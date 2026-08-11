@@ -1700,6 +1700,13 @@ function mappedSignal(
             };
         }
 
+        if (state === "not-required") {
+            return {
+                taskId: "activity",
+                state: "not-required"
+            };
+        }
+
         if (
             state === "failed" ||
             state === "degraded"

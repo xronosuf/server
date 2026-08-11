@@ -8,6 +8,9 @@ var sageErrorPolicy = require('./sage-error-policy');
 var sageCanonicalReplayPolicy =
     require('./sage-canonical-replay-policy');
 
+var sageStableIdAnnotationPolicy =
+    require('./sage-stable-id-annotation-policy');
+
 var seeded = false;
 var seedCallbacks = [];
 var seed = null;
@@ -20,6 +23,14 @@ var sageAuthRefreshInFlight = null;
 var sagePageManifestCompilerVersion = 4;
 
 var initialSagePageManifestSnapshot = null;
+
+/*
+ * Stable authored Sage occurrences can be invoked by MathJax in an order
+ * different from their lexical TeX order, and some TeX constructs may invoke
+ * one occurrence more than once. Count each immutable manifest identity only
+ * once toward the initial inline-Sage lifecycle.
+ */
+var initialSageObservedStableIds = {};
 
 var canonicalPageSageMaxCompiledUtf8Bytes =
     100000;
@@ -729,15 +740,10 @@ var stripCDATA = function(code) {
 };
 
 
-function buildSagePageManifestProbe(
+function sagePageSourceNodes(
     root,
-    options
+    preMathJax
 ) {
-    options = options || {};
-
-    var preMathJax =
-        options.preMathJax === true;
-
     var activity =
         root ||
         document.querySelector(
@@ -767,38 +773,61 @@ function buildSagePageManifestProbe(
             ]
     ).join(",");
 
-    var scripts =
-        Array.prototype.filter.call(
-            activity.querySelectorAll(
-                selector
-            ),
-            function(sourceNode) {
-                var type =
-                    sourceNode.getAttribute(
-                        "type"
-                    ) || "";
+    return Array.prototype.filter.call(
+        activity.querySelectorAll(
+            selector
+        ),
+        function(sourceNode) {
+            var type =
+                sourceNode.getAttribute(
+                    "type"
+                ) || "";
 
-                /*
-                 * Some transitional HTML may contain a generated math/tex
-                 * script inside one of the raw MathJax wrapper elements.
-                 * In that case the wrapper already contains the same TeX
-                 * source, so retain the wrapper and omit the nested script.
-                 */
-                if (
-                    preMathJax &&
-                    type.indexOf(
-                        "math/tex"
-                    ) === 0 &&
-                    $(sourceNode).closest(
-                        ".mathjax-inline, " +
-                        ".mathjax-block"
-                    ).length > 0
-                ) {
-                    return false;
-                }
-
-                return true;
+            /*
+             * Some transitional HTML may contain a generated math/tex
+             * script inside one of the raw MathJax wrapper elements.
+             * In that case the wrapper already contains the same TeX
+             * source, so retain the wrapper and omit the nested script.
+             */
+            if (
+                preMathJax &&
+                type.indexOf(
+                    "math/tex"
+                ) === 0 &&
+                $(sourceNode).closest(
+                    ".mathjax-inline, " +
+                    ".mathjax-block"
+                ).length > 0
+            ) {
+                return false;
             }
+
+            return true;
+        }
+    );
+}
+
+
+function buildSagePageManifestProbe(
+    root,
+    options
+) {
+    options = options || {};
+
+    var preMathJax =
+        options.preMathJax === true;
+
+    var activity =
+        root ||
+        document.querySelector(
+            "main.activity"
+        ) ||
+        document.body;
+
+    var scripts =
+        sagePageSourceNodes(
+            activity,
+            preMathJax
         );
 
     var entries = [];
@@ -3006,15 +3035,27 @@ exports.describeMathJaxSageCall =
                 ? traceEntry.callIndex
                 : null;
 
-        var entry =
-            callIndex !== null &&
-            callIndex >= 0 &&
-            callIndex <
-                expressionEntries.length
-                ? expressionEntries[
-                    callIndex
-                ]
+        var stableEntry =
+            traceEntry &&
+            traceEntry.stableId
+                ? canonicalPageSageEntryByStableId(
+                    expressionEntries,
+                    traceEntry.stableId
+                )
                 : null;
+
+        var entry =
+            stableEntry ||
+            (
+                callIndex !== null &&
+                callIndex >= 0 &&
+                callIndex <
+                    expressionEntries.length
+                    ? expressionEntries[
+                        callIndex
+                    ]
+                    : null
+            );
 
         var matchesInitialEntry =
             !!(
@@ -3024,6 +3065,26 @@ exports.describeMathJaxSageCall =
                     entry
                 )
             );
+
+        var firstStableObservation =
+            !!(
+                stableEntry &&
+                matchesInitialEntry &&
+                !initialSageObservedStableIds[
+                    stableEntry.stableId
+                ]
+            );
+
+        if (firstStableObservation) {
+            initialSageObservedStableIds[
+                stableEntry.stableId
+            ] = true;
+        }
+
+        if (stableEntry) {
+            matchesInitialEntry =
+                firstStableObservation;
+        }
 
         return {
             callIndex:
@@ -3090,6 +3151,223 @@ exports.resolveMathJaxSageCall =
                         "missing-trace-entry"
                 }
             );
+        }
+
+        /*
+         * Preferred identity path.
+         *
+         * The immutable pre-MathJax manifest assigns each authored \sage or
+         * \sagestr occurrence a stable ID. MathJax may parse those occurrences
+         * in a different order, or may revisit one occurrence, without changing
+         * its authored identity.
+         */
+        if (
+            traceEntry.stableId
+        ) {
+            var stableEntry =
+                canonicalPageSageEntryByStableId(
+                    expressionEntries,
+                    traceEntry.stableId
+                );
+
+            if (
+                !stableEntry ||
+                !canonicalPageSageCallMatchesEntry(
+                    traceEntry,
+                    stableEntry
+                )
+            ) {
+                return canonicalPageSageInvariantFailure(
+                    requestedCode,
+                    {
+                        code:
+                            "stable-id-call-mismatch",
+
+                        callIndex:
+                            traceEntry.callIndex,
+
+                        stableId:
+                            traceEntry.stableId,
+
+                        expected:
+                            stableEntry
+                                ? {
+                                    expression:
+                                        stableEntry.expression,
+                                    latexify:
+                                        stableEntry.latexify
+                                }
+                                : null,
+
+                        actual: {
+                            expression:
+                                traceEntry.expression,
+                            latexify:
+                                traceEntry.latexify
+                        }
+                    }
+                );
+            }
+
+            var stableGeneration =
+                canonicalPageSageActiveGeneration;
+
+            if (
+                stableGeneration &&
+                traceEntry.callIndex >=
+                    stableGeneration.startCallIndex
+            ) {
+                var stableMappingKey =
+                    String(
+                        traceEntry.callIndex
+                    );
+
+                stableGeneration.callMappings[
+                    stableMappingKey
+                ] = stableEntry.stableId;
+
+                if (
+                    !stableGeneration
+                        .stableIdsObserved
+                ) {
+                    stableGeneration
+                        .stableIdsObserved = {};
+                    stableGeneration
+                        .stableIdsObservedCount = 0;
+                }
+
+                if (
+                    !stableGeneration
+                        .stableIdsObserved[
+                            stableEntry.stableId
+                        ]
+                ) {
+                    stableGeneration
+                        .stableIdsObserved[
+                            stableEntry.stableId
+                        ] = true;
+
+                    stableGeneration
+                        .stableIdsObservedCount += 1;
+                }
+
+                if (
+                    stableGeneration
+                        .stableIdsObservedCount ===
+                    expressionEntries.length
+                ) {
+                    stableGeneration
+                        .fullPassComplete = true;
+                }
+
+                stableGeneration.mappedCalls += 1;
+
+                canonicalPageSageRuntime
+                    .mappedCalls += 1;
+
+                var stableGenerationResolution =
+                    executeCanonicalPageSageGeneration(
+                        stableGeneration
+                    ).then(
+                        function(execution) {
+                            return canonicalPageSageResolveExecutionEntry(
+                                stableEntry,
+                                execution,
+                                stableGeneration
+                            );
+                        },
+                        function(err) {
+                            if (
+                                err &&
+                                err.xronosCanonicalInvariant
+                            ) {
+                                return canonicalPageSageGenerationInvariantFailure(
+                                    stableGeneration,
+                                    requestedCode,
+                                    {
+                                        code:
+                                            err.invariantCode,
+
+                                        message:
+                                            err.evalue,
+
+                                        details:
+                                            err.details || null,
+
+                                        generationId:
+                                            stableGeneration.id,
+
+                                        generationSeed:
+                                            stableGeneration.seed
+                                    }
+                                );
+                            }
+
+                            canonicalPageSageRuntime
+                                .canonicalRejections += 1;
+
+                            stableGeneration
+                                .canonicalRejections += 1;
+
+                            throw err;
+                        }
+                    );
+
+                return canonicalPageSageTrackGenerationPromise(
+                    stableGeneration,
+                    stableGenerationResolution
+                );
+            }
+
+            canonicalPageSageRuntime
+                .mappedCalls += 1;
+
+            if (
+                traceEntry.callIndex >=
+                    expressionEntries.length
+            ) {
+                canonicalPageSageRuntime
+                    .postInitialReplayMappedCalls += 1;
+            }
+
+            return executeInitialCanonicalPageSage()
+                .then(
+                    function(execution) {
+                        return canonicalPageSageResolveExecutionEntry(
+                            stableEntry,
+                            execution,
+                            null
+                        );
+                    },
+                    function(err) {
+                        if (
+                            err &&
+                            err.xronosCanonicalInvariant
+                        ) {
+                            return canonicalPageSageInvariantFailure(
+                                requestedCode,
+                                {
+                                    code:
+                                        err.invariantCode,
+
+                                    message:
+                                        err.evalue,
+
+                                    details:
+                                        err.details || null,
+
+                                    stableId:
+                                        stableEntry.stableId
+                                }
+                            );
+                        }
+
+                        canonicalPageSageRuntime
+                            .canonicalRejections += 1;
+
+                        throw err;
+                    }
+                );
         }
 
         /*
@@ -4306,7 +4584,12 @@ function sageTraceNodeSummary(value) {
  * used by the browser-local canonical page feature gate.
  */
 exports.traceMathJaxSageCall =
-    function(rawExpression, latexify, parser) {
+    function(
+        rawExpression,
+        latexify,
+        parser,
+        stableId
+    ) {
         var stack =
             parser && parser.stack
                 ? parser.stack
@@ -4330,6 +4613,9 @@ exports.traceMathJaxSageCall =
         var traceEntry = {
             callIndex:
                 sageMathJaxCallTrace.length,
+
+            stableId:
+                stableId || null,
 
             expression:
                 rawExpression,
@@ -4893,6 +5179,186 @@ function captureInitialSagePageManifestSnapshot() {
 
     return initialSagePageManifestSnapshot;
 }
+
+
+
+function annotateInitialSagePageSourceStableIds() {
+    var manifest =
+        initialSagePageManifestSnapshot;
+
+    if (!manifest) {
+        return {
+            annotated: 0,
+            skipped: 0,
+            reason:
+                "missing-initial-manifest"
+        };
+    }
+
+    var scripts =
+        sagePageSourceNodes(
+            null,
+            true
+        );
+
+    var expressionEntries =
+        canonicalPageSageExpressionEntries(
+            manifest
+        );
+
+    var byScriptIndex = {};
+
+    expressionEntries.forEach(
+        function(entry) {
+            var key =
+                String(entry.scriptIndex);
+
+            if (!byScriptIndex[key]) {
+                byScriptIndex[key] = [];
+            }
+
+            byScriptIndex[key].push(
+                entry
+            );
+        }
+    );
+
+    /*
+     * Prepare every source transformation first. Do not mutate the DOM until
+     * all immutable manifest expressions have been proven annotatable.
+     *
+     * Mixed stable-ID / call-index operation would be unsafe because a
+     * reordered or repeated stable-ID call can change the global MathJax call
+     * index seen by a later unannotated expression.
+     */
+    var prepared = [];
+    var skipped = 0;
+
+    Object.keys(
+        byScriptIndex
+    ).forEach(
+        function(key) {
+            var scriptIndex =
+                parseInt(key, 10);
+
+            var sourceNode =
+                scripts[scriptIndex];
+
+            if (!sourceNode) {
+                skipped +=
+                    byScriptIndex[key].length;
+                return;
+            }
+
+            var type =
+                sourceNode.getAttribute(
+                    "type"
+                ) || "";
+
+            /*
+             * Silent Sage blocks are manifest entries but are not inline
+             * MathJax expressions and therefore require no annotation.
+             */
+            if (
+                type ===
+                "text/sagemath"
+            ) {
+                return;
+            }
+
+            if (
+                type.indexOf(
+                    "math/tex"
+                ) !== 0 &&
+                sourceNode.children &&
+                sourceNode.children.length > 0
+            ) {
+                skipped +=
+                    byScriptIndex[key].length;
+                return;
+            }
+
+            var annotation =
+                sageStableIdAnnotationPolicy
+                    .annotateSource(
+                        sourceNode.textContent || "",
+                        byScriptIndex[key]
+                    );
+
+            skipped +=
+                annotation.skipped;
+
+            prepared.push({
+                node:
+                    sourceNode,
+                source:
+                    annotation.source,
+                annotated:
+                    annotation.annotated
+            });
+        }
+    );
+
+    if (skipped > 0) {
+        pageRuntime.event(
+            "sage-source-stable-ids-not-applied",
+            {
+                manifestExpressions:
+                    expressionEntries.length,
+                annotated:
+                    0,
+                skipped:
+                    skipped,
+                reason:
+                    "annotation-not-complete"
+            }
+        );
+
+        return {
+            annotated: 0,
+            skipped:
+                skipped,
+            manifestExpressions:
+                expressionEntries.length,
+            reason:
+                "annotation-not-complete"
+        };
+    }
+
+    var annotated = 0;
+
+    prepared.forEach(
+        function(item) {
+            item.node.textContent =
+                item.source;
+
+            annotated +=
+                item.annotated;
+        }
+    );
+
+    pageRuntime.event(
+        "sage-source-stable-ids-annotated",
+        {
+            manifestExpressions:
+                expressionEntries.length,
+            annotated:
+                annotated,
+            skipped: 0
+        }
+    );
+
+    return {
+        annotated:
+            annotated,
+        skipped: 0,
+        manifestExpressions:
+            expressionEntries.length
+    };
+}
+
+exports.annotateInitialSagePageSourceStableIds =
+    annotateInitialSagePageSourceStableIds;
 
 
 function preferredSagePageManifestProbe() {

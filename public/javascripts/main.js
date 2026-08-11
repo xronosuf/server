@@ -1907,6 +1907,10 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
     TEXDEF.macros.newlabel = "newlabel";
     TEXDEF.macros.sage = "sage";
     TEXDEF.macros.sagestr = "sagestr";
+    TEXDEF.macros.xronosSageById =
+        "xronosSageById";
+    TEXDEF.macros.xronosSageStrById =
+        "xronosSageStrById";
     TEXDEF.macros.delimiter = "delimiter";
 
     TEXDEF.macros.js = "js";
@@ -1941,10 +1945,38 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
 
 	// https://stackoverflow.com/questions/38726590/replace-variable-in-mathjax-equation
 	sage: function(name) {
-	    return this.sagestr(name, true);
+	    return this.sagestr(
+            name,
+            true,
+            null
+        );
 	},
 
-    sagestr: function(name, latexify) {
+    xronosSageById: function(name) {
+        return this.xronosSageStrById(
+            name,
+            true
+        );
+    },
+
+    xronosSageStrById:
+        function(name, latexify) {
+            var stableId =
+                this.GetArgument(name);
+
+            return this.sagestr(
+                name,
+                latexify,
+                stableId
+            );
+        },
+
+    sagestr:
+        function(
+            name,
+            latexify,
+            stableId
+        ) {
         var rawSageCode =
             this.GetArgument(name);
 
@@ -1957,7 +1989,8 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
                 sagemath.traceMathJaxSageCall(
                     rawSageCode,
                     latexify,
-                    this
+                    this,
+                    stableId
                 );
         }
 
@@ -4380,6 +4413,8 @@ $(document).ready(function() {
      * parsing and saved-answer restoration modify or replace source nodes.
      */
     sagemath.captureInitialSagePageManifestSnapshot();
+
+    sagemath.annotateInitialSagePageSourceStableIds();
 
     var mathJaxStartupRequested =
         mathJaxStartupOwnerConfigured &&

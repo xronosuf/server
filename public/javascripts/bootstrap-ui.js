@@ -44,7 +44,15 @@ function installTooltips(root) {
             return;
         }
 
-        element.tooltip();
+        /*
+         * Bootstrap 4.0.0-alpha.6 throws "Tooltip is transitioning"
+         * when hover/focus events retrigger show/hide during its fade.
+         * Disable tooltip animation so ordinary pointer movement cannot
+         * enter that broken transition state.
+         */
+        element.tooltip({
+            animation: false
+        });
         element.addClass(
             tooltipInstalledClass
         );

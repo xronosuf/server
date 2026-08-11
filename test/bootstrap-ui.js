@@ -9,6 +9,7 @@ var Module =
 function createEnvironment() {
     var elements = [];
     var tooltipCalls = 0;
+    var tooltipOptions = [];
     var dropdownCalls = 0;
 
     function addElement(options) {
@@ -179,9 +180,17 @@ function createEnvironment() {
         };
 
     Collection.prototype.tooltip =
-        function() {
+        function(options) {
             tooltipCalls +=
                 this.items.length;
+
+            this.items.forEach(
+                function() {
+                    tooltipOptions.push(
+                        options
+                    );
+                }
+            );
 
             return this;
         };
@@ -237,6 +246,10 @@ function createEnvironment() {
         tooltipCalls:
             function() {
                 return tooltipCalls;
+            },
+        tooltipOptions:
+            function() {
+                return tooltipOptions;
             },
         dropdownCalls:
             function() {
@@ -326,6 +339,17 @@ describe(
                 environment
                     .tooltipCalls(),
                 1
+            );
+
+            assert.deepStrictEqual(
+                environment
+                    .tooltipOptions(),
+                [
+                    {
+                        animation:
+                            false
+                    }
+                ]
             );
 
             assert.strictEqual(

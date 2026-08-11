@@ -22,7 +22,7 @@ var sagePageManifestCompilerVersion = 4;
 var initialSagePageManifestSnapshot = null;
 
 var canonicalPageSageMaxCompiledUtf8Bytes =
-    60000;
+    100000;
 
 var canonicalPageSageRuntime = {
     initialPromise: null,

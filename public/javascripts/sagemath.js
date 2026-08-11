@@ -5,6 +5,8 @@ var database = require('./database');
 var TinCan = require('./tincan');
 var pageRuntime = require('./page-runtime');
 var sageErrorPolicy = require('./sage-error-policy');
+var sageCanonicalReplayPolicy =
+    require('./sage-canonical-replay-policy');
 
 var seeded = false;
 var seedCallbacks = [];
@@ -3207,10 +3209,11 @@ exports.resolveMathJaxSageCall =
             !canonicalPageSageActiveGeneration
         ) {
             var replayEntry =
-                canonicalPageSageUniqueMatchingEntry(
-                    expressionEntries,
-                    traceEntry
-                );
+                sageCanonicalReplayPolicy
+                    .uniqueReplayEntry(
+                        expressionEntries,
+                        traceEntry
+                    );
 
             if (replayEntry) {
                 canonicalPageSageRuntime

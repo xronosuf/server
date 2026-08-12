@@ -397,6 +397,16 @@ Remaining/deferred Sage work:
   expectations when needed;
 - verify effective seed remains part of exact canonical request/cache identity;
 - investigate manual author seed overrides only if encountered;
+- add instructor/author-facing Sage execution diagnostics to the browser console.
+  When canonical Sage execution fails, preserve and emit a safe exception
+  category/message so instructors testing authored content can distinguish
+  author-code failures from Xronos/SageCell infrastructure failures. Cover both
+  initial generation and explicit `Another` generations. In particular,
+  identify `ZeroDivisionError` / symbolic division-by-zero failures so an
+  instructor can immediately see that a randomized generation divided by zero.
+  More generally, surface useful Sage exception information in the developer
+  console without exposing arbitrary traceback/code details in student-facing
+  banners by default;
 - expired page-auth token refresh/retry is already implemented: the browser
   refreshes through `/sagecell/auth` and retries the original Sage request once;
   keep this behavior covered by regression tests rather than treating it as

@@ -33,7 +33,7 @@ var initialSagePageManifestSnapshot = null;
 var initialSageObservedStableIds = {};
 
 var canonicalPageSageMaxCompiledUtf8Bytes =
-    100000;
+    200000;
 
 var canonicalPageSageRuntime = {
     initialPromise: null,

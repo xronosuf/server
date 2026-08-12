@@ -652,6 +652,30 @@ execute a different path.
 
 ## Testing repository
 
+### Production audit scope: active vs retained historical content
+
+- Distinguish current active course content from retained historical publication
+  artifacts when building production-audit inventories.
+- Xronos intentionally may retain HTML or publication records for activities
+  that were published previously but later removed from the current xourse.
+  Those retained artifacts should not automatically count as current production
+  navigation failures merely because their old direct URLs now return 404.
+- Build the student-facing production-health audit primarily from activities
+  reachable through current active xourse structure rather than treating every
+  ever-published HTML artifact as currently active content.
+- Preserve a separate historical/orphan inventory so retained publications
+  remain discoverable for storage, cleanup, compatibility, or forensic work.
+- Classify retained but no-longer-active publications separately (for example,
+  `HISTORICAL` or `ORPHAN`) rather than inflating `NAV` failure counts.
+- Where practical, run both views:
+  1. an active-content audit used to assess current student-facing production
+     health; and
+  2. a historical/orphan audit used to understand retained publication state.
+- The August 2026 production crawl exposed six examples in `mac2233limits`:
+  old `digIn...` activities that had been intentionally removed from the active
+  content long ago but remained discoverable through the broader publication
+  inventory and therefore appeared as HTTP 404 NAV failures.
+
 The eight-page direct-launch browser suite passed on July 31, 2026 after fixture
 corrections. Keep the fixtures as a repeatable regression suite covering:
 

@@ -336,6 +336,21 @@ support banner and disabled otherwise functional answer interaction.
   and diagnostic `XR-JS-INLINE-101`.
 - Decide whether author-facing UI should expose contained inline-JavaScript
   diagnostics beyond the existing hollow-square fallback.
+- Harden XimeraLaTeX JavaScript publication so authored `javascript` /
+  `javascriptCode` content is emitted as raw executable JavaScript without
+  requiring authors to remember CDATA-sensitive wrappers. In particular,
+  prevent operators such as `<`, `>`, `&&`, and related syntax from being
+  serialized into executable `<script>` blocks as HTML entities such as
+  `&lt;`, `&gt;`, and `&amp;&amp;`. Preserve compatibility with existing authored
+  JavaScript while moving this correctness responsibility into the publishing
+  pipeline rather than individual activity authors.
+- Improve browser/audit diagnostics for authored JavaScript parse failures.
+  Distinguish a browser `SyntaxError` in authored inline JavaScript from a
+  Xronos runtime defect, retain actionable source/location evidence when
+  available, and recognize HTML-escaped operators as a strong hint that stale
+  content should be republished with the current XimeraLaTeX toolchain. Keep
+  ordinary author syntax errors distinct from this stale-publication hint so
+  reports do not overstate the cause.
 
 ### MEDIUM - Standardize JavaScript randomization and seed ownership
 

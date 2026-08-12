@@ -101,7 +101,7 @@ app.use(function(req, res, next) {
 app.use(require('./branding').middleware);
 
 app.use(bodyParser.json());
-app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.urlencoded({ extended: false, limit: '512kb' }));
 app.use(methodOverride());
 
 app.use(cookieParser(config.session.secret));

@@ -186,6 +186,14 @@ X-SageCell-Proxy-Source: fallback
 
 ## Local SageCell Container Workflow
 
+The SageCell container source is maintained separately in
+`/home/ximera/xronosuf/sagecell-server` (`xronosuf/sagecell-server`).
+The old embedded `server/sagecell-docker-v2` build has been retired.
+Build, patch, and image-maintenance work belongs in the standalone SageCell
+repository; Xronos communicates with the running service through its configured
+SageCell service URL.
+
+
 In the current Podman setup, the local SageCell container is run with:
 
 ```bash
@@ -217,7 +225,7 @@ podman restart devximserver
 
 podman rm -f sagecell 2>/dev/null || true
 
-cd /home/ximera/xronosuf/server/sagecell-docker-v2
+cd /home/ximera/xronosuf/sagecell-server
 
 podman run -d \
   --name sagecell \
@@ -563,7 +571,7 @@ This confirms fallback routing is occurring, even if the configured fallback end
 Restart local SageCell:
 
 ```bash
-cd /home/ximera/xronosuf/server/sagecell-docker-v2
+cd /home/ximera/xronosuf/sagecell-server
 
 podman run -d \
   --name sagecell \

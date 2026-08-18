@@ -430,20 +430,18 @@ Remaining/deferred Sage work:
 - Xronos now generates and propagates the non-secret
   `X-Xronos-Support-Trace` correlation identity, and Xronos-side state/Sage
   logging has been browser/log validated.
-- Source changes are already prepared in
-  `sagecell-docker-v2/patch_web_server_local_provider.py` and
-  `sagecell-docker-v2/sagecell_log.py` to log the same strictly validated
-  opaque trace at SageCell `/service` entry without logging Sage source,
-  learner identity, cookies, authorization material, or arbitrary headers.
-- The running SageCell has intentionally **not** been rebuilt or replaced for
-  this change. A disposable build showed that the current image recipe resolves
-  contemporary apt/pip dependencies, so an incidental rebuild risks unrelated
-  dependency drift.
-- Before deploying the prepared SageCell trace patch, make the SageCell image
-  build reproducible/pinned enough for a controlled maintenance change. Then
-  rebuild/deploy and validate end-to-end report -> Xronos -> SageCell trace
-  correlation.
-- Do not rebuild/recreate SageCell merely to activate this logging.
+- The SageCell-side support-trace implementation has been migrated to the
+  standalone `xronosuf/sagecell-server` repository. Its canonical
+  `patch_sagecell.py` adds the same strictly validated opaque trace at SageCell
+  `/service` entry without logging Sage source, learner identity, cookies,
+  authorization material, or arbitrary headers.
+- The old embedded `server/sagecell-docker-v2` implementation has been retired;
+  do not restore or deploy SageCell from that historical copy.
+- Before marking this item complete, verify the deployed standalone SageCell
+  image contains the support-trace patch and validate end-to-end
+  report -> Xronos -> SageCell trace correlation.
+- Do not rebuild/recreate SageCell merely to activate this logging outside a
+  controlled SageCell maintenance change.
 
 ### Reliability audit classification
 

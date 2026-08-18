@@ -159,90 +159,39 @@ if [ "$execute_mode" != true ]; then
         fi
 
         if [ "$skip_full_answer_summary" = true ]; then
-            echo "=== Preserve existing incremental summary snapshot ==="
-            echo "Targeted summary update skipped by explicit request."
+            echo "=== Preserve existing answer-attempt summary snapshot ==="
+            echo "Full answer-attempt summary rebuild skipped by explicit request."
         else
-            echo "=== Update incremental summary for selected repository ==="
+            echo "=== Update answer-attempt summary for selected repository ==="
 
-            podman exec -i \
-              -e XIMERA_SUMMARY_NO_SCHEDULER=true \
-              "$CONTAINER_NAME" sh -lc '
+            podman exec -i "$CONTAINER_NAME" sh -lc '
               cd /usr/var/server
 
               set -a
               . /usr/var/server/repositories/.env
               set +a
 
-              repository_name="$1.git"
+              course="$1"
 
-              node - "$repository_name" <<'"'"'NODE'"'"'
-var summarizer = require("./summarize/summarize");
-var repositoryName = process.argv[2];
+              node - "$course" <<'"'"'NODE'"'"'
+var builder = require("./summarize/answer-attempt-summary");
+var course = process.argv[2];
 
-summarizer.summarizeRepository(
-    repositoryName,
-    function(error, summary) {
-        if (error) {
-            console.error(error);
-            process.exit(1);
-        }
-
-        console.log(
-            JSON.stringify(
-                {
-                    repository: repositoryName,
-                    position: summary.position
-                },
-                null,
-                2
-            )
-        );
-
-        process.exit(0);
+builder.rebuildRepository(course, function(err, result) {
+    if (err) {
+        console.error(err);
+        process.exit(1);
     }
-);
+
+    console.log(JSON.stringify(result, null, 2));
+    process.exit(0);
+});
 NODE
             ' sh "$prepare_course"
 
             if [ "$?" -ne 0 ]; then
                 finish 1
             fi
-
-            prepare_summary_status=$(
-                python3 - "$prepare_repo_dir" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-repo = Path(sys.argv[1])
-lrs = repo / "learning-record-store"
-summary_file = repo / "summary.json"
-
-if not summary_file.exists():
-    print("missing")
-    raise SystemExit(1)
-
-summary = json.loads(summary_file.read_text())
-position = summary.get("position")
-size = lrs.stat().st_size
-
-if not isinstance(position, int):
-    print(f"invalid-position:{position!r}")
-    raise SystemExit(1)
-
-if position < 0 or position > size:
-    print(f"out-of-range:{position}:{size}")
-    raise SystemExit(1)
-
-print(f"valid:{position}:{size}")
-PY
-            ) || {
-                echo "Error: incremental summary validation failed." >&2
-                echo "Summary status: ${prepare_summary_status:-unknown}" >&2
-                finish 1
-            }
-
-            echo "Summary status: $prepare_summary_status"
         fi
 
         echo
@@ -398,57 +347,51 @@ NODE
 fi
 
 echo
+archive_readable_position=""
+
 if [ "$skip_full_answer_summary" = true ]; then
-    echo "=== Preserve existing incremental summary as incomplete snapshot ==="
-    echo "Current summary.json will be archived with its recorded byte position."
-else
-    echo "=== Update incremental summary for selected repository ==="
+    echo "=== Measure readable LRS boundary ==="
+    echo "The existing answer-attempt summary is preserved without a full rebuild."
 
-    podman exec -i \
-      -e XIMERA_SUMMARY_NO_SCHEDULER=true \
-      "$CONTAINER_NAME" sh -lc '
-      cd /usr/var/server
+    archive_readable_position=$(
+        podman exec -i "$CONTAINER_NAME" sh -lc '
+          cd /usr/var/server
 
-      set -a
-      . /usr/var/server/repositories/.env
-      set +a
+          course="$1"
 
-      repository_name="$1.git"
+          node - "$course" <<'"'"'NODE'"'"'
+var path = require("path");
+var reader = require("./summarize/read-lrs");
+var course = process.argv[2];
 
-      node - "$repository_name" <<'"'"'NODE'"'"'
-var summarizer = require("./summarize/summarize");
-var repositoryName = process.argv[2];
-
-summarizer.summarizeRepository(
-    repositoryName,
-    function(error, summary) {
-        if (error) {
-            console.error(error);
-            process.exit(1);
-        }
-
-        console.log(
-            JSON.stringify(
-                {
-                    repository: repositoryName,
-                    position: summary.position
-                },
-                null,
-                2
-            )
-        );
-
-        process.exit(0);
-    }
+var filename = path.join(
+    "/usr/var/server/repositories",
+    course + ".git",
+    "learning-record-store"
 );
-NODE
-    ' sh "$course_name"
 
-    if [ "$?" -ne 0 ]; then
+reader.readablePosition(filename, function(err, position) {
+    if (err) {
+        console.error(err);
+        process.exit(1);
+    }
+
+    console.log(position);
+    process.exit(0);
+});
+NODE
+        ' sh "$course_name"
+    ) || finish 1
+
+    if [[ ! "$archive_readable_position" =~ ^[0-9]+$ ]]; then
+        echo "Error: invalid readable LRS position:" >&2
+        echo "  $archive_readable_position" >&2
         finish 1
     fi
+else
+    echo "=== Validate full answer-attempt summary coverage ==="
 
-    summary_status=$(
+    archive_readable_position=$(
         python3 - "$repo_dir" <<'PY'
 import json
 import sys
@@ -456,40 +399,40 @@ from pathlib import Path
 
 repo = Path(sys.argv[1])
 lrs = repo / "learning-record-store"
-summary_file = repo / "summary.json"
+summary_file = repo / "answer-attempt-summary.json"
 
 if not summary_file.exists():
-    print("missing")
+    print("missing", file=sys.stderr)
     raise SystemExit(1)
 
-try:
-    summary = json.loads(summary_file.read_text())
-    position = summary.get("position")
-    size = lrs.stat().st_size
+summary = json.loads(summary_file.read_text())
+position = summary.get("sourcePosition")
+size = lrs.stat().st_size
 
-    if not isinstance(position, int):
-        print(f"invalid-position:{position!r}")
-        raise SystemExit(1)
-
-    if position < 0 or position > size:
-        print(f"out-of-range:{position}:{size}")
-        raise SystemExit(1)
-
-    print(f"valid:{position}:{size}")
-except Exception as exc:
-    print(f"error:{exc}")
+if not isinstance(position, int):
+    print(
+        f"invalid-sourcePosition:{position!r}",
+        file=sys.stderr
+    )
     raise SystemExit(1)
+
+if position < 0 or position > size:
+    print(
+        f"out-of-range:{position}:{size}",
+        file=sys.stderr
+    )
+    raise SystemExit(1)
+
+print(position)
 PY
     ) || {
-        echo "Error: incremental summary validation failed." >&2
-        echo "Summary status: ${summary_status:-unknown}" >&2
+        echo "Error: answer-attempt summary coverage validation failed." >&2
         finish 1
     }
-
-    echo "Summary status: $summary_status"
-    echo "The recorded position is an exact completed-frame coverage boundary."
-    echo "Later LRS bytes will remain outside this archived summary snapshot."
 fi
+
+echo "Readable LRS boundary: $archive_readable_position bytes"
+echo "This is the exact completed-frame coverage boundary captured before preparation."
 
 echo
 echo "=== Prepare archive outputs while Xronos remains online ==="
@@ -546,16 +489,7 @@ echo
 echo "Preparation directory:"
 echo "  $run_dir"
 
-summary_snapshot_present=false
 answer_summary_snapshot_present=false
-
-if [ -f "$repo_dir/summary.json" ]; then
-    cp -p \
-      "$repo_dir/summary.json" \
-      "$run_dir/summary.full-lrs.json"
-
-    summary_snapshot_present=true
-fi
 
 if [ -f "$repo_dir/answer-attempt-summary.json" ]; then
     cp -p \
@@ -566,13 +500,6 @@ if [ -f "$repo_dir/answer-attempt-summary.json" ]; then
 fi
 
 : > "$run_dir/summaries.sha256"
-
-if [ "$summary_snapshot_present" = true ]; then
-    (
-        cd "$run_dir" &&
-        sha256sum summary.full-lrs.json
-    ) >> "$run_dir/summaries.sha256"
-fi
 
 if [ "$answer_summary_snapshot_present" = true ]; then
     (
@@ -585,8 +512,8 @@ python3 - \
   "$run_dir" \
   "$repo_dir" \
   "$skip_full_answer_summary" \
-  "$summary_snapshot_present" \
-  "$answer_summary_snapshot_present" <<'PY'
+  "$answer_summary_snapshot_present" \
+  "$archive_readable_position" <<'PY'
 import json
 import sys
 from datetime import datetime, timezone
@@ -595,8 +522,8 @@ from pathlib import Path
 run_dir = Path(sys.argv[1])
 repo_dir = Path(sys.argv[2])
 skip_full = sys.argv[3] == "true"
-basic_present = sys.argv[4] == "true"
-answer_present = sys.argv[5] == "true"
+answer_present = sys.argv[4] == "true"
+readable_position = int(sys.argv[5])
 
 manifest_file = run_dir / "manifest.json"
 manifest = json.loads(manifest_file.read_text())
@@ -604,49 +531,67 @@ manifest = json.loads(manifest_file.read_text())
 lrs = repo_dir / "learning-record-store"
 observed_lrs_size = lrs.stat().st_size
 
+if readable_position < 0 or readable_position > observed_lrs_size:
+    raise SystemExit(
+        "Readable LRS position is outside the observed LRS size: "
+        f"{readable_position}:{observed_lrs_size}"
+    )
+
 snapshots = {
     "capturedAt": datetime.now(timezone.utc).isoformat(),
     "fullRebuildSkipped": skip_full,
-}
-
-if basic_present:
-    summary_file = run_dir / "summary.full-lrs.json"
-    summary = json.loads(summary_file.read_text())
-    position = summary.get("position")
-
-    snapshots["basicSummary"] = {
-        "status": (
-            "current"
-            if position == observed_lrs_size
-            else "incomplete"
-        ),
-        "filename": summary_file.name,
-        "position": position,
-        "exactThroughByte": position,
+    "lrsReadablePosition": {
+        "position": readable_position,
+        "exactThroughByte": readable_position,
         "lrsSizeObservedWhenCopied": observed_lrs_size,
         "coverageNote": (
-            "This summary was copied without forcing a rebuild. "
-            "Its position records the exact byte through which it "
-            "is valid."
+            "Streaming validation established the exact completed-frame "
+            "LRS boundary independently of the preserved statistics snapshot."
             if skip_full
             else
-            "This summary was required to be current before copying."
+            "The freshly rebuilt answer-attempt summary recorded this exact "
+            "completed-frame LRS boundary."
         ),
-    }
-else:
-    snapshots["basicSummary"] = {
-        "status": "missing",
-        "filename": None,
-        "coverageNote": (
-            "No summary.json existed when the archive package "
-            "was prepared."
-        ),
-    }
+    },
+}
 
 if answer_present:
     answer_file = (
         run_dir / "answer-attempt-summary.full-lrs.json"
     )
+
+    answer_summary = json.loads(
+        answer_file.read_text()
+    )
+
+    source_position = answer_summary.get(
+        "sourcePosition"
+    )
+
+    if source_position is not None:
+        if not isinstance(source_position, int):
+            raise SystemExit(
+                "answer-attempt summary has invalid sourcePosition: "
+                f"{source_position!r}"
+            )
+
+        if (
+            source_position < 0
+            or source_position > observed_lrs_size
+        ):
+            raise SystemExit(
+                "answer-attempt summary sourcePosition is outside "
+                "the observed LRS size"
+            )
+
+    if (
+        not skip_full
+        and source_position != readable_position
+    ):
+        raise SystemExit(
+            "Fresh answer-attempt summary sourcePosition does not "
+            "match the validated archive boundary"
+        )
 
     snapshots["answerAttemptSummary"] = {
         "status": (
@@ -655,33 +600,37 @@ if answer_present:
             else "rebuilt"
         ),
         "filename": answer_file.name,
+        "sourcePosition": source_position,
+        "exactThroughByte": source_position,
         "lrsSizeObservedWhenCopied": observed_lrs_size,
         "coverageNote": (
-            "The existing answer-attempt summary was preserved "
-            "without forcing a full rebuild. This format has no "
-            "stored byte position, so exact historical coverage "
-            "cannot be asserted."
+            (
+                "The existing answer-attempt summary was preserved without "
+                "forcing a full rebuild. Its exact historical coverage is "
+                "known only when sourcePosition is present."
+            )
             if skip_full
             else
-            "The answer-attempt summary was rebuilt immediately "
-            "before preparation. This format has no stored byte "
-            "position."
+            (
+                "The answer-attempt summary was rebuilt immediately before "
+                "archive preparation and records its exact LRS coverage."
+            )
         ),
     }
 else:
     snapshots["answerAttemptSummary"] = {
         "status": "missing",
         "filename": None,
+        "sourcePosition": None,
+        "exactThroughByte": None,
         "lrsSizeObservedWhenCopied": observed_lrs_size,
         "coverageNote": (
-            "No answer-attempt-summary.json existed, and the "
-            "full rebuild was explicitly skipped because the "
-            "repository exceeded the current builder's practical "
-            "memory capacity."
+            "No answer-attempt summary existed, and the full rebuild was "
+            "explicitly skipped because the repository exceeded the current "
+            "builder's practical memory capacity."
             if skip_full
             else
-            "No answer-attempt-summary.json existed after the "
-            "requested full rebuild."
+            "No answer-attempt summary existed after the requested rebuild."
         ),
     }
 
@@ -699,7 +648,7 @@ PY
         if [ -s summaries.sha256 ]; then
             sha256sum -c summaries.sha256
         else
-            echo "No summary snapshot files were present."
+            echo "No answer-attempt summary snapshot was present."
         fi
     }
 )
@@ -837,53 +786,9 @@ if [ "$?" -ne 0 ]; then
 fi
 
 echo
-echo "=== Update retained-window summary.json ==="
+echo "=== Validate retained-window answer-attempt summary ==="
 
-podman exec -i \
-  -e XIMERA_SUMMARY_NO_SCHEDULER=true \
-  "$CONTAINER_NAME" sh -lc '
-  cd /usr/var/server
-
-  set -a
-  . /usr/var/server/repositories/.env
-  set +a
-
-  repository_name="$1.git"
-
-  node - "$repository_name" <<'"'"'NODE'"'"'
-var summarizer = require("./summarize/summarize");
-var repositoryName = process.argv[2];
-
-summarizer.summarizeRepository(
-    repositoryName,
-    function(error, summary) {
-        if (error) {
-            console.error(error);
-            process.exit(1);
-        }
-
-        console.log(
-            JSON.stringify(
-                {
-                    repository: repositoryName,
-                    position: summary.position
-                },
-                null,
-                2
-            )
-        );
-
-        process.exit(0);
-    }
-);
-NODE
-' sh "$course_name"
-
-if [ "$?" -ne 0 ]; then
-    finish 1
-fi
-
-retained_summary_status=$(
+retained_answer_summary_status=$(
     python3 - "$repo_dir" <<'PY'
 import json
 import sys
@@ -891,7 +796,7 @@ from pathlib import Path
 
 repo = Path(sys.argv[1])
 lrs = repo / "learning-record-store"
-summary_file = repo / "summary.json"
+summary_file = repo / "answer-attempt-summary.json"
 
 if not summary_file.exists():
     print("missing")
@@ -899,15 +804,19 @@ if not summary_file.exists():
 
 try:
     summary = json.loads(summary_file.read_text())
-    position = summary.get("position")
+    position = summary.get("sourcePosition")
     size = lrs.stat().st_size
 
     if not isinstance(position, int):
-        print(f"invalid-position:{position!r}")
+        print(
+            f"invalid-sourcePosition:{position!r}"
+        )
         raise SystemExit(1)
 
     if position < 0 or position > size:
-        print(f"out-of-range:{position}:{size}")
+        print(
+            f"out-of-range:{position}:{size}"
+        )
         raise SystemExit(1)
 
     print(f"valid:{position}:{size}")
@@ -916,12 +825,12 @@ except Exception as exc:
     raise SystemExit(1)
 PY
 ) || {
-    echo "Error: retained-window summary validation failed." >&2
-    echo "Summary status: ${retained_summary_status:-unknown}" >&2
+    echo "Error: retained-window answer-attempt summary validation failed." >&2
+    echo "Summary status: ${retained_answer_summary_status:-unknown}" >&2
     finish 1
 }
 
-echo "Retained summary status: $retained_summary_status"
+echo "Retained answer-attempt summary status: $retained_answer_summary_status"
 
 recovery_verification_failed() {
     local reason="$1"
@@ -1113,7 +1022,6 @@ echo "=== Final active files ==="
 
 stat -c '%s bytes  %y  %n' \
   "$repo_dir/learning-record-store" \
-  "$repo_dir/summary.json" \
   "$repo_dir/answer-attempt-summary.json"
 
 echo

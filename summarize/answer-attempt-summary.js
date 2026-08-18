@@ -830,8 +830,9 @@ function buildFromLrs(lrsFilename, callback) {
                 next(err);
             }
         },
-        function(err) {
+        function(err, position) {
             var episodeMetadata;
+            var summary;
 
             if (err) {
                 callback(err);
@@ -839,7 +840,20 @@ function buildFromLrs(lrsFilename, callback) {
             }
 
             episodeMetadata = assignEpisodes(activityLearnerEvents);
-            callback(null, summarizeAnswersByActivity(answers, episodeMetadata, activityLearnerEvents));
+            summary = summarizeAnswersByActivity(
+                answers,
+                episodeMetadata,
+                activityLearnerEvents
+            );
+
+            /*
+             * Record the exact completed-frame LRS boundary represented by
+             * this rebuild. This preserves the useful exact coverage
+             * metadata from the retired incremental summary pipeline.
+             */
+            summary.sourcePosition = position;
+
+            callback(null, summary);
         }
     );
 }

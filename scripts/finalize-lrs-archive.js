@@ -615,11 +615,6 @@ function performSwap(options, result) {
         "learning-record-store." + rollbackTag
     );
 
-    var rollbackSummary = path.join(
-        repositoryDirectory,
-        "summary.json." + rollbackTag
-    );
-
     var rollbackAttempts = path.join(
         repositoryDirectory,
         "answer-attempt-summary.json." +
@@ -664,22 +659,10 @@ function performSwap(options, result) {
         sourceFilename
     );
 
-    var summaryFilename = path.join(
-        repositoryDirectory,
-        "summary.json"
-    );
-
     var attemptsFilename = path.join(
         repositoryDirectory,
         "answer-attempt-summary.json"
     );
-
-    if (fs.existsSync(summaryFilename)) {
-        fs.renameSync(
-            summaryFilename,
-            rollbackSummary
-        );
-    }
 
     if (fs.existsSync(attemptsFilename)) {
         fs.renameSync(
@@ -692,9 +675,6 @@ function performSwap(options, result) {
         completedAt: new Date().toISOString(),
         activeLrs: sourceFilename,
         rollbackLrs: rollbackLrs,
-        rollbackSummary: fs.existsSync(rollbackSummary)
-            ? rollbackSummary
-            : null,
         rollbackAnswerAttemptSummary:
             fs.existsSync(rollbackAttempts)
                 ? rollbackAttempts

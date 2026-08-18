@@ -83,6 +83,24 @@ function processLearningRecords( filename, position, loop, callback ) {
 exports.read = processLearningRecords;
 
 /*
+ * Return the exact byte boundary through which the LRS can be read as
+ * complete, checksum-valid frames without retaining any record data.
+ *
+ * This is intentionally streaming and constant-memory. Archive maintenance
+ * uses it when a repository is too large for an in-memory statistics rebuild.
+ */
+exports.readablePosition = function(filename, callback) {
+    processLearningRecords(
+        filename,
+        0,
+        function(entry, next) {
+            next(null);
+        },
+        callback
+    );
+};
+
+/*
 processLearningRecords( "repositories/sample.git/learning-record-store", 0,
 			function( entry, callback ) {
 			    console.log(entry);

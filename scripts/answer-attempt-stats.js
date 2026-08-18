@@ -273,11 +273,11 @@ function summaryAttemptCount(repository, activityHash, problemId, answerId) {
     var summaryFilename = path.join(
         config.repositories.root,
         repository + '.git',
-        'summary.json'
+        'answer-attempt-summary.json'
     );
     var summary;
     var answer;
-    var successes;
+    var count;
 
     try {
         summary = JSON.parse(fs.readFileSync(summaryFilename, 'utf8'));
@@ -286,13 +286,22 @@ function summaryAttemptCount(repository, activityHash, problemId, answerId) {
             summary.activities[activityHash][problemId] &&
             summary.activities[activityHash][problemId][answerId];
 
-        successes = answer && answer.successes;
-
-        if (!successes) {
+        if (!answer) {
             return null;
         }
 
-        return (successes.true || 0) + (successes.false || 0);
+        /*
+         * This diagnostic script counts every submission in its own LRS
+         * scan, including submissions after first correct. Compare it to the
+         * modern summary's raw count so both sides use the same semantics.
+         */
+        count = Number(answer.totalAttemptsRaw);
+
+        if (isNaN(count)) {
+            return null;
+        }
+
+        return count;
     } catch (err) {
         return null;
     }

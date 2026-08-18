@@ -51,7 +51,6 @@ var express = require('express')
   , sageReliabilityPolicy = require('./sage-reliability-policy')
   ;
 
-require('./summarize/summarize') // Load summarize interval
 require('./summarize/answer-attempt-summary').startScheduler() // Load scheduled answer-attempt summary builder
 
 // add timestamps in front of log messages

@@ -1,108 +1,130 @@
 var fs = require("fs");
-var config = require('../config');
-var path = require('path');
+var config = require("../config");
+var path = require("path");
 
 var lrsRoot = config.repositories.root;
 
 function readJsonIfPresent(filename, callback) {
-    fs.readFile(filename, 'utf8', function(err, data) {
-        if (err) {
-            if (err.code === 'ENOENT') {
+    fs.readFile(filename, "utf8", function(error, data) {
+        if (error) {
+            if (error.code === "ENOENT") {
                 callback(null, null);
                 return;
             }
 
-            callback(err);
+            callback(error);
             return;
         }
 
         try {
             callback(null, JSON.parse(data));
-        } catch (parseErr) {
-            callback(parseErr);
+        } catch (parseError) {
+            callback(parseError);
         }
     });
 }
 
-function cloneActivity(activity) {
-    if (!activity) {
-        return {};
+function numericCount(value) {
+    var count = Number(value);
+
+    if (isNaN(count)) {
+        return 0;
     }
 
-    return JSON.parse(JSON.stringify(activity));
+    return count;
 }
 
-function mergeAttemptStats(activity, attemptActivity) {
-    if (!activity || !attemptActivity) {
-        return activity;
+function statisticsForAnswer(attempts) {
+    attempts = attempts || {};
+
+    var statistics = {
+        responses: attempts.responses || {},
+        successes: {
+            true: numericCount(attempts.correctAttempts),
+            false: numericCount(attempts.incorrectAttempts)
+        },
+        attempts: attempts
+    };
+
+    if (attempts.rawResponses) {
+        statistics.rawResponses =
+            attempts.rawResponses;
     }
 
-    Object.keys(attemptActivity).forEach(function(problemId) {
-        Object.keys(attemptActivity[problemId] || {}).forEach(function(answerId) {
-            if (activity[problemId] && activity[problemId][answerId]) {
-                activity[problemId][answerId].attempts = attemptActivity[problemId][answerId];
+    if (attempts.omittedPostFirstCorrectResponses) {
+        statistics.omittedPostFirstCorrectResponses =
+            attempts.omittedPostFirstCorrectResponses;
+    }
 
-                if (attemptActivity[problemId][answerId].responses) {
-                    activity[problemId][answerId].responses = attemptActivity[problemId][answerId].responses;
-                }
+    return statistics;
+}
 
-                if (attemptActivity[problemId][answerId].rawResponses) {
-                    activity[problemId][answerId].rawResponses = attemptActivity[problemId][answerId].rawResponses;
-                }
+function activityStatistics(attemptActivity, activityStats) {
+    var activity = {};
 
-                if (attemptActivity[problemId][answerId].omittedPostFirstCorrectResponses) {
-                    activity[problemId][answerId].omittedPostFirstCorrectResponses = attemptActivity[problemId][answerId].omittedPostFirstCorrectResponses;
-                }
-            }
+    Object.keys(attemptActivity || {}).forEach(function(problemId) {
+        activity[problemId] = {};
+
+        Object.keys(
+            attemptActivity[problemId] || {}
+        ).forEach(function(answerId) {
+            activity[problemId][answerId] =
+                statisticsForAnswer(
+                    attemptActivity[problemId][answerId]
+                );
         });
     });
 
-    return activity;
-}
-
-function mergeActivityStats(activity, activityStats) {
-    if (!activity || !activityStats) {
-        return activity;
+    if (activityStats) {
+        activity._activityStats = activityStats;
     }
 
-    activity._activityStats = activityStats;
-
     return activity;
 }
 
-// BADBAD: This is horribly slow.
 exports.get = function(req, res, next) {
     var repository = req.params.repository;
     var activityHash = req.params.activityHash;
-    var directory = path.join(lrsRoot, repository + ".git");
-    var summaryFilename = path.join(directory, "summary.json");
-    var attemptSummaryFilename = path.join(directory, "answer-attempt-summary.json");
+    var directory = path.join(
+        lrsRoot,
+        repository + ".git"
+    );
+    var attemptSummaryFilename = path.join(
+        directory,
+        "answer-attempt-summary.json"
+    );
 
-    readJsonIfPresent(summaryFilename, function(summaryErr, summary) {
-        if (summaryErr) {
-            next(summaryErr);
-            return;
-        }
-
-        readJsonIfPresent(attemptSummaryFilename, function(attemptErr, attemptSummary) {
-            var activity;
-
-            if (attemptErr) {
-                next(attemptErr);
+    readJsonIfPresent(
+        attemptSummaryFilename,
+        function(error, attemptSummary) {
+            if (error) {
+                next(error);
                 return;
             }
 
-            activity = cloneActivity(summary && summary.activities && summary.activities[activityHash]);
-            mergeAttemptStats(
-                activity,
-                attemptSummary && attemptSummary.activities && attemptSummary.activities[activityHash]
+            res.json(
+                activityStatistics(
+                    attemptSummary &&
+                        attemptSummary.activities &&
+                        attemptSummary.activities[
+                            activityHash
+                        ],
+                    attemptSummary &&
+                        attemptSummary.activityStats &&
+                        attemptSummary.activityStats[
+                            activityHash
+                        ]
+                )
             );
-            mergeActivityStats(
-                activity,
-                attemptSummary && attemptSummary.activityStats && attemptSummary.activityStats[activityHash]
-            );
-
-            res.json(activity);
-        });
-    });
+        }
+    );
 };
+
+/*
+ * Exported for focused unit tests. These helpers contain no filesystem or
+ * request state and define the compatibility shape sent to the browser.
+ */
+exports.statisticsForAnswer =
+    statisticsForAnswer;
+exports.activityStatistics =
+    activityStatistics;

@@ -74,7 +74,6 @@ window.Tether = tether;
 var bootstrap = require('bootstrap');
 var kinetic = require('jquery.kinetic/jquery.kinetic.min.js');
 
-require('./chat');
 
 var syntaxHighlighter = require('syntaxhighlighter');
 window.sh = syntaxHighlighter;
@@ -724,7 +723,6 @@ var documentReadyStaticUiOwnerConfigured =
             );
         }
     );
-var supervision = require('./supervision');
 
 var references = require('./references');
 var bootstrapUi = require('./bootstrap-ui');
@@ -1451,7 +1449,6 @@ var initialInlineSageTimeoutOwnerConfigured =
         );
 
 
-var pencil = require('./pencil');
 
 
 function activeInitialMathJaxProcessGeneration() {

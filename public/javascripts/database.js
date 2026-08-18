@@ -7,8 +7,6 @@ var async = require('async');
 var jsondiffpatch = require('jsondiffpatch');
 var initialStateProtocol = require("./initial-state-protocol");
 
-var chat = require('./chat');
-var users = require('./users');
 var debugLog = require('./debug-log');
 var pageRuntime = require('./page-runtime');
 
@@ -928,10 +926,6 @@ function connectToServer() {
         );
     };
 
-    handlers.chat = function(name, message) {
-	chat.appendToTranscript( name, message, true );
-    };
-    
     socket.addEventListener('message', function (event) {
 	var payload = JSON.parse( event.data );
 
@@ -955,17 +949,6 @@ function connectToServer() {
 	}
     });
     
-    chat.onSendMessage( function(message) {
-	var name = users.me().then( function(user) {
-	    var first = user.name.split(' ')[0];
-	    var last = user.name.split(' ').slice(-1)[0];
-	    var initials = '??';
-	    if (first && last)
-		initials = first.substr(0,1) + last.substr(0,1);
-	    
-	    socket.sendJSON( 'chat', initials, message );
-	});
-    });
 }
 
 $(document).ready(function() {

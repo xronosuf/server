@@ -993,7 +993,6 @@ app.get('/sw.js', function(req, res) {
 
     app.delete('/users/:id/bridges/:bridge', function( req, res, next ) { user.deleteBridge( req, res, next ); } );    
 
-    app.get('/supervise', supervising.watch );
     app.get('/progress-audit/redeem', progressAudit.redeemForm );
     app.post('/progress-audit/redeem', progressAudit.redeemToken );
 

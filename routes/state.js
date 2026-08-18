@@ -4,8 +4,6 @@ var mdb = require('../mdb');
 var util = require('util');
 var crypto = require('crypto');
 var repositories = require('./repositories');
-var mongo = require('mongodb');
-var unique = require('uniq');
 var config = require('../config');
 var initialStateProtocol = require('../public/javascripts/initial-state-protocol');
 const Redis = require("ioredis");
@@ -83,7 +81,6 @@ class Building {
 
 var repositoryRooms = new Building("repository");
 var userRooms = new Building("user");
-var contextRooms = new Building("context");
 var activityRooms = new Building("activity"); 
 
 exports.push = function(repositoryName) {
@@ -130,85 +127,6 @@ handlers.wantCommit = function(repositoryName, filename) {
     });
 };
 
-handlers.supervise = function() {
-    var socket = this;    
-    var userId = socket.session.guestUserId;
-    if (socket.session.passport) {
-	userId = socket.session.passport.user || userId;
-    }
-    
-    // Join rooms to watch activities of any of my students
-    mdb.LtiBridge.find( {user: new mongo.ObjectID(userId)}, function(err,bridges) {
-	if (err) return;
-	
-	bridges = bridges.filter( function(b) {
-	    return (b.roles.some( function(r) {
-		return r.match(/Instructor/) || r.match(/TeachingAssistant/);
-	    }));
-	});
-	
-	var contexts = unique(bridges.map( function(b) { return b.contextId; } ));
-	
-	contexts.forEach( function(context) {
-	    contextRooms.join( context, socket );
-	});	
-    });	
-};
-
-function toInstructors( socket, message, payload ) {
-    var userId = socket.userId;
-	
-    // And tell any instructors what this student is doing
-    mdb.LtiBridge.find( {user: new mongo.ObjectID(userId)}, function(err,bridges) {
-	if (err) return;
-	
-	var contexts = unique(bridges.map( function(b) { return b.contextId; } ));
-	
-	contexts.forEach( function(context) {
-	    contextRooms.broadcast( context, null, message, payload );
-	});	
-    });
-}
-
-handlers.xake = function(credentials) {
-    var socket = this;    
-    var repository = credentials.repository;
-    var token = credentials.token;
-
-    // Fail silently
-    /* BADBAD
-    repositories.readRepositoryToken( repository ).then( function(actualToken) {
-	if (token == actualToken) {
-	    socket.isInstructor = true;
-	    socket.join( '/repositories/' + repository + '/instructor' );
-	}
-    });*/
-};
-
-handlers.xakeChat = function( payload ) {
-    var socket = this;
-    /* BADBAD
-    if (socket.isInstructor) {
-	console.log( payload );	    
-	socket.to('/users/' + payload.userId).sendJSON('chat', "<", payload.message);
-    }
-*/
-};
-    
-handlers.chat = function(name, message) {
-    var socket = this;
-    // everybody receives the chat message, including the sender
-    userRooms.broadcast( socket.userId, null, 'chat', name, message );
-
-    /* BADBAD
-    socket.to('/repositories/' + socket.repositoryName + '/instructor')
-	.sendJSON('xake-chat', { userId: socket.userId,
-			     name: socket.userName,
-			     message: message
-			   } );	
-    */
-};
-
 handlers.ping = function(sentAt) {
     this.sendJSON(
         'pong',
@@ -243,11 +161,6 @@ handlers.watch = function(
 	}
     }
     
-    var realUserId = socket.session.guestUserId;
-    if (socket.session.passport) {
-	realUserId = socket.session.passport.user || realUserId;
-    }
-    
     mdb.Completion.find({user: userId}, { activityPath: 1, repositoryName: 1, complete: 1 }, function (err, completions) {
 	if (!err && completions)
 	    socket.sendJSON('completions', completions);
@@ -255,13 +168,6 @@ handlers.watch = function(
     
     socket.userId = userId;
     userRooms.join( userId, socket );
-    
-    mdb.User.findOne({_id: realUserId}, { name: 1, imageUrl: 1, email: 1 }, function (err, user) {
-	if (!err && user) {
-	    toInstructors( socket, 'enter', user);
-	    socket.userName = user.name;
-	}
-    });	
     
     if (!activityHash) {
         socket.sendJSON(
@@ -449,25 +355,11 @@ handlers.completion = function(c) {
 	userRooms.broadcast( socket.userId, null, 'completions', payload );
 	
 	// And tell any instructors what this student is doing
-	toInstructors( socket, 'completions', payload);
 	
 	socket.activityPath = c.activityPath;
 	socket.repositoryName = c.repositoryName;
     });
 };
-
-
-/* BADBAD should tell others about disconnection
-socket.on('disconnect', function() {
-	var realUserId = socket.session.guestUserId;
-	
-	if (socket.session.passport) {
-	    realUserId = socket.session.passport.user || realUserId;
-	}
-
-	toInstructors( socket, 'leave', { userId: realUserId, repositoryName: socket.repositoryName, activityPath: socket.activityPath } );
-    });
-*/
 
 
 exports.connection = function( socket ) {

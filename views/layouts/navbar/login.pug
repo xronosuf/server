@@ -13,7 +13,6 @@ div#loginUser(style="display: none;")
         a.dropdown-item(href=url.replace('users/' + learner._id + '/', '')) <i class='fa fa-user'></i> Stop Pretending
         div.dropdown-divider        
       a.dropdown-item(href=toValidPath(`/users/me`)) <i class='fa fa-cogs'></i> Profile
-      a.dropdown-item#menu-supervise(href=toValidPath('/supervise'),style="display: none;") <i class='fa fa-eye'></i> Supervise
       a.dropdown-item#progress-audit-redeem-link(href=toValidPath('/progress-audit/redeem'),style="display: none;") <i class='fa fa-search'></i> Redeem progress audit token
       if activity
         a.dropdown-item#instructor-view-statistics(href="#", data-activity-url=repositoryName + '/' + activity.path, data-activity-hash=activity.hash, style="display: none;") <i class='fa fa-bar-chart'></i> View page statistics

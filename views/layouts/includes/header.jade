@@ -20,19 +20,6 @@ nav#scroller.navbar.navbar-default.navbar-fixed-top.affix-top(role='navigation')
     .navbar-collapse.collapse
       ul.nav.navbar-nav.navbar-right
 
-        li.dropdown#invigilator
-             a.dropdown-toggle(href="#",data-toggle="dropdown")
-               | <i class="fa fa-university"></i>&nbsp;
-               span#invigilator-short-name Invigilator
-               b.caret
-             ul(id="invigilator-menu").dropdown-menu
-               li
-                 a(href="#")
-                   span#invigilator-name Invigilator
-               li(style="display: none;")
-                 // button.btn-margin.navbar-btn.pull-right.btn.btn-sm.btn-danger(type="button",data-toggle="modal", data-target="#shutdownInvigilatorModal")
-                 a(data-toggle="modal", data-target="#shutdownInvigilatorModal")
-                   | <i class="fa fa-power-off"></i> Shutdown
       
         li(id="clock")
            p.navbar-text

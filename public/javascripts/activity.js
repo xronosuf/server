@@ -29,8 +29,6 @@ var database = require('./database');
 var pageRuntime = require('./page-runtime');
 var bootstrapUi = require('./bootstrap-ui');
 
-var annotator = require('./annotator');
-var pageRuntime = require('./page-runtime');
 
 var installLegacyAccordionHints = function(activity) {
     var HINT_WAIT_SECONDS = 10;
@@ -587,7 +585,6 @@ var createActivity = function() {
 	$(".foldable", activity).foldable();
 	$(".accordion", activity).addClass('hidden-out-of-view')
 
-    //$('.activity-body', this).annotator();
 
 
     var entry = {

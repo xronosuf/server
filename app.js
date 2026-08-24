@@ -68,7 +68,6 @@ app.set('view engine', 'pug');
 // all environments
 app.set('port', config.port);
 
-// app.use(logger('combined'));
 app.use(logger('ACC :remote-addr - :remote-user [:date[iso]] ":method :url HTTP/:http-version" :status :res[content-length] :req[x-forwarded-for]'));
 app.use(favicon(path.join(__dirname, 'public/images/icons/favicon/favicon.ico')));
 

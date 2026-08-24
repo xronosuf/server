@@ -12,8 +12,6 @@ block title
   #{title}
   
 mixin displayBridge(bridge)
-    // Maybe display something different fro instructors?
-    // if bridge.instructionalStaff
     if editable    
       div.float-right
         button.btn.btn-danger.delete-bridge(type="button",data-userId=userId,data-bridge=bridge._id,data-toggle="modal", data-target="#confirm-delete")

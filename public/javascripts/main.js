@@ -4589,32 +4589,6 @@ $(document).ready(function() {
         );
     }
 
-    // This handles touchscreens; moving less than 100 pixels in less
-    // than 500 ms should count as a click
-    // var position = 0;
-    // var distance = 0;
-    // var startTime = 0;
-    // $('.activity-card').on( "touchstart", function(e){
-	// position = e.originalEvent.touches[0].screenX;
-	// distance = 0;
-	// startTime = e.originalEvent.timeStamp
-    // });
-
-    // $('.activity-card').on( "touchmove", function(e){
-	// var newPosition = e.originalEvent.touches[0].screenX;
-	// distance = distance + Math.abs( newPosition - position );
-	// position = newPosition;
-    // });
-
-    // $('.activity-card').on( "touchend", function(e){
-	// var duration = e.originalEvent.timeStamp - startTime;
-	// if ((distance < 100) && (duration < 500)) {
-	// 	var href = $(this).children('a').attr('href');
-	// 	if(href)
-	//     	window.location.href = href;
-	// }
-    // });
-
     var bootstrapUiResult =
         bootstrapUi.install(
             document

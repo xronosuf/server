@@ -42,8 +42,6 @@ span.xmupdate: a.btn-warning.pulsate#pageUpdate(type="button",data-toggle="modal
            span.xmhidden-small &nbsp;
            span.update-label Update
            span.update-text    
-//- span.xmerase: a(role="button", data-toggle="modal", data-target="#resetWarningModal")
-           i.fa.fa-eraser
 if config.showEdit && activity && activity.path && repositoryMetadata
   li.xmwijzig: a(role="button",onclick=`location.href = \"https://${repositoryMetadata.github.Server}/${repositoryMetadata.github.Owner}/${repositoryMetadata.github.Repository}/edit/${repositoryMetadata.github.Branch}/${activity.path}.tex\";`)
     i.fa.fa-pencil 

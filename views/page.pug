@@ -73,8 +73,6 @@ block toc
           ul                                                                                       
               for card in activity.xourse.activityToc                                                         
                 +xourseCard(repositoryName, activity.xourse.path, card.href, card, card.href == activity.path)
-          //- for activityUrl in activity.xourse.activityList                                                                                       
-          //-  +xourseCard(repositoryName, activity.xourse.path, activityUrl, activity.xourse.activities[activityUrl], activityUrl == activity.path)
       else  
           ul.empty
 

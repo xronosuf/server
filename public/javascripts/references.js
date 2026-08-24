@@ -1,7 +1,6 @@
 var $ = require('jquery');
 var MathJax = require('./mathjax');
 
-// var ddebug = window.debug || require('debug');
 var ddebug = require('debug');
 var debug = ddebug('references')
 
@@ -15,12 +14,6 @@ function zoomTo( id ) {
 	} else {
   	console.log('No element found with id:', id);
 	}
-
-	// var target = document.getElementById(id);
-	// if (!target) {
-	// 	debug("zoomTo: no element with id " + id);
-	// 	return;
-	// }
 
 	var previousElement = target.prev()
 

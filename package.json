@@ -64,7 +64,6 @@
     "morgan": "^1.9.1",
     "node-uuid": "1.4.7",
     "nodegit": "0.26.5",
-    "pagedown": "^1.1.0",
     "passport": "^0.6.0",
     "passport-local": "1.0.0",
     "passport-oauth2": "^1.6.1",
@@ -94,9 +93,9 @@
       "mathjax2": "./node_modules/mathjax/unpacked/MathJax.js",
       "codemirror-javascript": "./node_modules/codemirror/mode/javascript/javascript.js",
       "jquery-fullsizable": "./node_modules/jquery-fullsizable/js/jquery-fullsizable.min.js",
-      "pagedown-converter": "./node_modules/pagedown-bootstrap/Markdown.Converter.js",
-      "pagedown-sanitizer": "./node_modules/pagedown-bootstrap/Markdown.Sanitizer.js",
-      "pagedown-editor": "./node_modules/pagedown-bootstrap/Markdown.Editor.js"
+      "pagedown-converter": "./vendor/pagedown-bootstrap/Markdown.Converter.js",
+      "pagedown-sanitizer": "./vendor/pagedown-bootstrap/Markdown.Sanitizer.js",
+      "pagedown-editor": "./vendor/pagedown-bootstrap/Markdown.Editor.js"
     }
   },
   "devDependencies": {

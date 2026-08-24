@@ -74,6 +74,52 @@ Remaining/deferred coordinator work:
   of these broader coordinator failures through the completed support UI and
   record the result. Reopen implementation only if that test exposes a defect.
 
+## HTTP routing and static assets
+
+### Missing `/public/...` assets incorrectly become HTTP 500
+
+A cleanup verification on 2026-08-24 exposed a pre-existing routing defect for
+missing static assets.
+
+Existing files under `/public` are served normally by the Express static
+middleware. However, when a requested `/public/...` file does not exist, the
+request does not proceed directly to the normal application 404 handler.
+Instead it falls through into repository routing and is interpreted as though
+`public` were a repository name.
+
+Observed examples included nonexistent CSS, image, font, and deleted legacy
+STIX font URLs. All returned HTTP 500. The resulting server error was:
+
+    Error: ENOENT: no such file or directory, stat '/usr/var/server/repositories/public.git'
+
+For comparison, a nonexistent route outside `/public`, such as an arbitrary
+top-level path, correctly returned HTTP 404.
+
+This was verified to be independent of the STIX cleanup: the same 500 occurred
+for arbitrary never-existing `/public/...` paths.
+
+Future work:
+
+- identify which repository-routing middleware is accepting unmatched
+  `/public/...` requests after `express.static(...)` declines them;
+- ensure `/public` remains reserved for static assets and cannot fall through
+  as a repository name;
+- make a missing static asset return an ordinary 404 rather than 500;
+- confirm equivalent behavior for other reserved static prefixes such as
+  `/node_modules` or `/lib/guppy` where appropriate;
+- ensure the fix does not interfere with legitimate repository/activity routes;
+- add regression coverage for:
+  - existing static asset -> 200;
+  - missing `/public/...` asset -> 404;
+  - missing ordinary route -> 404;
+  - legitimate repository route -> unchanged;
+- consider whether repeated missing-asset 500s currently create unnecessary
+  error-log noise or support alerts.
+
+This is not currently known to break normal page loads when all referenced
+assets exist, but it can turn an otherwise harmless stale or missing asset URL
+into a server error and should be repaired.
+
 ## Saved state and WebSocket
 
 Completed/current:

@@ -940,8 +940,7 @@ app.get('/sw.js', function(req, res) {
     // Landing page and associated routes
     
     app.get('/',
-        page.defaultHomePage,
-	    // res.render('index', { title: 'Home', landingPage: true });
+        page.defaultHomePage
     );
     
     ////////////////////////////////////////////////////////////////

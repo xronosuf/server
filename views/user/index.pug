@@ -18,11 +18,7 @@ block content
             tr(data-href=toValidPath(`/users/${user.id}`))
               th(scope="row")
                 a(href=toValidPath(`/users/${user.id}`)) &hellip;#{user.id.slice(-5)}
-              //td
-              //  if user.imageUrl
-              //    img.img-responsive.img-rounded(src=user.imageUrl)
-              //  else
-              //    img.img-responsive.img-rounded(src=`https://secure.gravatar.com/avatar/${user.gravatar}.jpg?d=retro&s=80`)
+
               td #{user.displayName} (#{user.name})
               if user.lastSeen
                 td #{moment(user.lastSeen).fromNow()}

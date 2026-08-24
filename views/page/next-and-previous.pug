@@ -5,13 +5,8 @@ if previousActivity || nextActivity
         if previousActivity
           a.prev-activity.page-link(href=toValidPath("/" + repositoryName + "/" + activity.xourse.path + "/" + previousActivity),aria-label="previous activity")             
             | &larr; <span id="prev-activity-label">Previous</span>
-        //- else
-        //-   span.prev-activity.page-link(aria-label="previous activity",href="#")              
-        //-     | &larr; <span id="prev-activity-label">Previous</span>
+
       li.page-item.ml-auto#next-activity(class=(nextActivity ? undefined : "disabled"),completion-blink="",aria-label="next activity")
         if nextActivity
           a.next-activity.page-link(href=toValidPath("/" + repositoryName + "/" + activity.xourse.path + "/" + nextActivity))
             | <span id="next-activity-label">Next</span> &rarr;
-        //- else
-        //-   span.next-activity.page-link(aria-label="next activity")              
-        //-     | <span id="next-activity-label">Next</span> &rarr;

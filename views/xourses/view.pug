@@ -13,10 +13,7 @@ block content
   link(rel="stylesheet",type="text/css",href=toValidPath("/" + repositoryName + "/" + xourse.path + ".css"))
   nav(aria-label="breadcrumb",role="navigation")
     ol.breadcrumb
-      //- li.breadcrumb-item
-      //-   - var level = 1;      
-      //-   a(href=toValidPath("/" + repositoryName), aria-level=level)
-      //-       | !{repositoryName}
+
       li.breadcrumb-item.active
         if (xourse.title) && (xourse.title != '')
           | !{xourse.title}

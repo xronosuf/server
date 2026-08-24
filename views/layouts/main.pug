@@ -51,9 +51,6 @@ html(lang="en")
     script(type="text/javascript",src="//cdnjs.cloudflare.com/ajax/libs/seedrandom/2.4.3/seedrandom.min.js")
     script(type="text/javascript",src=toValidPath(versionPath("/public/javascripts/main.min.js")))
 
-    link(rel="apple-touch-icon",sizes="114x114",href=toValidPath(versionPath("/public/images/icons/favicon-114x114.png")))
-    link(rel="apple-touch-icon",sizes="72x72",href=toValidPath(versionPath("/public/images/icons/favicon-72x72.png")))
-    link(rel="apple-touch-icon",sizes="57x57",href=toValidPath(versionPath("/public/images/icons/favicon-57x57.png")))
     link(rel="shortcut icon",type="image/x-icon",href=toValidPath("/favicon.ico"))
 
     script(type="text/javascript").
@@ -79,8 +76,6 @@ html(lang="en")
       try {document.addEventListener("DOMContentLoaded", $buo_f,false)}
       catch(e){window.attachEvent("onload", $buo_f)}
 
-    if (!(atOhioState))
-      style(type="text/css") .affix-top { top: 0px; }
 
     if landingPage
       script(type="text/javascript",src=toValidPath(versionPath("/public/javascripts/index.js")))
@@ -89,7 +84,6 @@ html(lang="en")
      include navbar/index.pug
      div
        block modals
-     //if (atOhioState)
      block content
      include footer/index.pug
 

@@ -95,7 +95,6 @@ app.use(function(req, res, next) {
     next();
 });
 
-app.use(require('./branding').middleware);
 
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: false, limit: '512kb' }));
@@ -956,10 +955,6 @@ app.get('/sw.js', function(req, res) {
     ////////////////////////////////////////////////////////////////
     // Landing page and associated routes
     
-    app.get('/install.sh', function(req, res) {
-	res.sendFile('views/install.sh', { root: __dirname });
-    });
-
     app.get('/',
         page.defaultHomePage,
 	    // res.render('index', { title: 'Home', landingPage: true });

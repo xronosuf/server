@@ -1,6 +1,6 @@
 mixin brandMark(extraClasses)
   - var brandName = (config.brandName || "Xronos")
   - var brandHref = (config.brandHomeLink || "/")
-  - var brandLogoPath = (config.brandWordmark || "/public/branding/xronos-wordmark.svg")
+  - var brandLogoPath = (config.brandWordmark || "/public/branding/shared/xronos-wordmark.svg")
   a.xronos-brand-mark(class=extraClasses, href=toValidPath(brandHref), aria-label=brandName)
     img.xronos-brand-mark-image(src=toValidPath(versionPath(brandLogoPath)), alt=brandName)

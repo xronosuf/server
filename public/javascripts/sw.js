@@ -5,9 +5,6 @@ var cacheUrls = [
   window.toValidPath("/public/v" + version + "/javascripts/main.min.js"),
   window.toValidPath("/public/v" + version + "/stylesheets/base.css"),
   window.toValidPath("/public/v" + version + "/images/logo/logo.svg"),
-  window.toValidPath(
-    "/public/v" + version + "/images/osu/osu-web-footer-wordmark-rev.png"
-  ),
   window.toValidPath("/public/json/symbols.json"),
   window.toValidPath("/node_modules/guppy-dev/build/guppy-default.min.css"),
   mathjaxRoot + "/jax/input/TeX/jax.js",

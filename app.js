@@ -1026,18 +1026,12 @@ app.get('/sw.js', function(req, res) {
     
     app.get( '/certificate/:certificate/:signature', certificate.view );
 
-    // app.get( '/course/:commit([0-9a-fA-F]+)/certificate', course.xourseFromCommit, certificate.xourse );
-    // app.get( '/course/:username/:repository/certificate', course.xourseFromUserAndRepo, certificate.xourse );
-    // app.get( '/course/:username/:repository/:branch/certificate', course.xourseFromUserAndRepo, certificate.xourse );
-    // app.get( '/labels/:commit([0-9a-fA-F]+)/:label', course.getLabel );
     
     app.get( '/statistics/:repository/:path(*)/:activityHash',
 	     // include some sort of authorization here -- being an LTI "instuctor" in any xourse in the repo suffices
 	     repositories.normalizeName,
 	     statistics.get );
     
-    // app.get( '/statistics/:commit/:hash/successes', course.successes );
-    // app.get( '/progress/:username/:repository', course.progress );    
 
     ////////////////////////////////////////////////////////////////
     // Logins

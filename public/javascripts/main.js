@@ -697,7 +697,6 @@ var ProgressBar = require('./progress-bar');
 
 var userProfile = require('./profile');
 var users = require('./users');
-var StickyScroll = require('./sticky-scroll' );
 
 var xourse = require('./xourse');
 var imageEnvironment = require('./image-environment');

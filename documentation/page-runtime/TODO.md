@@ -287,6 +287,88 @@ preamble is objectively producing a MathJax parse error, but treating that one
 localized error as a page-wide mathematical failure caused a false-positive
 support banner and disabled otherwise functional answer interaction.
 
+## Free response / manual grading
+
+### Historical status and current compatibility policy
+
+Free response was intended to let a student submit written content to Xronos
+and have that response retained so an instructor could review and grade it
+manually later.
+
+Historically, that workflow never became operationally usable. Although the
+browser can submit free-response content and historical code stores associated
+state/data, the relationship among the stored response, student identity,
+course/LTI context, activity, and an instructor-facing grading workflow has
+been sufficiently opaque that instructors have not had a sane way to retrieve
+and grade submissions. In practice this made the feature effectively
+ungradable and therefore essentially unused.
+
+As a workaround, the deployed behavior has been changed so that submitting a
+free response does not lower a student's grade: submission is effectively
+treated as full credit rather than waiting for manual grading that instructors
+cannot practically perform. This is a compatibility workaround, not the
+intended final grading model.
+
+Operationally, free response is believed to have extremely little authored
+usage. As of August 2026, the known deployment is believed to contain only one
+remaining rendered free-response box, in MAC1140 content, and that authored use
+was already considered a candidate for removal. Re-inventory published content
+before relying on that count.
+
+Do **not** remove the Xronos free-response feature solely because current usage
+is negligible. The intended capability remains desirable and should eventually
+be rebuilt around an explicit instructor grading workflow. At the same time,
+do not spend substantial compatibility effort preserving undocumented or
+opaque legacy storage/grading internals merely because they exist.
+
+Until the redesign occurs, the practical compatibility bar is deliberately
+low:
+
+- preserve the feature surface so free response can be rebuilt later;
+- preferably keep the text box renderable and submission path functional;
+- a submitted response must not penalize a student merely because no usable
+  instructor grading workflow exists;
+- do not treat preservation of the current opaque manual-grading/storage
+  mechanism as a requirement;
+- regressions isolated to currently unused free-response grading behavior are
+  not page-runtime stabilization blockers unless they affect unrelated active
+  functionality.
+
+### Future redesign
+
+Build an explicit end-to-end free-response submission and manual-grading
+pipeline. Before implementation, inventory the current persistence path and any
+historical free-response records so useful data is not accidentally orphaned.
+
+The replacement should provide, at minimum:
+
+- a documented submission data model with stable links to:
+  - student identity;
+  - LTI/course context where applicable;
+  - repository/activity/page;
+  - the specific free-response interaction;
+  - submitted text;
+  - submission/update timestamps;
+- a clear server API for retrieving authorized free-response submissions;
+- an instructor-facing interface that can list, filter, open, and grade
+  submissions without direct database inspection;
+- explicit grading state such as ungraded versus graded;
+- instructor-entered score and, if useful, feedback;
+- appropriate authorization so students cannot view or alter other students'
+  submissions or instructor grades;
+- a defined interaction with Xronos progress and Canvas/LTI grade passback;
+- a deliberate policy for resubmission, regrading, and instructor overrides;
+- enough audit/history information to understand who graded a response and
+  when;
+- migration or compatibility handling for any historical records worth
+  preserving;
+- permanent fixtures and tests covering submission, persistence, identity
+  association, instructor retrieval, grading, and passback.
+
+When this work is undertaken, redesign the workflow from the instructor's
+grading task backward rather than treating the existing database representation
+as the required architecture.
+
 ## JavaScript authoring and randomization
 
 ### Initial author JavaScript lifecycle

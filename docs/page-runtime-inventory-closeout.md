@@ -1,5 +1,12 @@
 # Page Runtime Inventory Closeout
 
+> **Historical project closeout.** This document records the page-runtime
+> inventory checkpoint that preceded the Page Runtime Coordinator completion
+> and the later repository cleanup. Its test findings remain useful historical
+> evidence, but its "Next-phase priorities" are not the authoritative current
+> to-do list. Use `documentation/page-runtime/TODO.md` for current deferred work
+> and `documentation/CLEANUP_CLOSEOUT.md` for the completed cleanup project.
+
 ## Status
 
 The page-runtime inventory phase is complete.

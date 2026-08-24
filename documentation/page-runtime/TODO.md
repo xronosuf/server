@@ -11,6 +11,13 @@ boundary and for unrelated follow-up discovered during the project.
 
 Items here are not commitments to include all work in one future project.
 
+The separate repository dead-code cleanup is complete at
+`873e86c50d477f5de2e685759a19d4f99ef98d30`; see
+`../CLEANUP_CLOSEOUT.md`. Do not interpret retained TODO items as evidence that
+the cleanup is incomplete. Package modernization, active branding work,
+free-response redesign, routing fixes, and other deferred architecture work are
+separate future projects.
+
 ## Runtime coordinator and diagnostics
 
 Completed/current foundation:

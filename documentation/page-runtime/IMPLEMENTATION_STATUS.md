@@ -15,14 +15,18 @@ Canvas grade passback.
 
 ## Current repository checkpoint
 
-```text
-branch: page-runtime-coordinator
-local HEAD: 2759508 Add configured runtime support contact
-remote HEAD: 2759508 Add configured runtime support contact
-branch relation: synchronized
-```
+The Page Runtime Coordinator Phase 1 implementation originally closed at
+`2759508` (`Add configured runtime support contact`) on the
+`page-runtime-coordinator` branch.
 
-Phase 1 is complete at this checkpoint.
+That implementation has since been integrated into the main Xronos development
+history. The later repository cleanup is complete on `cleanup` at
+`873e86c50d477f5de2e685759a19d4f99ef98d30`.
+
+The coordinator status below describes the integrated implementation, not an
+instruction to return to the old project branch.
+
+Phase 1 remains complete.
 
 The pushed implementation includes the dependency-aware coordinator foundation,
 canonical-only Sage cleanup and visible reliability hardening, initial

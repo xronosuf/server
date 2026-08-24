@@ -2,20 +2,26 @@
 
 ## Status
 
-This document records the current Xronos browser runtime observed on the
-`page-runtime-coordinator` branch.
+This document records the integrated Xronos browser runtime established by the
+Page Runtime Coordinator project and retained through the later repository
+cleanup.
 
 The original architecture inventory began at baseline commit:
 
 `b235dc15fa1d409b52ebc7038ebdf967113f0cda`
 
-The current coordinator/runtime description below is reconciled through the
-Phase 1 implementation checkpoint:
+The coordinator/runtime description was reconciled through the original Phase 1
+implementation checkpoint:
 
 `2759508`
 
-It records current behavior, current ownership boundaries, and browser-validated
-runtime contracts. Historical inventory sections are retained where still
+That checkpoint was later integrated into the main Xronos development history.
+The repository cleanup subsequently completed on `cleanup` at
+`873e86c50d477f5de2e685759a19d4f99ef98d30`.
+
+The runtime description below remains the current architectural description;
+the old branch/checkpoint names are historical provenance, not instructions to
+return to that branch. Historical inventory sections are retained where still
 accurate.
 
 ## Browser entrypoint

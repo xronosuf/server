@@ -1,19 +1,28 @@
 # Xronos Page Runtime Coordinator — Current Handoff
 
-**Purpose:** living operational handoff for continuing the Page Runtime
-Coordinator project after a chat/session boundary.
+> **Project-closeout handoff, not the current Git checkpoint.**
+>
+> This file preserves the final operational handoff from the Page Runtime
+> Coordinator project. The implementation described here was completed at
+> `2759508` on `page-runtime-coordinator`, then integrated into later Xronos
+> history. The repository cleanup subsequently completed on `cleanup` at
+> `873e86c50d477f5de2e685759a19d4f99ef98d30`.
+>
+> Use `IMPLEMENTATION_STATUS.md` for the durable integrated coordinator status,
+> `TODO.md` for current deferred work, and
+> `../CLEANUP_CLOSEOUT.md` for the repository cleanup closeout.
 
-**Last reconciled:** 2026-08-10
-**Working branch:** `page-runtime-coordinator`
-**Last implementation HEAD:** `2759508` — `Add configured runtime support contact`
-**Last known remote HEAD:** `2759508` — `Add configured runtime support contact`
-**Last known branch relation:** synchronized and clean before final documentation reconciliation
-**Pushed?** Yes; the implementation checkpoint through `2759508` is backed up on
-`origin/page-runtime-coordinator`.
-**Phase 1 status:** implementation complete; this document records the final
-closeout state and deferred boundaries.
+**Purpose:** preserved operational closeout/handoff for the Page Runtime
+Coordinator project.
 
-Always verify Git state before changing code.
+**Original final reconciliation:** 2026-08-10
+**Original working branch:** `page-runtime-coordinator`
+**Original implementation HEAD:** `2759508` — `Add configured runtime support contact`
+**Original remote checkpoint:** `2759508` — `Add configured runtime support contact`
+**Phase 1 status:** implementation complete and integrated into later repository
+history.
+
+Always verify current Git state before changing code.
 
 ## 1. Project goal
 

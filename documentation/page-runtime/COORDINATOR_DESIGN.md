@@ -6,7 +6,10 @@ This document records the architecture reached by the completed Phase 1 Page
 Runtime Coordinator work and the principles that should govern later focused
 extensions.
 
-Phase 1 is complete at committed implementation checkpoint `2759508`.
+Phase 1 originally completed at implementation checkpoint `2759508`; that
+implementation is now integrated into later Xronos history. The subsequent
+repository cleanup completed on `cleanup` at
+`873e86c50d477f5de2e685759a19d4f99ef98d30`.
 
 The coordinator is not a clean-room replacement for the current runtime. It is
 an incremental dependency-aware layer that promoted selected observability and

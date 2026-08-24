@@ -2,6 +2,7 @@ var $ = require('jquery');
 var jqueryUI = require('jquery-ui/ui/unique-id');
 var _ = require('underscore');
 var MathJax = require('./mathjax');
+var mathAnswerTex = require('./math-answer-tex');
 var TinCan = require('./tincan');
 var database = require('./database');
 var Expression = require('math-expressions');
@@ -866,25 +867,39 @@ exports.connectMathAnswer = function(result, answer) {
 		result.find('.show-answer-small').hide();
 		result.find('.show-answer-large').hide();
 
-		if ((tex.match(/\\answer/g) || []).length === 1) {
-			var answerRegExp = /\\answer\s*(\[[^\]]*\])?\s*{(.*)}/
-			var m = tex.match(answerRegExp)
-			if (m) {
-				var replacementTex = tex.replace(answerRegExp, "{\\color{blue} " + displayTexForCorrectStudentAnswer(result, m[2]) + "}");
+var parsedAnswer =
+    mathAnswerTex.findSingleAnswer(tex);
 
-				/*
-				 * Update the existing MathJax object in place instead of creating
-				 * a second script and hiding the original rendering.  The old
-				 * hide-and-retypeset approach is fragile across inline/display
-				 * MathJax shapes and can leave completed answers invisible after
-				 * reload.
-				 */
-				if (a) {
-				    MathJax.Hub.Queue(["Text", a, replacementTex]);
-				    mjElement.show();
-				}
-			}
-		}
+if (parsedAnswer) {
+    var displayedAnswerTex =
+displayTexForCorrectStudentAnswer(
+    result,
+    parsedAnswer.argument
+);
+
+    var replacementTex =
+mathAnswerTex.replaceSingleAnswer(
+    tex,
+    displayedAnswerTex
+);
+
+    /*
+     * Update the existing MathJax object in place instead of
+     * creating a second script and hiding the original
+     * rendering.
+     *
+     * The answer replacement itself must be brace-aware:
+     * \answer may contain nested TeX groups or may itself be
+     * nested inside another command such as
+     * \vector{\answer{BC}}.
+     */
+    if (a && replacementTex !== null) {
+MathJax.Hub.Queue(
+    ["Text", a, replacementTex]
+);
+mjElement.show();
+    }
+}
 
 	    inputBox.prop( 'disabled', true );
 	    // Disabled elements won't fire the blur event that would otherwise hide this

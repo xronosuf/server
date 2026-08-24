@@ -755,3 +755,27 @@ maintainer references:
 - `TEST_MATRIX.md`
 
 Do not create these merely to duplicate the reconciled durable documents above.
+
+## Post-initial MathJax rerender errors
+
+A MathJax rerender after the initial page-ready lifecycle can currently
+produce visible MathJax `<merror>` output without causing the page runtime
+support UI to report a degraded condition.
+
+Observed production example:
+
+- a completed math answer rewrote its source TeX;
+- malformed rewritten TeX produced `Missing close brace`;
+- MathJax displayed the error inline;
+- no `Report this problem` / support banner appeared.
+
+Follow-up work:
+
+- observe MathJax processing errors from post-initial rerender passes;
+- retain enough safe context to identify the affected expression;
+- surface an appropriate support code / degraded diagnostic;
+- do not treat a successful initial MathJax pass as proof that later
+  rerenders also succeeded;
+- avoid exposing arbitrary authored TeX or internal stack traces to
+  students by default.
+

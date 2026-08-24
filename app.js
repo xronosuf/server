@@ -54,22 +54,6 @@ require('./summarize/answer-attempt-summary').startScheduler() // Load scheduled
 // add timestamps in front of log messages
 require('console-stamp')(console, 'yyyymmdd HH:MM:ss]');
 
-// Some filters for Pug; admittedly, Pug comes with its own Markdown
-// filter, but I want to run everything through a filter to add
-// links to Ximera
-var pug = require('pug');
-var md = require("markdown");
-pug.filters.ximera = function(str){
-    return str
-	.replace(/Ximera/g, `<a class="ximera" href=${config.toValidPath('/')}>Ximera</a>`)
-	.replace(/---/g, '&mdash;')
-	.replace(/--/g, '&ndash;')
-    ;
-};
-pug.filters.markdown = function(str){
-    return pug.filters.ximera(md.parse(str));
-};
-
 // Create Express 4 app to configure.
 var app = express();
 exports.app = app;

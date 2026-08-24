@@ -1047,16 +1047,6 @@ module.exports.synchronizeNow = differentialSynchronization;
 $(document).ready(function() {
     activityHash = findActivityHash();
     
-	//
-	// 2025-03: REMOVED, as it pops up way too often
-	//
-    // window.onbeforeunload = function() {
-	// // Before the page disappears, let's test to see if there is unsaved data
-	// if (jsondiffpatch.diff( SHADOW, DATABASE ) !== undefined) {
-	//     return "There is unsaved data on this page.";
-	// }
-    // };
-    
     $(SAVE_WORK_BUTTON_ID).click( differentialSynchronization );
     $(RESET_WORK_BUTTON_ID).click( clickResetWorkButton );
 });

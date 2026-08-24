@@ -612,6 +612,16 @@ execute a different path.
 
 ## UI cleanup
 
+- Consolidate the duplicated xourse-entry presentation logic used by the
+  master xourse tile page and the in-activity sidebar/table of contents.
+  Both presentations consume the same underlying xourse activity information
+  but currently duplicate `xourseCard` classification/rendering logic in
+  `views/activity-card.pug` and `views/activity-list.pug`. Preserve their
+  intentionally different DOM/CSS presentations while introducing one shared
+  source/view-model or classification layer with explicit tile and TOC render
+  modes. Treat this as a later architecture/UI project, not part of dead-code
+  cleanup.
+
 - Merge profile and settings dropdowns if practical.
 - Improve hover and pointer behavior so dropdowns do not disappear prematurely.
 - Investigate or remove the nonfunctional See progress menu item.

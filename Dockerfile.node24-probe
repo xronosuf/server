@@ -20,13 +20,10 @@ RUN apt-get update \
 # local secrets so this remains a small, reproducible build context.
 COPY . .
 
-# NodeGit is still intentionally omitted while its Git CLI replacement is being
-# implemented. Snappy and xxhash now use the real repository manifest.
-ARG OMIT_NODEGIT=0
-RUN node -e 'var fs=require("fs"); var p=require("./package.json"); var omitNodegit=process.argv[1]; if (omitNodegit === "1" && p.dependencies) delete p.dependencies.nodegit; fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");' "$OMIT_NODEGIT" \
- && echo "Node: $(node --version)" \
+# Install the repository manifest exactly as checked in. This probe now
+# performs no dependency substitutions or package.json rewrites.
+RUN echo "Node: $(node --version)" \
  && echo "npm:  $(npm --version)" \
- && echo "OMIT_NODEGIT=$OMIT_NODEGIT" \
  && npm install --no-audit --no-fund
 
 # Do not start Xronos from this probe image. A successful build only proves the

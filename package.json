@@ -62,7 +62,6 @@
     "mongoose": "^5.13.14",
     "morgan": "^1.9.1",
     "node-uuid": "1.4.7",
-    "nodegit": "0.26.5",
     "passport": "^0.6.0",
     "passport-local": "1.0.0",
     "passport-oauth2": "^1.6.1",

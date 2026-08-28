@@ -43,35 +43,64 @@ function hasPermissionToEdit( viewer, viewee ) {
 
 
 
-exports.getCurrent = function(req, res, next){
+exports.getCurrent = async function(req, res, next){
     if (req.accepts('html')) {
-	res.redirect(302, config.toValidPath('/users/' + req.user._id) );
-	return;
-    }
-    
-    if (!req.user) {
-	res.json(0);
-	return;
+        res.redirect(
+            302,
+            config.toValidPath(
+                '/users/' + req.user._id
+            )
+        );
+        return;
     }
 
-    var user = Object.assign({}, req.user.toObject());
-    
-    if (user.email)
-	user.gravatar = crypto.createHash('md5').update(user.email).digest("hex");
-    
-    if (user.googleOpenId) user.googleOpenId = "token";
-    if (user.courseraOAuthId) user.courseraOAuthId = "token";
-    if (user.githubId) user.githubId = "token";
-    if (user.twitterOAuthId) user.twitterOAuthId = "token";
-    
+    if (!req.user) {
+        res.json(0);
+        return;
+    }
+
+    var user =
+        Object.assign(
+            {},
+            req.user.toObject()
+        );
+
+    if (user.email) {
+        user.gravatar = crypto
+            .createHash('md5')
+            .update(user.email)
+            .digest("hex");
+    }
+
+    if (user.googleOpenId)
+        user.googleOpenId = "token";
+
+    if (user.courseraOAuthId)
+        user.courseraOAuthId = "token";
+
+    if (user.githubId)
+        user.githubId = "token";
+
+    if (user.twitterOAuthId)
+        user.twitterOAuthId = "token";
+
     user.apiKey = "";
     user.apiSecret = "";
     user.password = "";
 
-    mdb.LtiBridge.find({user: new mdb.ObjectId(user._id)}, function(err, bridges) {
-	user.bridges = bridges;
-	res.json(user);
-    });
+    try {
+        user.bridges =
+            await mdb.LtiBridge.find({
+                user:
+                    new mdb.ObjectId(
+                        user._id
+                    )
+            }).exec();
+
+        res.json(user);
+    } catch (err) {
+        next(err);
+    }
 };
 
 exports.currentProfile = function(req, res){
@@ -85,114 +114,164 @@ exports.profile = function(req, res){
     res.render('user', { userId: req.params.id, user: req.user, editable: editable, title: 'Profile' } );
 };
 
-exports.putSecret = function(req, res, next){
+exports.putSecret = async function(req, res, next){
     var id = req.params.id;
 
     if (!req.user) {
-	res.send(401);
+        res.send(401);
+        return;
     }
 
     // BADBAD: should include more nuanced security here
     if (req.user._id.toString() != id) {
         res.status(500);
-	next(new Error('No permission to access other users.'));
-	return;	
+        next(
+            new Error(
+                'No permission to access other users.'
+            )
+        );
+        return;
     }
 
     var hash = {};
+
     hash.apiKey = uuid.v4();
-    hash.apiSecret = crypto.createHash('sha256').update(uuid.v4()).update(crypto.randomBytes(256)).digest('hex');
-    
-    mdb.User.updateOne( {_id: new mdb.ObjectId(id)}, {$set: hash},
-		     function(err, d) {
-			 
-			 if (err)
-			     res.send(500);
-			 else {
-			     res.status(200).json(hash);
-			 }
-		     });
+
+    hash.apiSecret = crypto
+        .createHash('sha256')
+        .update(uuid.v4())
+        .update(
+            crypto.randomBytes(256)
+        )
+        .digest('hex');
+
+    try {
+        await mdb.User.updateOne(
+            {
+                _id: new mdb.ObjectId(id)
+            },
+            {
+                $set: hash
+            }
+        );
+
+        res.status(200).json(hash);
+    } catch (err) {
+        res.status(500);
+        next(err);
+    }
 };
 
 ////////////////////////////////////////////////////////////////
 // delete an account, unless it is the last linked account
-exports.deleteLinkedAccount = function(req, res, next, account){
+exports.deleteLinkedAccount = async function(req, res, next, account){
     var id = req.params.id;
-    
+
     if (!req.user) {
-	res.send(401);
+        res.send(401);
+        return;
     }
-    
+
     // BADBAD: should include more nuanced security here
     if (req.user._id.toString() != id) {
-        res.status(500).send('No permission to access other users.');
-	return;
+        res.status(500).send(
+            'No permission to access other users.'
+        );
+        return;
     }
 
-    accountHash = {};
+    var accountHash = {};
 
-    present = { $exists: true };
-    otherAccounts = { googleOpenId: present, 
-		      twitterOAuthId: present,
-		      courseraOAuthId: present,
-		      githubId: present };
-    
+    var present = {
+        $exists: true
+    };
+
+    var otherAccounts = {
+        googleOpenId: present,
+        twitterOAuthId: present,
+        courseraOAuthId: present,
+        githubId: present
+    };
+
     if (account == 'google') {
-	accountHash['googleOpenId'] = "";
-	delete otherAccounts['googleOpenId'];
+        accountHash['googleOpenId'] = "";
+        delete otherAccounts['googleOpenId'];
     }
-    
+
     if (account == 'twitter') {
-	accountHash['twitterOAuthId'] = "";
-	delete otherAccounts['twitterOAuthId'];
+        accountHash['twitterOAuthId'] = "";
+        delete otherAccounts['twitterOAuthId'];
     }
 
     if (account == 'coursera') {
-	accountHash['courseraOAuthId'] = "";
-	delete otherAccounts['courseraOAuthId'];
+        accountHash['courseraOAuthId'] = "";
+        delete otherAccounts['courseraOAuthId'];
     }
 
     if (account == 'github') {
-	accountHash['githubId'] = "";
-	delete otherAccounts['githubId'];
+        accountHash['githubId'] = "";
+        delete otherAccounts['githubId'];
     }
 
     // Need an array instead of a hash for mongodb $or
-    otherAccounts = Object.keys(otherAccounts).map( function(x) {
-	var pair = {};
-	pair[x] = otherAccounts[x];
-	return pair;
-    });
-    
-    // Only look for a user who has OTHER accounts available
-    mdb.User.updateOne({ _id: new mdb.ObjectId(id),
-			  $or: otherAccounts
-			},
-			{ $unset: accountHash },
-			{},
-			function(err,result) {
-			    if (err)
-				next(err);
-			    else {
-				/*
-				 * Mongoose 5 exposes the matched count as result.n.
-				 * Mongoose 6+ exposes matchedCount. Preserve the
-				 * existing route semantics across both runtimes.
-				 */
-				var matchedCount =
-				    result.matchedCount !== undefined ?
-					result.matchedCount :
-					result.n;
+    otherAccounts =
+        Object.keys(
+            otherAccounts
+        ).map(function(x) {
+            var pair = {};
 
-				if (matchedCount <= 0) {
-				    res.status(404);
-				    next(new Error("No other account available; you cannot delete the only linked account."));
-				} else {
-				    res.status(200).send("Successfully removed " + account);
-				}
-			    }
-			});
-    
+            pair[x] =
+                otherAccounts[x];
+
+            return pair;
+        });
+
+    try {
+        var result =
+            await mdb.User.updateOne(
+                {
+                    _id:
+                        new mdb.ObjectId(
+                            id
+                        ),
+                    $or:
+                        otherAccounts
+                },
+                {
+                    $unset:
+                        accountHash
+                }
+            );
+
+        /*
+         * Mongoose 5 exposes the matched count as result.n.
+         * Mongoose 6+ exposes matchedCount. Preserve the
+         * existing route semantics across both runtimes.
+         */
+        var matchedCount =
+            result.matchedCount !== undefined ?
+                result.matchedCount :
+                result.n;
+
+        if (matchedCount <= 0) {
+            res.status(404);
+            next(
+                new Error(
+                    "No other account available; " +
+                    "you cannot delete the only linked account."
+                )
+            );
+            return;
+        }
+
+        res.status(200).send(
+            "Successfully removed " +
+            account
+        );
+    } catch (err) {
+        next(err);
+    }
+
     return;
 };
 

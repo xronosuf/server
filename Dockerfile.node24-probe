@@ -15,10 +15,14 @@ RUN apt-get update \
       python3 \
  && rm -rf /var/lib/apt/lists/*
 
-COPY package.json package-lock.json ./
+# Copy the application source before installing dependencies. The repository
+# .dockerignore excludes runtime data such as repositories/, node_modules/, and
+# local secrets so this remains a small, reproducible build context.
+COPY . .
 
 # Diagnostic-only dependency substitutions. These edit only the image-local
-# package.json copy and never change the repository manifest.
+# package.json copy and never change the repository manifest. Keep npm install
+# after the source copy so no later COPY can overwrite the installed tree.
 ARG OMIT_NODEGIT=0
 ARG OMIT_XXHASH=0
 ARG SNAPPY_VERSION=""
@@ -29,8 +33,6 @@ RUN node -e 'var fs=require("fs"); var p=require("./package.json"); var omitNode
  && echo "OMIT_XXHASH=$OMIT_XXHASH" \
  && echo "SNAPPY_VERSION=${SNAPPY_VERSION:-<repository default>}" \
  && npm install --no-audit --no-fund
-
-COPY . .
 
 # Do not start Xronos from this probe image. A successful build only proves the
 # selected dependency graph can be installed under Node 24; later checkpoints

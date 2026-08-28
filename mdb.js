@@ -11,9 +11,10 @@ exports = module.exports;
 var ObjectId = mongoose.Schema.ObjectId;
 var Mixed = mongoose.Schema.Types.Mixed;
 
-var url = "mongodb://" + config.mongodb.url + "/" + config.mongodb.database;
+var url = config.mongodb.uri || ("mongodb://" + config.mongodb.url + "/" + config.mongodb.database);
 
 exports.mongoose = mongoose;
+exports.url = url;
 
 // Notice this is different from Schema.ObjectId; Schema.ObjectId if for passing
 // models/schemas, Types.ObjectId is for generating ObjectIds.

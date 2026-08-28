@@ -45,12 +45,16 @@ printjson(db.adminCommand({ping:1}));
 '
 
 echo
-podman exec "$APP_CONTAINER" node - <<'NODECHECK'
+podman exec \
+    -e MONGO_BRIDGE_HOST="$MONGO_CONTAINER" \
+    "$APP_CONTAINER" \
+    node - <<'NODECHECK'
 var net = require('net');
-var socket = net.createConnection({host: 'xronos-mongo5-bridge', port: 27017});
+var host = process.env.MONGO_BRIDGE_HOST;
+var socket = net.createConnection({host: host, port: 27017});
 socket.setTimeout(5000);
 socket.on('connect', function() {
-    console.log('TCP connection to xronos-mongo5-bridge:27017: OK');
+    console.log('TCP connection to ' + host + ':27017: OK');
     socket.end();
 });
 socket.on('timeout', function() {

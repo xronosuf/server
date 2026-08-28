@@ -4,7 +4,7 @@ var pug = require('pug');
 var path = require('path');
 var config = require('../config');
 var async = require('async');
-const uuidv1 = require('uuid/v1');
+var uuid = require('node-uuid');
 var mongo = require('mongodb');
 var progressMilestones = require('./progress-milestones');
 
@@ -136,7 +136,7 @@ function processGradebook(id, callback) {
 	}
 	
 	var pox = passback({
-	    messageIdentifier: uuidv1(),
+	    messageIdentifier: uuid.v1(),
 	    resultDataUrl: config.root + '/users/' + bridge.user._id + '/' + bridge.repository + '/' + bridge.path,
 	    resultScore: bridge.resultScore,
 	    resultTotalScore: bridge.resultTotalScore,

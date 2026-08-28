@@ -1,4 +1,3 @@
-var mongo = require('mongodb');
 var mdb = require('../mdb');
 var winston = require("winston");
 var path = require('path');

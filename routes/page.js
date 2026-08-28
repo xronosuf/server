@@ -1,5 +1,4 @@
 var async = require('async');
-var mongo = require('mongodb');
 var mdb = require('../mdb');
 var winston = require("winston");
 var mongoose = require('mongoose');

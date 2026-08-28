@@ -1,5 +1,4 @@
 var mdb = require('../mdb');
-var mongo = require('mongodb');
 
 
 exports.isInstructorForLearnerInRepository = function( repositoryName, supposedInstructor, supposedLearner, callback ) {
@@ -34,7 +33,7 @@ exports.isInstructorForLearnerInRepository = function( repositoryName, supposedI
 
 // Used when we want to view page as another learner
 exports.masquerade = function(req,res,next) {
-    mdb.User.findOne({_id: new mongo.ObjectID(req.params.masqueradingUserId)},
+    mdb.User.findOne({_id: new mdb.ObjectId(req.params.masqueradingUserId)},
 		     function(err, learner) {
 			 if (err) {
 			     next(err);

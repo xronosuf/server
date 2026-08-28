@@ -8,7 +8,6 @@
  */
 
 var mdb = require('../mdb');
-var mongo = require('mongodb');
 
 function usage(exitCode) {
     console.log([
@@ -81,11 +80,11 @@ function parseDate(value) {
 }
 
 function objectId(value, label) {
-    if (!value || !mongo.ObjectID.isValid(value)) {
+    if (!value || !mdb.ObjectId.isValid(value)) {
         throw new Error(label + ' is not a valid ObjectID: ' + value);
     }
 
-    return new mongo.ObjectID(value);
+    return new mdb.ObjectId(value);
 }
 
 function percent(value) {

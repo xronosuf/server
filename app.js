@@ -19,7 +19,6 @@ var express = require('express')
   , login = require('./login')
   , guests = require('./login/guests')
   , passport = require('passport')
-  , mongo = require('mongodb')
   , expressWinston    = require('express-winston')
   , winston = require('winston')
   , repositories = require('./routes/repositories')
@@ -150,7 +149,7 @@ passport.serializeUser(function(user, done) {
 });
 
 passport.deserializeUser(function(id, done) {
-   mdb.User.findOne({_id: new mongo.ObjectID(id)}, function(err,document) {
+   mdb.User.findOne({_id: new mdb.ObjectId(id)}, function(err,document) {
        done(err, document);
    });
 });

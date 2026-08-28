@@ -8,7 +8,6 @@
  */
 
 var mdb = require("../mdb");
-var mongo = require("mongodb");
 var Redis = require("ioredis");
 var config = require("../config");
 
@@ -225,7 +224,7 @@ async function main() {
     var cutoff = new Date(
         now.getTime() - options.weeks * 7 * 24 * 60 * 60 * 1000
     );
-    var cutoffObjectId = mongo.ObjectID.createFromTime(
+    var cutoffObjectId = mdb.ObjectId.createFromTime(
         Math.floor(cutoff.getTime() / 1000)
     );
 

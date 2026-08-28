@@ -5,7 +5,6 @@ var path = require('path');
 var config = require('../config');
 var async = require('async');
 var uuid = require('node-uuid');
-var mongo = require('mongodb');
 var progressMilestones = require('./progress-milestones');
 
 const Redis = require("ioredis");
@@ -129,7 +128,7 @@ function recordProgressMilestoneForBridge(req, repositoryName, bridge) {
 
 function processGradebook(id, callback) {
 	console.log('Processing gradebook ' + id)
-    mdb.LtiBridge.findOne( {_id: new mongo.ObjectID(id) }, function(err, bridge) {
+    mdb.LtiBridge.findOne( {_id: new mdb.ObjectId(id) }, function(err, bridge) {
 	if (err) {
 	    callback(err);
 	    return;

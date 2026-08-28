@@ -11,7 +11,6 @@
  */
 
 var mdb = require('../mdb');
-var mongo = require('mongodb');
 var progressAudit = require('../routes/progress-audit');
 
 function usage(exitCode) {
@@ -70,11 +69,11 @@ function parseArgs(argv) {
 }
 
 function objectId(value, label) {
-    if (!value || !mongo.ObjectID.isValid(value)) {
+    if (!value || !mdb.ObjectId.isValid(value)) {
         throw new Error(label + ' is not a valid ObjectID: ' + value);
     }
 
-    return new mongo.ObjectID(value);
+    return new mdb.ObjectId(value);
 }
 
 var args = parseArgs(process.argv.slice(2));

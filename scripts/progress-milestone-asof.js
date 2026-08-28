@@ -19,7 +19,6 @@
  */
 
 var mdb = require('../mdb');
-var mongo = require('mongodb');
 
 function usage(exitCode) {
     console.log([
@@ -90,11 +89,11 @@ function objectId(value, label) {
         return undefined;
     }
 
-    if (!mongo.ObjectID.isValid(value)) {
+    if (!mdb.ObjectId.isValid(value)) {
         throw new Error(label + ' is not a valid ObjectID: ' + value);
     }
 
-    return new mongo.ObjectID(value);
+    return new mdb.ObjectId(value);
 }
 
 function parseDate(value) {

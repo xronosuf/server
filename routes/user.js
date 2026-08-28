@@ -5,7 +5,6 @@
 
 var crypto = require('crypto');
 var uuid = require('node-uuid');
-var mongo = require('mongodb');
 var validator = require('validator');
 var moment = require('moment');
 var async = require('async');
@@ -69,7 +68,7 @@ exports.getCurrent = function(req, res, next){
     user.apiSecret = "";
     user.password = "";
 
-    mdb.LtiBridge.find({user: new mongo.ObjectID(user._id)}, function(err, bridges) {
+    mdb.LtiBridge.find({user: new mdb.ObjectId(user._id)}, function(err, bridges) {
 	user.bridges = bridges;
 	res.json(user);
     });
@@ -104,7 +103,7 @@ exports.putSecret = function(req, res, next){
     hash.apiKey = uuid.v4();
     hash.apiSecret = crypto.createHash('sha256').update(uuid.v4()).update(crypto.randomBytes(256)).digest('hex');
     
-    mdb.User.update( {_id: new mongo.ObjectID(id)}, {$set: hash},
+    mdb.User.update( {_id: new mdb.ObjectId(id)}, {$set: hash},
 		     function(err, d) {
 			 
 			 if (err)
@@ -166,7 +165,7 @@ exports.deleteLinkedAccount = function(req, res, next, account){
     });
     
     // Only look for a user who has OTHER accounts available
-    mdb.User.update({ _id: new mongo.ObjectID(id),
+    mdb.User.update({ _id: new mdb.ObjectId(id),
 			  $or: otherAccounts
 			},
 			{ $unset: accountHash },
@@ -198,7 +197,7 @@ exports.deleteBridge = function(req, res, next){
 	return;
     }
 
-    mdb.User.findOne({_id: new mongo.ObjectID(id)}, function(err, user) {
+    mdb.User.findOne({_id: new mdb.ObjectId(id)}, function(err, user) {
 	if (err) {
 	    next(err);
 	    return;	    
@@ -209,7 +208,7 @@ exports.deleteBridge = function(req, res, next){
 	    return;
 	}
 
-	mdb.LtiBridge.findOne({_id: new mongo.ObjectID(bridgeId)}, function(err, bridge) {
+	mdb.LtiBridge.findOne({_id: new mdb.ObjectId(bridgeId)}, function(err, bridge) {
 	    if (err) {
 		next(err);
 		return;	    
@@ -244,10 +243,10 @@ exports.get = function(req, res, next){
     async.parallel(
 	[
 	    function(callback) {
-		mdb.User.findOne({_id: new mongo.ObjectID(id)}, callback);
+		mdb.User.findOne({_id: new mdb.ObjectId(id)}, callback);
 	    },
 	    function(callback) {
-		mdb.LtiBridge.find({user: new mongo.ObjectID(id)}, callback);
+		mdb.LtiBridge.find({user: new mdb.ObjectId(id)}, callback);
 	    }
 	],
 	function(err, results) {
@@ -268,7 +267,7 @@ exports.get = function(req, res, next){
 		    return;			
 		} else {
 		    // Add one view to the count of profileViews
-		    mdb.User.update({_id: new mongo.ObjectID(id)},
+		    mdb.User.update({_id: new mdb.ObjectId(id)},
 				    { $inc: { profileViews: 1 } });
 
 		
@@ -325,10 +324,10 @@ exports.edit = function(req, res, next){
     async.parallel(
 	[
 	    function(callback) {
-		mdb.User.findOne({_id: new mongo.ObjectID(id)}, callback);
+		mdb.User.findOne({_id: new mdb.ObjectId(id)}, callback);
 	    },
 	    function(callback) {
-		mdb.LtiBridge.find({user: new mongo.ObjectID(id)}, callback);
+		mdb.LtiBridge.find({user: new mdb.ObjectId(id)}, callback);
 	    }
 	],
 	function(err, results) {
@@ -389,10 +388,10 @@ exports.update = function(req, res, next){
     async.parallel(
 	[
 	    function(callback) {
-		mdb.User.findOne({_id: new mongo.ObjectID(id)}, callback);
+		mdb.User.findOne({_id: new mdb.ObjectId(id)}, callback);
 	    },
 	    function(callback) {
-		mdb.LtiBridge.find({user: new mongo.ObjectID(id)}, callback);
+		mdb.LtiBridge.find({user: new mdb.ObjectId(id)}, callback);
 	    }
 	],
 	function(err, results) {
@@ -477,7 +476,7 @@ exports.update = function(req, res, next){
 				document.superuser = hash.superuser = false;		    		    
 			}
 			
-			mdb.User.update( {_id: new mongo.ObjectID(id)}, {$set: hash},
+			mdb.User.update( {_id: new mdb.ObjectId(id)}, {$set: hash},
 					 function(err, d) {
 					     
 					     if (err)

@@ -58,7 +58,6 @@
     "mathjax": "^2.7.4",
     "method-override": "^2.3.10",
     "moment": "^2.29.4",
-    "mongodb": "2.2.19",
     "mongoose": "^5.13.14",
     "morgan": "^1.9.1",
     "node-uuid": "1.4.7",

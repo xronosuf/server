@@ -210,62 +210,106 @@ function setupHtml(req, keyAndSecret) {
     ].join('\n');
 }
 
-exports.show = function(req, res) {
+exports.show = async function(req, res) {
     if (!requireAuth(req, res))
         return;
 
     var ltiKey = req.params.repository;
 
-    if (!ltiKey || !String(ltiKey).match(/^[A-Za-z0-9._-]+$/)) {
-        res.status(400).send('Invalid repository/LTI key.');
+    if (
+        !ltiKey ||
+        !String(ltiKey).match(/^[A-Za-z0-9._-]+$/)
+    ) {
+        res.status(400).send(
+            'Invalid repository/LTI key.'
+        );
         return;
     }
 
-    mdb.KeyAndSecret.findOne({ ltiKey: ltiKey }, function(err, keyAndSecret) {
-        if (err) {
-            res.status(500).send('Could not look up LTI key.');
-            return;
-        }
+    var keyAndSecret;
 
-        if (keyAndSecret) {
-            console.log('LTI setup viewed', {
-                username: req.ltiSetupUsername,
-                ltiKey: ltiKey,
-                remoteAddress: req.ip
-            });
+    try {
+        keyAndSecret =
+            await mdb.KeyAndSecret.findOne({
+                ltiKey: ltiKey
+            }).exec();
+    } catch (err) {
+        res.status(500).send(
+            'Could not look up LTI key.'
+        );
+        return;
+    }
 
-            res.set('Content-Type', 'text/html; charset=utf-8');
-            res.send(setupHtml(req, keyAndSecret));
-            return;
-        }
+    if (keyAndSecret) {
+        console.log('LTI setup viewed', {
+            username: req.ltiSetupUsername,
+            ltiKey: ltiKey,
+            remoteAddress: req.ip
+        });
 
-        crypto.randomBytes(32, function(err, buffer) {
+        res.set(
+            'Content-Type',
+            'text/html; charset=utf-8'
+        );
+
+        res.send(
+            setupHtml(req, keyAndSecret)
+        );
+        return;
+    }
+
+    /*
+     * crypto.randomBytes() is not a Mongoose API.
+     * Its callback intentionally remains.
+     */
+    crypto.randomBytes(
+        32,
+        async function(err, buffer) {
             if (err) {
-                res.status(500).send('Could not generate LTI secret.');
+                res.status(500).send(
+                    'Could not generate LTI secret.'
+                );
                 return;
             }
 
-            keyAndSecret = new mdb.KeyAndSecret({
-                keyid: 'web-lti-setup',
-                ltiKey: ltiKey,
-                ltiSecret: base64url(buffer)
-            });
-
-            keyAndSecret.save(function(err) {
-                if (err) {
-                    res.status(500).send('Could not save LTI secret.');
-                    return;
-                }
-
-                console.log('LTI setup created secret', {
-                    username: req.ltiSetupUsername,
+            keyAndSecret =
+                new mdb.KeyAndSecret({
+                    keyid: 'web-lti-setup',
                     ltiKey: ltiKey,
-                    remoteAddress: req.ip
+                    ltiSecret:
+                        base64url(buffer)
                 });
 
-                res.set('Content-Type', 'text/html; charset=utf-8');
-                res.send(setupHtml(req, keyAndSecret));
-            });
-        });
-    });
+            try {
+                await keyAndSecret.save();
+            } catch (err) {
+                res.status(500).send(
+                    'Could not save LTI secret.'
+                );
+                return;
+            }
+
+            console.log(
+                'LTI setup created secret',
+                {
+                    username:
+                        req.ltiSetupUsername,
+                    ltiKey: ltiKey,
+                    remoteAddress: req.ip
+                }
+            );
+
+            res.set(
+                'Content-Type',
+                'text/html; charset=utf-8'
+            );
+
+            res.send(
+                setupHtml(
+                    req,
+                    keyAndSecret
+                )
+            );
+        }
+    );
 };

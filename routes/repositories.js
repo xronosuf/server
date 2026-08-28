@@ -221,21 +221,26 @@ exports.create = function(repositoryName, givenKeyid) {
 
 async function recentCommitsOnBranch(repository, branchName) {
     const MAX_COMMITS = 100;
-    const TAG_PREFIX = "refs/tags/publications/";
 
     try {
-        const revwalk = nodegit.Revwalk.create(repository);
-        revwalk.pushRef("refs/heads/" + branchName);
-        revwalk.sorting(nodegit.Revwalk.SORT.TOPOLOGICAL | nodegit.Revwalk.SORT.TIME);
+        const published =
+            await gitCli.recentPublishedCommits(
+                repository.path(),
+                branchName,
+                MAX_COMMITS
+            );
 
-        const sourceCommits = await revwalk.getCommits(MAX_COMMITS);
+        return Promise.all(
+            published.map(async function(entry) {
+                const targetCommit =
+                    await repository.getCommit(
+                        entry.sha
+                    );
 
-        const resultPromises = sourceCommits.map(async (sourceCommit) => {
-            const tagRefName = TAG_PREFIX + sourceCommit.sha();
-
-            try {
-                const reference = await nodegit.Reference.lookup(repository, tagRefName);
-                const targetCommit = await repository.getCommit(reference.target());
+                const sourceCommit =
+                    await repository.getCommit(
+                        entry.sourceSha
+                    );
 
                 return {
                     commit: targetCommit,
@@ -243,16 +248,13 @@ async function recentCommitsOnBranch(repository, branchName) {
                     sourceCommit: sourceCommit,
                     sourceSha: sourceCommit.sha(),
                 };
-            } catch (err) {
-                // Tag not found or lookup failed — ignore silently
-                return null;
-            }
-        });
-
-        const results = await Promise.all(resultPromises);
-        return results.filter(entry => entry !== null);
+            })
+        );
     } catch (err) {
-        throw new Error("Failed to retrieve recent commits: " + err.message);
+        throw new Error(
+            "Failed to retrieve recent commits: " +
+            err.message
+        );
     }
 }
 

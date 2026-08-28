@@ -198,49 +198,48 @@ exports.deleteLinkedAccount = function(req, res, next, account){
 
 ////////////////////////////////////////////////////////////////
 // Delete the LTI bridge
-exports.deleteBridge = function(req, res, next){
+exports.deleteBridge = async function(req, res, next){
     var id = req.params.id;
-    var bridgeId = req.params.bridge;    
-    
+    var bridgeId = req.params.bridge;
+
     if (!req.user) {
-	res.send(401);
-	return;
+        res.send(401);
+        return;
     }
 
-    mdb.User.findOne({_id: new mdb.ObjectId(id)}, function(err, user) {
-	if (err) {
-	    next(err);
-	    return;	    
-	}
-	
-	if (!hasPermissionToEdit(req.user, user)) {
-	    next(new Error("You are not permited to edit this user."));
-	    return;
-	}
+    try {
+        var user = await mdb.User.findOne({
+            _id: new mdb.ObjectId(id)
+        });
 
-	mdb.LtiBridge.findOne({_id: new mdb.ObjectId(bridgeId)}, function(err, bridge) {
-	    if (err) {
-		next(err);
-		return;	    
-	    }
+        if (!hasPermissionToEdit(req.user, user)) {
+            next(new Error("You are not permited to edit this user."));
+            return;
+        }
 
-	    if (bridge.user != id) {
-		next(new Error("That bridge does not belong to the given user."));
-		return;
-	    }
+        var bridge = await mdb.LtiBridge.findOne({
+            _id: new mdb.ObjectId(bridgeId)
+        });
 
-	    bridge.deleteOne( function(err) {
-		if (err)
-		    next(err);
-		else
-		    res.status(200).send("Removed " + bridge._id);		    
-	    });
-	});
-    });
-    
+        if (!bridge) {
+            next(new Error("That LTI bridge does not exist."));
+            return;
+        }
+
+        if (bridge.user != id) {
+            next(new Error("That bridge does not belong to the given user."));
+            return;
+        }
+
+        await bridge.deleteOne();
+
+        res.status(200).send("Removed " + bridge._id);
+    } catch (err) {
+        next(err);
+    }
+
     return;
 };
-
 
 exports.get = function(req, res, next){
     var id = req.params.id;
@@ -511,46 +510,40 @@ exports.update = function(req, res, next){
 	});
 };
 
-exports.index = function(req, res, next) {
+exports.index = async function(req, res, next) {
     var page = req.params.page;
     var pageSize = 100;
     var pageCount = 5;
 
     if (!(('user' in req) && (req.user.superuser))) {
-	res.status(403);
-	next(new Error('You are not a superuser.'));
-	    //.render('fail', { title: "Users not visible", message: "You are not a superuser." });
-	return;
+        res.status(403);
+        next(new Error('You are not a superuser.'));
+        //.render('fail', { title: "Users not visible", message: "You are not a superuser." });
+        return;
     }
-    
-    async.waterfall(
-	[
-	    function(callback) {
-		mdb.User.countDocuments( callback );
-	    },
-	    function(userCount, callback) {
-		pageCount = Math.ceil( userCount / pageSize );
-		
-		mdb.User.find()
-		    .skip( (page-1)*pageSize )
-		    .limit( pageSize )
-		    .sort('-lastSeen')
-		    .exec( callback );
-	    },
-	], function(err, users) {
-	    if (err) {
-		next(err);
-	    } else {
-		users.forEach( function(user) {
-		    if (user.email)
-	    		user.gravatar = crypto.createHash('md5').update(validator.normalizeEmail(user.email)).digest("hex");
-		});
-		
-		res.render('user/index', {
-		    users: users,
-		    page: page,
-		    pageCount: pageCount
-		} );    		
-	    }
-	});
+
+    try {
+        var userCount = await mdb.User.countDocuments();
+
+        pageCount = Math.ceil(userCount / pageSize);
+
+        var users = await mdb.User.find()
+            .skip((page - 1) * pageSize)
+            .limit(pageSize)
+            .sort('-lastSeen')
+            .exec();
+
+        users.forEach(function(user) {
+            if (user.email)
+                user.gravatar = crypto.createHash('md5').update(validator.normalizeEmail(user.email)).digest("hex");
+        });
+
+        res.render('user/index', {
+            users: users,
+            page: page,
+            pageCount: pageCount
+        });
+    } catch (err) {
+        next(err);
+    }
 };

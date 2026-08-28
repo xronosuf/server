@@ -241,150 +241,218 @@ exports.deleteBridge = async function(req, res, next){
     return;
 };
 
-exports.get = function(req, res, next){
+exports.get = async function(req, res, next){
     var id = req.params.id;
 
     if (!req.user) {
-	res.send(401);
-	return;
+        res.send(401);
+        return;
     }
 
-    async.parallel(
-	[
-	    function(callback) {
-		mdb.User.findOne({_id: new mdb.ObjectId(id)}, callback);
-	    },
-	    function(callback) {
-		mdb.LtiBridge.find({user: new mdb.ObjectId(id)}, callback);
-	    }
-	],
-	function(err, results) {
-	    if (err) {
-		next(err);
-	    } else {
-		var document = results[0];
-		var bridges = results[1];
-		
-		if (!document) {
-		    res.status(404).render('404', { status: 404, url: req.url });
-		    return;
-		}
-		
-		var viewerPermission = hasPermissionToView( req.user, document );
-		if ( ! viewerPermission ) {
-		    next(new Error('No permission to access other users.'));
-		    return;			
-		} else {
-		    // Add one view to the count of profileViews
-		    mdb.User.updateOne({_id: new mdb.ObjectId(id)},
-				    { $inc: { profileViews: 1 } });
+    try {
+        var results = await Promise.all([
+            mdb.User.findOne({
+                _id: new mdb.ObjectId(id)
+            }).exec(),
+            mdb.LtiBridge.find({
+                user: new mdb.ObjectId(id)
+            }).exec()
+        ]);
 
-		
-		    if (document.email)
-	    		document.gravatar = crypto.createHash('md5').update(validator.normalizeEmail(document.email)).digest("hex");
+        var document = results[0];
+        var bridges = results[1];
 
-		    if (document.birthday) {
-			document.formattedBirthday = moment(new Date(document.birthday)).format('MMMM D, YYYY');
-		    }	    
-	    
-		    if (req.user._id.equals(document._id))
-			document.pronouned = "me";
-		    else
-			document.pronouned = document.name;		
-		    
-		    if (!hasPermissionToEdit(req.user, document)) {
-			document.googleOpenId = undefined;
-			document.courseraOAuthId = undefined;
-			document.githubId = undefined;
-			document.twitterOAuthId = undefined;
-			document.apiKey = "";
-			document.apiSecret = "";
-			document.password = "";
-		    }
-		    
-		    res.format({
-			html: function(){
-			    res.render('user/profile', { userId: req.params.id,
-							 user: req.user,
-							 script: "user/profile",
-							 person: document,
-							 bridges: bridges,
-							 whyVisible: "Visible to you because " + viewerPermission,
-							 editable: hasPermissionToEdit(req.user, document),
-							 title: 'Profile' } );
-			},
-			
-			json: function(){
-			    res.json(document);
-			}
-		    });
-		}
+        if (!document) {
+            res.status(404).render('404', {
+                status: 404,
+                url: req.url
+            });
+            return;
+        }
+
+        var viewerPermission =
+            hasPermissionToView(req.user, document);
+
+        if (!viewerPermission) {
+            next(
+                new Error(
+                    'No permission to access other users.'
+                )
+            );
+            return;
+        }
+
+        // Add one view to the count of profileViews
+        // Preserve the historical fire-and-forget behavior.
+        mdb.User.updateOne(
+            { _id: new mdb.ObjectId(id) },
+            { $inc: { profileViews: 1 } }
+        ).catch(function(err) {
+            console.log(
+                'Unable to increment profileViews'
+            );
+            console.log(err);
+        });
+
+        if (document.email) {
+            document.gravatar = crypto
+                .createHash('md5')
+                .update(
+                    validator.normalizeEmail(
+                        document.email
+                    )
+                )
+                .digest("hex");
+        }
+
+        if (document.birthday) {
+            document.formattedBirthday =
+                moment(
+                    new Date(document.birthday)
+                ).format('MMMM D, YYYY');
+        }
+
+        if (req.user._id.equals(document._id))
+            document.pronouned = "me";
+        else
+            document.pronouned = document.name;
+
+        if (!hasPermissionToEdit(req.user, document)) {
+            document.googleOpenId = undefined;
+            document.courseraOAuthId = undefined;
+            document.githubId = undefined;
+            document.twitterOAuthId = undefined;
+            document.apiKey = "";
+            document.apiSecret = "";
+            document.password = "";
+        }
+
+        res.format({
+            html: function(){
+                res.render(
+                    'user/profile',
+                    {
+                        userId: req.params.id,
+                        user: req.user,
+                        script: "user/profile",
+                        person: document,
+                        bridges: bridges,
+                        whyVisible:
+                            "Visible to you because " +
+                            viewerPermission,
+                        editable:
+                            hasPermissionToEdit(
+                                req.user,
+                                document
+                            ),
+                        title: 'Profile'
+                    }
+                );
+            },
+
+            json: function(){
+                res.json(document);
             }
-	});
+        });
+    } catch (err) {
+        next(err);
+    }
 };
 
-exports.edit = function(req, res, next){
+exports.edit = async function(req, res, next){
     var id = req.params.id;
 
     if (!req.user) {
-	res.send(401);
+        res.send(401);
+        return;
     }
 
-    async.parallel(
-	[
-	    function(callback) {
-		mdb.User.findOne({_id: new mdb.ObjectId(id)}, callback);
-	    },
-	    function(callback) {
-		mdb.LtiBridge.find({user: new mdb.ObjectId(id)}, callback);
-	    }
-	],
-	function(err, results) {
-	    if (err) {
-		next(err);
-	    } else {
-		var document = results[0];
-		var bridges = results[1];
-	
-		if (document) {
-		    if ( ! hasPermissionToEdit( req.user, document )) {
-			res.status(500);
-			next(new Error('No permission to edit that user.'));
-			return;
-		    } else {
-			if (document.email)
-	    		    document.gravatar = crypto.createHash('md5').update(validator.normalizeEmail(document.email)).digest("hex");
-			
-			if (req.user._id.equals(document._id))
-			    document.pronouned = "me";
-			else
-			    document.pronouned = document.name;
-			
-			if (document.birthday) {
-			    document.formattedBirthday = moment(new Date(document.birthday)).format('MMMM D, YYYY');
-			}
-			
-			res.format({
-			    html: function(){
-				console.log('Edit user document for: '+req.params.id);
-				console.log(document);
-				res.render('user/edit', { userId: req.params.id,
-							  user: req.user,
-							  bridges: bridges,
-							  script: "user/profile",
-							  person: document,
-							  whyVisible: "Visible to you because " + hasPermissionToView( req.user, document ),
-							  editable: hasPermissionToEdit(req.user, document),
-							  title: 'Profile' } );
-			    },
-			});
-		    }
-		}
-		else {
-		    res.status(404).json({});
-		}
-	    }
-	});
+    try {
+        var results = await Promise.all([
+            mdb.User.findOne({
+                _id: new mdb.ObjectId(id)
+            }).exec(),
+            mdb.LtiBridge.find({
+                user: new mdb.ObjectId(id)
+            }).exec()
+        ]);
+
+        var document = results[0];
+        var bridges = results[1];
+
+        if (!document) {
+            res.status(404).json({});
+            return;
+        }
+
+        if (!hasPermissionToEdit(req.user, document)) {
+            res.status(500);
+            next(
+                new Error(
+                    'No permission to edit that user.'
+                )
+            );
+            return;
+        }
+
+        if (document.email) {
+            document.gravatar = crypto
+                .createHash('md5')
+                .update(
+                    validator.normalizeEmail(
+                        document.email
+                    )
+                )
+                .digest("hex");
+        }
+
+        if (req.user._id.equals(document._id))
+            document.pronouned = "me";
+        else
+            document.pronouned = document.name;
+
+        if (document.birthday) {
+            document.formattedBirthday =
+                moment(
+                    new Date(document.birthday)
+                ).format('MMMM D, YYYY');
+        }
+
+        res.format({
+            html: function(){
+                console.log(
+                    'Edit user document for: ' +
+                    req.params.id
+                );
+                console.log(document);
+
+                res.render(
+                    'user/edit',
+                    {
+                        userId: req.params.id,
+                        user: req.user,
+                        bridges: bridges,
+                        script: "user/profile",
+                        person: document,
+                        whyVisible:
+                            "Visible to you because " +
+                            hasPermissionToView(
+                                req.user,
+                                document
+                            ),
+                        editable:
+                            hasPermissionToEdit(
+                                req.user,
+                                document
+                            ),
+                        title: 'Profile'
+                    }
+                );
+            }
+        });
+    } catch (err) {
+        next(err);
+    }
 };
 
 exports.update = function(req, res, next){

@@ -17,16 +17,25 @@ RUN apt-get update \
 
 COPY package.json package-lock.json ./
 
-# Set OMIT_NODEGIT=1 only for diagnostic builds that want to discover the next
-# Node 24 blocker after the already-confirmed nodegit@0.26.5 failure. This edits
-# only the image-local package.json copy; it never changes the repository file.
+# Diagnostic-only dependency substitutions. These edit only the image-local
+# package.json copy and never change the repository manifest.
 ARG OMIT_NODEGIT=0
-RUN if [ "$OMIT_NODEGIT" = "1" ]; then \
-      node -e 'var fs=require("fs"); var p=require("./package.json"); if (p.dependencies) delete p.dependencies.nodegit; fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");'; \
-    fi \
+ARG SNAPPY_VERSION=""
+RUN node -e '
+      var fs = require("fs");
+      var p = require("./package.json");
+      if (process.env.OMIT_NODEGIT === "1" && p.dependencies) {
+        delete p.dependencies.nodegit;
+      }
+      if (process.env.SNAPPY_VERSION && p.dependencies) {
+        p.dependencies.snappy = process.env.SNAPPY_VERSION;
+      }
+      fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");
+    ' \
  && echo "Node: $(node --version)" \
  && echo "npm:  $(npm --version)" \
  && echo "OMIT_NODEGIT=$OMIT_NODEGIT" \
+ && echo "SNAPPY_VERSION=${SNAPPY_VERSION:-<repository default>}" \
  && npm install --no-audit --no-fund
 
 COPY . .

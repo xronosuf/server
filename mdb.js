@@ -233,7 +233,39 @@ exports.initialize = function initialize(callback) {
 
   //mongoose.set('debug', true);
 
-  mongoose.connect(url, {}, function (err) {
+  /*
+   * Mongoose 5 supports callback-style connect(). Mongoose 6 returns a
+   * promise and is moving away from the legacy callback connection form.
+   *
+   * Use the returned promise when available while preserving callback
+   * initialization semantics for the rest of this legacy application.
+   */
+  var connectionResult;
+
+  try {
+    connectionResult = mongoose.connect(url);
+  } catch (err) {
     callback(err);
-  });
+    return;
+  }
+
+  if (
+    connectionResult &&
+    typeof connectionResult.then === "function"
+  ) {
+    connectionResult.then(
+      function () {
+        callback(null);
+      },
+      function (err) {
+        callback(err);
+      }
+    );
+  } else {
+    /*
+     * Defensive fallback for unexpectedly old/non-Promise implementations.
+     * Current Mongoose 5 and 6 both return thenables here.
+     */
+    callback(null);
+  }
 };

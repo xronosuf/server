@@ -11,6 +11,12 @@ exports = module.exports;
 var ObjectId = mongoose.Schema.ObjectId;
 var Mixed = mongoose.Schema.Types.Mixed;
 
+/*
+ * Mongoose 6 changes strictQuery to follow the schema's strict setting.
+ * Preserve the legacy Mongoose 5 query behavior during modernization.
+ */
+mongoose.set("strictQuery", false);
+
 var url = config.mongodb.uri || ("mongodb://" + config.mongodb.url + "/" + config.mongodb.database);
 
 exports.mongoose = mongoose;

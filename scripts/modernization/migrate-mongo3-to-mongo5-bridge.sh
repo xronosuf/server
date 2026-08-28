@@ -10,8 +10,8 @@ usage() {
     cat <<'USAGE'
 Usage: scripts/modernization/migrate-mongo3-to-mongo5-bridge.sh [--check|--migrate|--migrate-quiesced]
 
---check             Verify source/destination availability and show collection
-                    counts. Makes no database changes.
+--check             Verify source/destination availability and show exact
+                    collection document counts. Makes no database changes.
 --migrate           Stream BSON documents from the bundled MongoDB 3.x database
                     into an EMPTY external MongoDB 5 bridge database. Historical
                     collection options and indexes are NOT restored.
@@ -19,8 +19,9 @@ Usage: scripts/modernization/migrate-mongo3-to-mongo5-bridge.sh [--check|--migra
                     SIGSTOPs the running `node app.js` process, disables the
                     source MongoDB TTL monitor, DROPS the bridge destination
                     database, performs the document-only migration, verifies all
-                    collection counts, and then resumes Node and restores the TTL
-                    monitor. The source MongoDB itself remains running throughout.
+                    collection document counts using cursor scans, and then
+                    resumes Node and restores the TTL monitor. The source MongoDB
+                    itself remains running throughout.
 
 Neither migration mode switches Xronos to the external database. The quiesced
 mode intentionally replaces only the disposable bridge destination database.
@@ -48,10 +49,13 @@ if [[ "$(podman inspect "$MONGO_CONTAINER" --format '{{.State.Running}}')" != "t
     exit 1
 fi
 
+# MongoDB 3.2 collection.count() may use collection metadata and can disagree
+# with the documents a cursor actually sees. mongodump scans documents, so all
+# migration verification uses find({}).itcount() as the exact comparator.
 source_counts() {
     podman exec "$APP_CONTAINER" mongo "$SOURCE_DB" --quiet --eval '
         db.getCollectionNames().sort().forEach(function(name) {
-            print(name + "\t" + db.getCollection(name).count());
+            print(name + "\t" + db.getCollection(name).find({}).itcount());
         });
     '
 }
@@ -59,7 +63,7 @@ source_counts() {
 destination_counts() {
     podman exec "$MONGO_CONTAINER" mongo "$DEST_DB" --quiet --eval '
         db.getCollectionNames().sort().forEach(function(name) {
-            print(name + "\t" + db.getCollection(name).count());
+            print(name + "\t" + db.getCollection(name).find({}).itcount());
         });
     '
 }
@@ -68,7 +72,7 @@ destination_object_count() {
     podman exec "$MONGO_CONTAINER" mongo "$DEST_DB" --quiet --eval '
         var total = 0;
         db.getCollectionNames().forEach(function(name) {
-            total += db.getCollection(name).count();
+            total += db.getCollection(name).find({}).itcount();
         });
         print(total);
     ' | tail -n 1 | tr -d "[:space:]"
@@ -88,11 +92,11 @@ echo "Destination MongoDB:"
 echo "$dest_version"
 
 echo
-echo "Source collection counts:"
+echo "Source exact collection counts:"
 source_counts
 
 echo
-echo "Destination collection counts:"
+echo "Destination exact collection counts:"
 destination_counts
 
 if [[ "$mode" == "--check" ]]; then
@@ -209,37 +213,37 @@ podman exec "$APP_CONTAINER" \
         --noOptionsRestore
 
 echo
-echo "Re-reading counts after migration..."
+echo "Re-reading exact counts after migration..."
 source_counts > "$source_after"
 destination_counts > "$dest_after"
 
 echo
-echo "Source counts captured before dump:"
+echo "Source exact counts captured before dump:"
 cat "$source_before"
 
 echo
-echo "Source counts after restore completed:"
+echo "Source exact counts after restore completed:"
 cat "$source_after"
 
 echo
-echo "Destination counts after restore:"
+echo "Destination exact counts after restore:"
 cat "$dest_after"
 
 if ! cmp -s "$source_before" "$source_after"; then
     echo >&2
-    echo "ERROR: source collection counts changed during migration." >&2
+    echo "ERROR: source exact collection counts changed during migration." >&2
     echo "The destination must not be used for cutover." >&2
     exit 1
 fi
 
 if ! cmp -s "$source_before" "$dest_after"; then
     echo >&2
-    echo "ERROR: destination collection counts do not match the source snapshot." >&2
+    echo "ERROR: destination exact collection counts do not match the source snapshot." >&2
     echo "Do not use the destination for cutover." >&2
     exit 1
 fi
 
 echo
 echo "MONGO DATA MIGRATION VERIFIED"
-echo "All collection counts match the quiesced source snapshot."
+echo "All exact collection counts match the quiesced source snapshot."
 echo "Xronos has NOT yet been switched to the external database."

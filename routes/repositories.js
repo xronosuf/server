@@ -4,7 +4,6 @@
  * output (and invalidate that cache whenever we receive a push). 
  */
 
-var async = require('async');
 var nodegit = require('nodegit');
 var path = require('path');
 var fse = require("fs-extra");
@@ -327,151 +326,289 @@ exports.cachedActivitiesFromRecentCommits = function(repositoryName, branchName,
 
 // We should be caching this somewhere, and then invalidating the
 // cache whenever we push something to the given repo.
-exports.activitiesFromRecentCommits = function(repositoryName, branchName, pathname) {
-    return openRepository( repositoryName )
-	.then( function(repository) {
-	    return recentCommitsOnBranch( repository, branchName );
-	})
-	.then( function(commits) {
-	    // console.log('COMMITS');
-	    // console.log(commits);
-	    var parts = pathname.split('/');
-    
-	    var possiblePaths = [];
+function possibleActivityPaths(pathname) {
+    var parts = pathname.split('/');
+    var possiblePaths = [];
 
-	    for (var i = 0; i <= parts.length; i++) {
-		var partialPath = parts.slice(0,i).join('/');
-		var remainder = parts.slice(i).join('/');
-		
-		debug('Path '+partialPath+ " || "+remainder+'(.html)');
-		possiblePaths.push( {path: partialPath + '.html', remainder: remainder} );
-		possiblePaths.push( {path: partialPath + '.html', remainder: remainder + '.html'} );
-	    }
-	    
-	    var activities = commits;
+    for (var i = 0; i <= parts.length; i++) {
+        var partialPath =
+            parts.slice(0, i).join('/');
+        var remainder =
+            parts.slice(i).join('/');
 
-	    return new Promise( function(resolve, reject) {
-		async.map(
-		    activities,
-		    function(activity, callback) {
-			activity.commit.getTree().then(function(tree) {
-			    activity.tree = tree;
+        debug(
+            'Path ' +
+            partialPath +
+            " || " +
+            remainder +
+            '(.html)'
+        );
 
-			    async.detectSeries(possiblePaths, function(item, callback) {
-				return tree.getEntry(item.remainder).then(function(treeEntry) {
-				    // BADBAD: assuming it is a blob and not a tree!
-				    // a directory of activities would be a tree!
-				    if (treeEntry.isBlob()) {
-					activity.activityHash = treeEntry.sha();
-					activity.hash = treeEntry.sha();
-					activity.path = treeEntry.path();
+        possiblePaths.push({
+            path: partialPath + '.html',
+            remainder: remainder
+        });
 
-					return exports.downloadsFromActivity(repositoryName, activity.path, tree)
-					.then(downloads => activity.downloads = downloads)
-					.then(() => {
-						return tree.getEntry(item.path).then(function(treeEntry) {
-							activity.xourse = {path: treeEntry.path()};
-							if (treeEntry.isBlob()) {
-								debug('Found xourse '+treeEntry.path());
-								activity.xourse.hash = treeEntry.sha();
+        possiblePaths.push({
+            path: partialPath + '.html',
+            remainder: remainder + '.html'
+        });
+    }
 
-								return exports.downloadsFromActivity(repositoryName, treeEntry.path(), tree)
-								.then(downloads => { 
-									activity.downloads_xourse = downloads
-									return activity.tree.getEntry("metadata.json")
-										.then(function(treeEntry) {
-											if (treeEntry.isBlob()) {
-												activity.metadataHash = treeEntry.sha();
-											}
-									
-											callback(null,true);
-										}).catch(function(err) {
-											// Even without metadata, we're okay.
-											console.log("No metadata.json for "+activity.path)
-											callback(null,true);
-										});
-								});
-							} else {
-							callback(null,false);
-							}
-						})
-					}).catch(function (err) {
-						callback(null, false);
-					})
-				    } else {
-					callback(null,false);					
-				    }
-				}).catch( function(err) {
-				    callback(null,false);
-				});
-			    }, function(err, result) {
-				callback(err, activity);
-			    });
-			}).catch( function(err) {
-			    callback(err, null);		
-			});
-		    }, function(err, results) {
-			//console.log('RESULTS:');
-			//console.log(results);
-			resolve(results);
-		    });
-	    });
-	});
+    return possiblePaths;
+}
+
+async function activityFromPublishedCommit(
+    repositoryName,
+    repositoryPath,
+    publication,
+    pathname
+) {
+    var activity = {
+        sha: publication.sha,
+        sourceSha: publication.sourceSha
+    };
+
+    var possiblePaths =
+        possibleActivityPaths(pathname);
+
+    for (
+        var i = 0;
+        i < possiblePaths.length;
+        i++
+    ) {
+        var item = possiblePaths[i];
+        var treeEntry;
+
+        try {
+            treeEntry = await gitCli.treeEntry(
+                repositoryPath,
+                publication.sha,
+                item.remainder
+            );
+        } catch (err) {
+            continue;
+        }
+
+        if (
+            !treeEntry ||
+            treeEntry.type !== 'blob'
+        ) {
+            continue;
+        }
+
+        activity.activityHash = treeEntry.sha;
+        activity.hash = treeEntry.sha;
+        activity.path = treeEntry.path;
+
+        activity.downloads =
+            await exports.downloadsFromActivity(
+                repositoryName,
+                activity.path,
+                repositoryPath,
+                publication.sha
+            );
+
+        var xourseEntry;
+
+        try {
+            xourseEntry = await gitCli.treeEntry(
+                repositoryPath,
+                publication.sha,
+                item.path
+            );
+        } catch (err) {
+            continue;
+        }
+
+        if (
+            !xourseEntry ||
+            xourseEntry.type !== 'blob'
+        ) {
+            continue;
+        }
+
+        debug(
+            'Found xourse ' +
+            xourseEntry.path
+        );
+
+        activity.xourse = {
+            path: xourseEntry.path,
+            hash: xourseEntry.sha
+        };
+
+        activity.downloads_xourse =
+            await exports.downloadsFromActivity(
+                repositoryName,
+                xourseEntry.path,
+                repositoryPath,
+                publication.sha
+            );
+
+        try {
+            var metadataEntry =
+                await gitCli.treeEntry(
+                    repositoryPath,
+                    publication.sha,
+                    "metadata.json"
+                );
+
+            if (
+                metadataEntry &&
+                metadataEntry.type === 'blob'
+            ) {
+                activity.metadataHash =
+                    metadataEntry.sha;
+            }
+        } catch (err) {
+            console.log(
+                "No metadata.json for " +
+                activity.path
+            );
+        }
+
+        break;
+    }
+
+    return activity;
+}
+
+exports.activitiesFromRecentCommits = function(
+    repositoryName,
+    branchName,
+    pathname
+) {
+    return gitCli.verifyRepository(
+        gitRepositoriesRoot,
+        repositoryName
+    )
+        .then(function(repositoryPath) {
+            return gitCli.recentPublishedCommits(
+                repositoryPath,
+                branchName,
+                100
+            ).then(function(publications) {
+                return Promise.all(
+                    publications.map(
+                        function(publication) {
+                            return activityFromPublishedCommit(
+                                repositoryName,
+                                repositoryPath,
+                                publication,
+                                pathname
+                            );
+                        }
+                    )
+                );
+            });
+        });
 };
 
-exports.downloadsFromActivity = function (repository, path, tree) {
-	const activityFilePathWithoutExtension = path.split('.').slice(0, -1).join('.')
-	debug('DOWNLOADS '+path);
-	return new Promise((resolve, reject) => {
-		try{
-			var treeEntry = tree.entryByName('ximera-downloads');
-			if(treeEntry.isTree()){
-				return treeEntry.getTree().then(function (tree) {
-					var walker = tree.walk();
-					walker.on('end', function (trees) {
-						//debug("WALK "+activityFilePathWithoutExtension)
-						const entries = trees.map(t => t.path())
-							.map(p => ({ p, m: p.match(`ximera-downloads/(([^/]*)/${activityFilePathWithoutExtension}\\..*)$`) }))
-							.filter(({m}) => m)
-							.map(({p, m}) => {
-								const label = m[2]
-								return { label, url: config.toValidPath('/' + repository + '/' + p) }
-							})
-						//debug("FOUND", entries);
-						resolve(entries)
-					});
-					// Don't forget to call `start()`!
-					walker.start();
-				});			
-			}
-			resolve([])
-		} catch(e){
-			// Happens when 'ximera-downloads' folder doesn't exist
-			console.log("No ximera-downloads folder for "+path)
-			resolve([])
-		}
-	})
+exports.downloadsFromActivity = function(
+    repositoryName,
+    activityPath,
+    repositoryPath,
+    commitSha
+) {
+    const activityFilePathWithoutExtension =
+        activityPath
+            .split('.')
+            .slice(0, -1)
+            .join('.');
+
+    debug('DOWNLOADS ' + activityPath);
+
+    return gitCli.recursiveTreeEntries(
+        repositoryPath,
+        commitSha,
+        'ximera-downloads'
+    )
+        .then(function(entries) {
+            return entries
+                .map(function(entry) {
+                    return entry.path;
+                })
+                .map(function(p) {
+                    return {
+                        p: p,
+                        m: p.match(
+                            new RegExp(
+                                'ximera-downloads/(([^/]*)/' +
+                                activityFilePathWithoutExtension +
+                                '\\..*)$'
+                            )
+                        )
+                    };
+                })
+                .filter(function(item) {
+                    return item.m;
+                })
+                .map(function(item) {
+                    var label = item.m[2];
+
+                    return {
+                        label: label,
+                        url: config.toValidPath(
+                            '/' +
+                            repositoryName +
+                            '/' +
+                            item.p
+                        )
+                    };
+                });
+        })
+        .catch(function() {
+            console.log(
+                "No ximera-downloads folder for " +
+                activityPath
+            );
+
+            return [];
+        });
 };
 
-exports.mostRecentMetadataOnBranch = function( repositoryName, branchName ) {
-    return new Promise( function(resolve, reject) {
-	openRepository( repositoryName )
-	    .then( function(repository) {
-		return recentCommitsOnBranch( repository, branchName );
-	    })
-	    .then( function(commits) {
-		return commits[0].commit.getTree();
-	    })
-	    .then( function(tree) {
-		return tree.getEntry("metadata.json");
-	    }).then( function(entry) {
-		return entry.getBlob();
-	    }).then( function(blob) {
-		resolve(blob.content());
-	    }).catch( function(err) {
-		reject(err);
-	    });
-    });
+exports.mostRecentMetadataOnBranch = function(
+    repositoryName,
+    branchName
+) {
+    return gitCli.verifyRepository(
+        gitRepositoriesRoot,
+        repositoryName
+    )
+        .then(function(repositoryPath) {
+            return gitCli.recentPublishedCommits(
+                repositoryPath,
+                branchName,
+                100
+            ).then(function(commits) {
+                if (!commits.length) {
+                    throw new Error(
+                        "No published commits found."
+                    );
+                }
+
+                return gitCli.treeEntry(
+                    repositoryPath,
+                    commits[0].sha,
+                    "metadata.json"
+                ).then(function(entry) {
+                    if (
+                        !entry ||
+                        entry.type !== 'blob'
+                    ) {
+                        throw new Error(
+                            "metadata.json not found."
+                        );
+                    }
+
+                    return gitCli.readBlob(
+                        repositoryPath,
+                        entry.sha
+                    );
+                });
+            });
+        });
 };
 
 exports.getRepositories = function() {

@@ -103,7 +103,7 @@ exports.putSecret = function(req, res, next){
     hash.apiKey = uuid.v4();
     hash.apiSecret = crypto.createHash('sha256').update(uuid.v4()).update(crypto.randomBytes(256)).digest('hex');
     
-    mdb.User.update( {_id: new mdb.ObjectId(id)}, {$set: hash},
+    mdb.User.updateOne( {_id: new mdb.ObjectId(id)}, {$set: hash},
 		     function(err, d) {
 			 
 			 if (err)
@@ -165,16 +165,26 @@ exports.deleteLinkedAccount = function(req, res, next, account){
     });
     
     // Only look for a user who has OTHER accounts available
-    mdb.User.update({ _id: new mdb.ObjectId(id),
+    mdb.User.updateOne({ _id: new mdb.ObjectId(id),
 			  $or: otherAccounts
 			},
 			{ $unset: accountHash },
 			{},
-			function(err,result,status) {
+			function(err,result) {
 			    if (err)
 				next(err);
 			    else {
-				if (result.n <= 0) {
+				/*
+				 * Mongoose 5 exposes the matched count as result.n.
+				 * Mongoose 6+ exposes matchedCount. Preserve the
+				 * existing route semantics across both runtimes.
+				 */
+				var matchedCount =
+				    result.matchedCount !== undefined ?
+					result.matchedCount :
+					result.n;
+
+				if (matchedCount <= 0) {
 				    res.status(404);
 				    next(new Error("No other account available; you cannot delete the only linked account."));
 				} else {
@@ -267,7 +277,7 @@ exports.get = function(req, res, next){
 		    return;			
 		} else {
 		    // Add one view to the count of profileViews
-		    mdb.User.update({_id: new mdb.ObjectId(id)},
+		    mdb.User.updateOne({_id: new mdb.ObjectId(id)},
 				    { $inc: { profileViews: 1 } });
 
 		
@@ -476,7 +486,7 @@ exports.update = function(req, res, next){
 				document.superuser = hash.superuser = false;		    		    
 			}
 			
-			mdb.User.update( {_id: new mdb.ObjectId(id)}, {$set: hash},
+			mdb.User.updateOne( {_id: new mdb.ObjectId(id)}, {$set: hash},
 					 function(err, d) {
 					     
 					     if (err)

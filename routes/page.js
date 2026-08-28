@@ -405,7 +405,7 @@ exports.chooseMostRecentBlob = function(req, res, next) {
 		if (req.learner)
 		    userId = req.learner._id;
 		
-		mdb.State.update({activityHash: activity.activityHash, user: userId},
+		mdb.State.updateOne({activityHash: activity.activityHash, user: userId},
 				 {$setOnInsert: {data: {}}}, {upsert: true},
 				 function (err, affected, raw) {
 				     callback( err, activity );				     

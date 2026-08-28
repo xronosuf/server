@@ -67,18 +67,43 @@ Existing test data is copied only by the separate explicit migration script:
 ```bash
 bash scripts/modernization/migrate-mongo3-to-mongo5-bridge.sh --check
 bash scripts/modernization/migrate-mongo3-to-mongo5-bridge.sh --migrate
+bash scripts/modernization/migrate-mongo3-to-mongo5-bridge.sh --migrate-quiesced
 ```
 
 The migration script:
 
-- refuses to migrate unless the destination database is empty;
+- refuses a normal migration unless the destination database is empty;
+- has a quiesced mode that temporarily pauses `node app.js` and disables the source TTL monitor while making an exact snapshot;
 - streams BSON from the bundled MongoDB directly into the bridge rather than writing an unprotected database dump into the repository;
 - restores documents only (`--noIndexRestore` and `--noOptionsRestore`) so legacy MongoDB 3.2 index metadata is not imported into MongoDB 5;
-- compares every collection count before and after the copy;
-- fails if the source collection counts change while the copy is running;
-- does not restart Xronos or switch the application to the bridge database.
+- verifies exact document counts with `find({}).itcount()` rather than relying on MongoDB 3.2's stale collection count metadata;
+- restores the TTL monitor and resumes Node automatically after the quiesced copy.
 
-A failed count comparison means the bridge contains only a test copy and must not be used for cutover. The final cutover requires an exact copy made while writes are controlled.
+Application indexes are rebuilt natively on MongoDB 5 with:
+
+```bash
+bash scripts/modernization/build-mongo5-indexes.sh --build
+```
+
+This recreates the current Mongoose schema indexes and the `connect-mongo` session TTL index. The destination indexes on the test host were verified as MongoDB index version 2 rather than imported MongoDB 3.2 version-1 metadata.
+
+### Test-server cutover completed 2026-08-28
+
+`ls-xronos03` / `devximserver` was successfully cut over to the external MongoDB bridge after a final quiesced copy and native index rebuild.
+
+Verified post-cutover state:
+
+- `XIMERA_START_MONGODB=0` is stored in `repositories/.env`;
+- `XIMERA_MONGO_URI='mongodb://xronos-mongo5-bridge:27017/ximera'` is stored in `repositories/.env`;
+- bundled `mongod` does not run inside `devximserver`;
+- Redis remains bundled and unchanged;
+- the running Node 12 / Mongoose 5 application connects to MongoDB 5.0.31;
+- the external database received new live `users` / `sessions` activity after cutover;
+- the service returned HTTP 200 after restart;
+- the original MongoDB 3.2 data remains on the application-container storage as a rollback source;
+- `configure-external-mongo.sh` recorded a protected `.env` backup for configuration rollback.
+
+The first cutover restart required Podman to SIGKILL the old container after SIGTERM did not stop it within ten seconds. The legacy `start.sh` ended in an `npm run start | tee` pipeline, preventing Node from receiving the container stop signal directly. `start.sh` has therefore been changed so `node app.js` becomes PID 1 while output is still mirrored to the per-start logfile.
 
 ## Baseline test-container inventory (2026-08-28)
 
@@ -102,9 +127,8 @@ Node.js 24 LTS is the provisional target. Node.js 22 remains acceptable if repos
 
 ## Deliberately deferred work
 
-The following changes are intentionally deferred until the external-service boundary and copied data are validated:
+The following changes are intentionally deferred until the external MongoDB cutover and shutdown behavior are validated:
 
-- switching the running Xronos application to the bridge Mongo database;
 - final supported MongoDB server version selection;
 - Mongoose / MongoDB Node driver / connect-mongo upgrade;
 - Node.js base-image replacement;

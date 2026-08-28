@@ -166,7 +166,7 @@ function recordStatementLocally(repository, statement, callback) {
         // log in ANY order
         fs.write(fd, block, 0, block.length, callback);
       }
-    ]
+    }
   );
 }
 

@@ -58,7 +58,27 @@ The provisioning script is idempotent: it reuses the expected network, volume, a
 
 `test-mongo5-bridge.sh` waits for the bridge Mongo server, checks container-to-container networking, initializes the real Xronos `mdb.js` against a disposable `ximera_connectivity_test` database, removes that disposable database, and finally verifies representative counts from the still-running original internal MongoDB.
 
-The data migration will remain a separate explicit operational step. It must not run automatically merely because the repository is pulled or the application container starts.
+The compatibility test on `ls-xronos03` succeeded with Node 12.22.12, Mongoose 5.13.14, and MongoDB 5.0.31.
+
+### Guarded bridge data migration
+
+Existing test data is copied only by the separate explicit migration script:
+
+```bash
+bash scripts/modernization/migrate-mongo3-to-mongo5-bridge.sh --check
+bash scripts/modernization/migrate-mongo3-to-mongo5-bridge.sh --migrate
+```
+
+The migration script:
+
+- refuses to migrate unless the destination database is empty;
+- streams BSON from the bundled MongoDB directly into the bridge rather than writing an unprotected database dump into the repository;
+- restores documents only (`--noIndexRestore` and `--noOptionsRestore`) so legacy MongoDB 3.2 index metadata is not imported into MongoDB 5;
+- compares every collection count before and after the copy;
+- fails if the source collection counts change while the copy is running;
+- does not restart Xronos or switch the application to the bridge database.
+
+A failed count comparison means the bridge contains only a test copy and must not be used for cutover. The final cutover requires an exact copy made while writes are controlled.
 
 ## Baseline test-container inventory (2026-08-28)
 
@@ -82,9 +102,9 @@ Node.js 24 LTS is the provisional target. Node.js 22 remains acceptable if repos
 
 ## Deliberately deferred work
 
-The following changes are intentionally deferred until the external-service boundary is tested:
+The following changes are intentionally deferred until the external-service boundary and copied data are validated:
 
-- migration of the existing Xronos data into the bridge Mongo container;
+- switching the running Xronos application to the bridge Mongo database;
 - final supported MongoDB server version selection;
 - Mongoose / MongoDB Node driver / connect-mongo upgrade;
 - Node.js base-image replacement;

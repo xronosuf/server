@@ -218,46 +218,6 @@ exports.create = function(repositoryName, givenKeyid) {
 };
 
 
-async function recentCommitsOnBranch(repository, branchName) {
-    const MAX_COMMITS = 100;
-
-    try {
-        const published =
-            await gitCli.recentPublishedCommits(
-                repository.path(),
-                branchName,
-                MAX_COMMITS
-            );
-
-        return Promise.all(
-            published.map(async function(entry) {
-                const targetCommit =
-                    await repository.getCommit(
-                        entry.sha
-                    );
-
-                const sourceCommit =
-                    await repository.getCommit(
-                        entry.sourceSha
-                    );
-
-                return {
-                    commit: targetCommit,
-                    sha: targetCommit.sha(),
-                    sourceCommit: sourceCommit,
-                    sourceSha: sourceCommit.sha(),
-                };
-            })
-        );
-    } catch (err) {
-        throw new Error(
-            "Failed to retrieve recent commits: " +
-            err.message
-        );
-    }
-}
-
-
 // We never need to invalidate blobs, because blobs are keyed by a
 // hash of their content
 exports.readBlob = function(repositoryName, blobHash) {
@@ -611,47 +571,161 @@ exports.mostRecentMetadataOnBranch = function(
         });
 };
 
+function publishedCommitMetadata(
+    repositoryPath,
+    commitSha
+) {
+    return gitCli.runGitText(
+        repositoryPath,
+        [
+            'show',
+            '-s',
+            '--format=%cn <%ce> %ct %cd',
+            '--date=format:%z',
+            commitSha
+        ]
+    ).then(function(lastCommitInfo) {
+        return gitCli.runGitText(
+            repositoryPath,
+            [
+                'show',
+                '-s',
+                '--format=%ct',
+                commitSha
+            ]
+        ).then(function(epoch) {
+            return {
+                lastCommitInfo: lastCommitInfo,
+                lastCommitDate:
+                    new Date(
+                        Number(epoch) * 1000
+                    )
+            };
+        });
+    });
+}
+
+function repositoryListEntry(repository) {
+    var repositoryPath =
+        gitCli.repositoryPath(
+            gitRepositoriesRoot,
+            repository.name
+        );
+
+    return gitCli.verifyRepository(
+        gitRepositoriesRoot,
+        repository.name
+    )
+        .then(function() {
+            return gitCli.recentPublishedCommits(
+                repositoryPath,
+                'master',
+                100
+            );
+        })
+        .then(function(commits) {
+            if (!commits.length) {
+                return {
+                    name: repository.name,
+                    deleteable:
+                        repository.deleteable,
+                    lastCommitInfo: '',
+                    lastCommitDate: ''
+                };
+            }
+
+            return publishedCommitMetadata(
+                repositoryPath,
+                commits[0].sha
+            ).then(function(metadata) {
+                return {
+                    name: repository.name,
+                    deleteable:
+                        repository.deleteable,
+                    lastCommitInfo:
+                        metadata.lastCommitInfo,
+                    lastCommitDate:
+                        metadata.lastCommitDate
+                };
+            });
+        })
+        .catch(function(err) {
+            console.error(err);
+
+            return {
+                name: repository.name,
+                deleteable:
+                    repository.deleteable,
+                lastCommitInfo: '',
+                lastCommitDate: ''
+            };
+        });
+}
+
 exports.getRepositories = function() {
-	var repositoriesPath = path.resolve(gitRepositoriesRoot);
-	return Promise.all(fs.readdirSync(repositoriesPath, { withFileTypes: true })
-			.filter(f => f.isDirectory())
-			.map(f => f.name.match(new RegExp('(.*)\\.git')))
-			.filter(m => m)
-			.map(m => { return { name: m[1], deleteable: m[1].indexOf('*') > -1 } })
-			.map(r => new Promise(function (resolve, reject) {
-				openRepository(r.name)
-					.then(function (repository) {
-						return recentCommitsOnBranch(repository, 'master')
-					})
-					.then(function (commits) {
-						resolve({
-							...r,
-							lastCommitInfo: (commits.length > 0) ? commits[0].commit.committer().toString(true) : '',
-							lastCommitDate: (commits.length > 0) ? commits[0].commit.date() : ''
-						})
-					}).catch(function (err) {
-						console.error(err)
-						resolve({
-							...r,
-							lastCommitInfo: '',
-							lastCommitDate: ''
-						})
-					});
-				})
-			)).then(repos => {
-				const sorted = [...repos].sort((r1, r2) => {
-					if (r1.lastCommitDate !== '' && r2.lastCommitDate !== '')
-						return -r1.lastCommitDate.toISOString().localeCompare(r2.lastCommitDate.toISOString())
-					else if (r1.lastCommitDate === '' && r2.lastCommitDate === ''){
-						return r1.name.localeCompare(r2.name)
-					} else if (r1.lastCommitDate === ''){
-						return -1
-					} else if (r2.lastCommitDate === '') {
-						return 1
-					}
-				})
-				return sorted
-			})
+    var repositoriesPath =
+        path.resolve(gitRepositoriesRoot);
+
+    var repositories =
+        fs.readdirSync(
+            repositoriesPath,
+            { withFileTypes: true }
+        )
+            .filter(function(entry) {
+                return entry.isDirectory();
+            })
+            .map(function(entry) {
+                return entry.name.match(
+                    new RegExp('(.*)\\.git')
+                );
+            })
+            .filter(function(match) {
+                return match;
+            })
+            .map(function(match) {
+                return {
+                    name: match[1],
+                    deleteable:
+                        match[1].indexOf('*') > -1
+                };
+            });
+
+    return Promise.all(
+        repositories.map(repositoryListEntry)
+    ).then(function(repos) {
+        return repos.sort(function(r1, r2) {
+            if (
+                r1.lastCommitDate !== '' &&
+                r2.lastCommitDate !== ''
+            ) {
+                return -r1.lastCommitDate
+                    .toISOString()
+                    .localeCompare(
+                        r2.lastCommitDate
+                            .toISOString()
+                    );
+            }
+
+            if (
+                r1.lastCommitDate === '' &&
+                r2.lastCommitDate === ''
+            ) {
+                return r1.name.localeCompare(
+                    r2.name
+                );
+            }
+
+            if (r1.lastCommitDate === '') {
+                return -1;
+            }
+
+            if (r2.lastCommitDate === '') {
+                return 1;
+            }
+
+            return 0;
+        });
+    });
 }
 
 exports.remove = function (repo) {

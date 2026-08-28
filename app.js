@@ -103,6 +103,27 @@ mdb.initialize(function (err) {
     function createMongoSessionStore() {
         var connectMongo = require('connect-mongo');
 
+        var ModernMongoStore =
+            connectMongo &&
+            connectMongo.MongoStore;
+
+        if (
+            ModernMongoStore &&
+            typeof ModernMongoStore.create === 'function'
+        ) {
+            console.log(
+                'Using modern connect-mongo session store.'
+            );
+
+            return ModernMongoStore.create({
+                mongoUrl: mdb.url
+            });
+        }
+
+        /*
+         * Some intermediate connect-mongo releases expose create()
+         * directly. Keep support for that shape during modernization.
+         */
         if (
             connectMongo &&
             typeof connectMongo.create === 'function'

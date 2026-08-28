@@ -9,9 +9,9 @@ var initialStateProtocol = require('../public/javascripts/initial-state-protocol
 const Redis = require("ioredis");
 
 var CANON = require('canon');
-var XXHash = require('xxhash');
+var XXH = require('xxhashjs');
 function checksumObject(object) {
-    return XXHash.hash( Buffer.from(CANON.stringify( object )), 0x1337 ).toString(16);
+    return XXH.h32( CANON.stringify( object ), 0x1337 ).toString(16);
 }
 
 exports.wss = undefined;
@@ -437,4 +437,3 @@ exports.connection = function( socket ) {
 	}
     });
 };
-

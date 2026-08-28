@@ -229,7 +229,7 @@ exports.deleteBridge = function(req, res, next){
 		return;
 	    }
 
-	    bridge.remove( function(err) {
+	    bridge.deleteOne( function(err) {
 		if (err)
 		    next(err);
 		else
@@ -526,7 +526,7 @@ exports.index = function(req, res, next) {
     async.waterfall(
 	[
 	    function(callback) {
-		mdb.User.count( callback );
+		mdb.User.countDocuments( callback );
 	    },
 	    function(userCount, callback) {
 		pageCount = Math.ceil( userCount / pageSize );

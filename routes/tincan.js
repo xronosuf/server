@@ -64,6 +64,30 @@ function logFile(name, callback) {
   }
 }
 
+function compressSnappy(input, callback) {
+  var result;
+
+  try {
+    // snappy 6.x uses a callback API. snappy 7.x accepts the same input but
+    // returns a Promise; JavaScript safely ignores the extra callback argument.
+    result = snappy.compress(input, callback);
+  } catch (err) {
+    callback(err);
+    return;
+  }
+
+  if (result && typeof result.then === "function") {
+    result.then(
+      function (buffer) {
+        callback(null, buffer);
+      },
+      function (err) {
+        callback(err);
+      }
+    );
+  }
+}
+
 function recordStatement(repository, statement, callback) {
   var xapi_url = process.env.XAPI_URL;
   var xapi_username = process.env.XAPI_USERNAME;
@@ -108,7 +132,7 @@ function recordStatementLocally(repository, statement, callback) {
   async.parallel(
     [
       function (callback) {
-        snappy.compress(stringified, callback);
+        compressSnappy(stringified, callback);
       },
       function (callback) {
         logFile(repository, callback);
@@ -142,7 +166,7 @@ function recordStatementLocally(repository, statement, callback) {
         // log in ANY order
         fs.write(fd, block, 0, block.length, callback);
       }
-    }
+    ]
   );
 }
 

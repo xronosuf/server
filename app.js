@@ -90,9 +90,44 @@ app.set('trust proxy',1)
 // Common mongodb initializer for the app server and the activity service
 mdb.initialize(function (err) {
     
-    // Store session data in the mongo database; this is needed if we're
-    // going to have multiple web servers sharing a single db
-    var MongoStore = require('connect-mongo')(session);
+    // Store session data in MongoDB so multiple web servers can share
+    // authenticated sessions.
+    //
+    // connect-mongo <= 0.x is a factory that takes express-session and
+    // accepts an existing Mongoose connection. Modern connect-mongo exposes
+    // MongoStore.create() and no longer accepts mongooseConnection.
+    //
+    // Keep both forms temporarily so the legacy Node 12 comparison container
+    // can run against its existing node_modules while Node 24 moves to the
+    // maintained session-store package.
+    function createMongoSessionStore() {
+        var connectMongo = require('connect-mongo');
+
+        if (
+            connectMongo &&
+            typeof connectMongo.create === 'function'
+        ) {
+            console.log(
+                'Using modern connect-mongo session store.'
+            );
+
+            return connectMongo.create({
+                mongoUrl: mdb.url
+            });
+        }
+
+        console.log(
+            'Using legacy connect-mongo session store.'
+        );
+
+        var LegacyMongoStore =
+            connectMongo(session);
+
+        return new LegacyMongoStore({
+            mongooseConnection:
+                mdb.mongoose.connection
+        });
+    }
 
     var second            = 1000;
     var minute            = 60 * second;
@@ -104,7 +139,7 @@ mdb.initialize(function (err) {
 	secret: config.session.secret,
 	resave: false,
 	saveUninitialized: false,
-	store: new MongoStore({ mongooseConnection: mdb.mongoose.connection }),
+	store: createMongoSessionStore(),
 	cookie: { maxAge: year,
               secure: true,
               sameSite: 'none' }

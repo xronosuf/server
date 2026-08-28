@@ -14,6 +14,7 @@ var page = require('./page');
 var backend = require('git-http-backend');
 var spawn = require('child_process').spawn;
 var debug = require('debug')('repositories')
+var gitCli = require('../scripts/modernization/git-cli-read');
 
 var config = require('../config');
 var gitRepositoriesRoot = config.repositories.root;
@@ -259,25 +260,34 @@ async function recentCommitsOnBranch(repository, branchName) {
 // We never need to invalidate blobs, because blobs are keyed by a
 // hash of their content
 exports.readBlob = function(repositoryName, blobHash) {
-    return new Promise( function(resolve, reject) {
-	cachify.string( "blob:" + blobHash,
-			function(callback) {
-			    openRepository( repositoryName )
-				.then( function(repository) {
-				    return nodegit.Blob.lookup(repository, blobHash);
-				})
-				.then( function(blob) {
-				    callback(null, blob.content());
-				})
-				.catch( function(err) {
-				    callback(err);
-				});
-			}, function(err, blob) {
-			    if (err)
-				reject(err);
-			    else
-				resolve(blob);
-			});
+    return new Promise(function(resolve, reject) {
+        cachify.string(
+            "blob:" + blobHash,
+            function(callback) {
+                gitCli.verifyRepository(
+                    gitRepositoriesRoot,
+                    repositoryName
+                )
+                    .then(function(repository) {
+                        return gitCli.readBlob(
+                            repository,
+                            blobHash
+                        );
+                    })
+                    .then(function(blob) {
+                        callback(null, blob);
+                    })
+                    .catch(function(err) {
+                        callback(err);
+                    });
+            },
+            function(err, blob) {
+                if (err)
+                    reject(err);
+                else
+                    resolve(blob);
+            }
+        );
     });
 };
 

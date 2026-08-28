@@ -45,7 +45,7 @@ printjson(db.adminCommand({ping:1}));
 '
 
 echo
-podman exec \
+podman exec -i \
     -e MONGO_BRIDGE_HOST="$MONGO_CONTAINER" \
     "$APP_CONTAINER" \
     node - <<'NODECHECK'
@@ -69,7 +69,7 @@ socket.on('error', function(err) {
 NODECHECK
 
 echo
-podman exec \
+podman exec -i \
     -e XIMERA_MONGO_URI="$TEST_URI" \
     "$APP_CONTAINER" \
     node - <<'NODETEST'

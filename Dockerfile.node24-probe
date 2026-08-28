@@ -1,0 +1,29 @@
+FROM docker.io/library/node:24-bookworm
+
+WORKDIR /usr/var/server
+
+# This image is intentionally a dependency-compatibility probe, not a runtime
+# replacement yet. Install only conventional native-addon build prerequisites;
+# any additional requirements revealed by npm are useful audit findings.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+      build-essential \
+      ca-certificates \
+      cmake \
+      git \
+      pkg-config \
+      python3 \
+ && rm -rf /var/lib/apt/lists/*
+
+COPY package.json package-lock.json ./
+
+RUN echo "Node: $(node --version)" \
+ && echo "npm:  $(npm --version)" \
+ && npm install --no-audit --no-fund
+
+COPY . .
+
+# Do not start Xronos from this probe image. A successful build only proves the
+# current dependency graph can be installed under Node 24; later checkpoints
+# will run tests and the application against the external services.
+CMD ["node", "--version"]

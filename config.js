@@ -98,9 +98,15 @@ config.repositories.root = process.env.GIT_REPOSITORIES_ROOT || (path.join(__dir
 
 /**
  * Database Configuration
+ *
+ * XIMERA_MONGO_URI is the preferred form for external/containerized MongoDB
+ * because it can express hostname, port, authentication, replica set, and
+ * other connection options in one value.  The legacy host/database variables
+ * remain supported so existing deployments continue to behave identically.
  */
 
 config.mongodb          = {};
+config.mongodb.uri      = process.env.XIMERA_MONGO_URI || '';
 config.mongodb.url      = process.env.XIMERA_MONGO_URL || '127.0.0.1';
 config.mongodb.database = process.env.XIMERA_MONGO_DATABASE || 'ximera';
 

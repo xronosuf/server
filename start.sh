@@ -85,5 +85,10 @@ fi
 : ${PORT:=2000}
 export PORT
 
-echo "Starting npm"
-npm run start 2>&1 | tee "$LOGFILE"
+# Keep the historical per-start logfile without leaving a shell/npm pipeline as
+# PID 1. Podman sends SIGTERM to PID 1 when stopping the container; making the
+# Node process PID 1 lets it receive that signal directly instead of forcing
+# Podman to wait for a shell pipeline and eventually SIGKILL the container.
+echo "Starting node app.js"
+exec > >(tee "$LOGFILE") 2>&1
+exec node app.js

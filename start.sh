@@ -85,10 +85,11 @@ fi
 : ${PORT:=2000}
 export PORT
 
-# Keep the historical per-start logfile without leaving a shell/npm pipeline as
-# PID 1. Podman sends SIGTERM to PID 1 when stopping the container; making the
-# Node process PID 1 lets it receive that signal directly instead of forcing
-# Podman to wait for a shell pipeline and eventually SIGKILL the container.
-echo "Starting node app.js"
+# Keep the historical per-start logfile while using a small PID-1 supervisor.
+# Linux gives PID 1 special default signal semantics, so running the legacy
+# Node application itself as PID 1 caused Podman's SIGTERM to be ignored. The
+# wrapper explicitly receives SIGTERM/SIGINT, forwards them to a normal child
+# Node process, and reaps the child.
+echo "Starting Xronos node supervisor"
 exec > >(tee "$LOGFILE") 2>&1
-exec node app.js
+exec node scripts/modernization/run-node-app.js

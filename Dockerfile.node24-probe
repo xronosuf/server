@@ -21,17 +21,7 @@ COPY package.json package-lock.json ./
 # package.json copy and never change the repository manifest.
 ARG OMIT_NODEGIT=0
 ARG SNAPPY_VERSION=""
-RUN node -e '
-      var fs = require("fs");
-      var p = require("./package.json");
-      if (process.env.OMIT_NODEGIT === "1" && p.dependencies) {
-        delete p.dependencies.nodegit;
-      }
-      if (process.env.SNAPPY_VERSION && p.dependencies) {
-        p.dependencies.snappy = process.env.SNAPPY_VERSION;
-      }
-      fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");
-    ' \
+RUN node -e 'var fs=require("fs"); var p=require("./package.json"); var omit=process.argv[1]; var snappyVersion=process.argv[2]; if (omit === "1" && p.dependencies) delete p.dependencies.nodegit; if (snappyVersion && p.dependencies) p.dependencies.snappy=snappyVersion; fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");' "$OMIT_NODEGIT" "$SNAPPY_VERSION" \
  && echo "Node: $(node --version)" \
  && echo "npm:  $(npm --version)" \
  && echo "OMIT_NODEGIT=$OMIT_NODEGIT" \

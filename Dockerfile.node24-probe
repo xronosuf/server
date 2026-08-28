@@ -20,11 +20,13 @@ COPY package.json package-lock.json ./
 # Diagnostic-only dependency substitutions. These edit only the image-local
 # package.json copy and never change the repository manifest.
 ARG OMIT_NODEGIT=0
+ARG OMIT_XXHASH=0
 ARG SNAPPY_VERSION=""
-RUN node -e 'var fs=require("fs"); var p=require("./package.json"); var omit=process.argv[1]; var snappyVersion=process.argv[2]; if (omit === "1" && p.dependencies) delete p.dependencies.nodegit; if (snappyVersion && p.dependencies) p.dependencies.snappy=snappyVersion; fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");' "$OMIT_NODEGIT" "$SNAPPY_VERSION" \
+RUN node -e 'var fs=require("fs"); var p=require("./package.json"); var omitNodegit=process.argv[1]; var omitXxhash=process.argv[2]; var snappyVersion=process.argv[3]; if (omitNodegit === "1" && p.dependencies) delete p.dependencies.nodegit; if (omitXxhash === "1" && p.dependencies) delete p.dependencies.xxhash; if (snappyVersion && p.dependencies) p.dependencies.snappy=snappyVersion; fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");' "$OMIT_NODEGIT" "$OMIT_XXHASH" "$SNAPPY_VERSION" \
  && echo "Node: $(node --version)" \
  && echo "npm:  $(npm --version)" \
  && echo "OMIT_NODEGIT=$OMIT_NODEGIT" \
+ && echo "OMIT_XXHASH=$OMIT_XXHASH" \
  && echo "SNAPPY_VERSION=${SNAPPY_VERSION:-<repository default>}" \
  && npm install --no-audit --no-fund
 

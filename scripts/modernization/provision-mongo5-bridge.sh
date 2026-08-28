@@ -15,10 +15,10 @@ Usage: scripts/modernization/provision-mongo5-bridge.sh [--create|--status]
 --create  Pull the pinned MongoDB bridge image, create the private network and
           persistent volume if needed, attach devximserver to the network, and
           create/start the bridge container. This does not migrate Xronos data.
-          A stopped bridge container is recreated while preserving its named
-          data volume. The Mongo image's Docker entrypoint is bypassed because
-          the Xronos test host cannot execute that wrapper; mongod is launched
-          directly instead.
+          A bridge container whose configuration does not match this script is
+          recreated while preserving its named data volume. The Mongo image's
+          Docker entrypoint is bypassed because the Xronos test host cannot
+          execute that wrapper; mongod is launched directly instead.
 --status  Show the current bridge/network/volume state without changing it.
 USAGE
 }
@@ -81,27 +81,43 @@ if ! podman inspect "$APP_CONTAINER" --format '{{json .NetworkSettings.Networks}
     podman network connect "$NET" "$APP_CONTAINER"
 fi
 
-# A stopped bridge container is safe to recreate here because the database data
-# lives in the named volume, not in the container writable layer. This also
-# repairs containers created before we began bypassing the image entrypoint.
+create_bridge=1
 if podman container exists "$MONGO_CONTAINER"; then
-    if [[ "$(podman inspect "$MONGO_CONTAINER" --format '{{.State.Running}}')" == "true" ]]; then
-        echo "MongoDB bridge container is already running; leaving it unchanged."
-        show_status
-        exit 0
-    fi
+    configured_entrypoint=$(podman inspect "$MONGO_CONTAINER" --format '{{json .Config.Entrypoint}}')
+    configured_image=$(podman inspect "$MONGO_CONTAINER" --format '{{.ImageName}}')
 
-    echo "Recreating stopped MongoDB bridge container (preserving volume $MONGO_VOLUME)."
-    podman rm "$MONGO_CONTAINER" >/dev/null
+    if [[ "$configured_entrypoint" == *"$MONGO_ENTRYPOINT"* ]] && \
+       [[ "$configured_image" == "$MONGO_IMAGE" ]]; then
+        create_bridge=0
+
+        if [[ "$(podman inspect "$MONGO_CONTAINER" --format '{{.State.Running}}')" != "true" ]]; then
+            echo "Starting existing correctly configured MongoDB bridge container."
+            podman start "$MONGO_CONTAINER" >/dev/null
+        else
+            echo "MongoDB bridge container is already running with the expected configuration."
+        fi
+    else
+        echo "Existing MongoDB bridge configuration does not match the repository definition."
+        echo "Configured image:      $configured_image"
+        echo "Configured entrypoint: $configured_entrypoint"
+        echo "Expected image:        $MONGO_IMAGE"
+        echo "Expected entrypoint:   $MONGO_ENTRYPOINT"
+        echo "Recreating bridge container while preserving volume $MONGO_VOLUME."
+
+        # -f is intentional: an old container may be caught in a restart loop.
+        # The named database volume is not removed.
+        podman rm -f "$MONGO_CONTAINER" >/dev/null
+    fi
 fi
 
-podman run -d \
-    --name "$MONGO_CONTAINER" \
-    --network "$NET" \
-    --volume "$MONGO_VOLUME:/data/db" \
-    --restart=unless-stopped \
-    --entrypoint "$MONGO_ENTRYPOINT" \
-    "$MONGO_IMAGE" \
-    --bind_ip_all >/dev/null
+if [[ "$create_bridge" == "1" ]]; then
+    podman run -d \
+        --name "$MONGO_CONTAINER" \
+        --network "$NET" \
+        --volume "$MONGO_VOLUME:/data/db" \
+        --entrypoint "$MONGO_ENTRYPOINT" \
+        "$MONGO_IMAGE" \
+        --bind_ip_all >/dev/null
+fi
 
 show_status

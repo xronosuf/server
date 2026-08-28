@@ -17,13 +17,21 @@ RUN apt-get update \
 
 COPY package.json package-lock.json ./
 
-RUN echo "Node: $(node --version)" \
+# Set OMIT_NODEGIT=1 only for diagnostic builds that want to discover the next
+# Node 24 blocker after the already-confirmed nodegit@0.26.5 failure. This edits
+# only the image-local package.json copy; it never changes the repository file.
+ARG OMIT_NODEGIT=0
+RUN if [ "$OMIT_NODEGIT" = "1" ]; then \
+      node -e 'var fs=require("fs"); var p=require("./package.json"); if (p.dependencies) delete p.dependencies.nodegit; fs.writeFileSync("package.json", JSON.stringify(p, null, 2) + "\n");'; \
+    fi \
+ && echo "Node: $(node --version)" \
  && echo "npm:  $(npm --version)" \
+ && echo "OMIT_NODEGIT=$OMIT_NODEGIT" \
  && npm install --no-audit --no-fund
 
 COPY . .
 
 # Do not start Xronos from this probe image. A successful build only proves the
-# current dependency graph can be installed under Node 24; later checkpoints
+# selected dependency graph can be installed under Node 24; later checkpoints
 # will run tests and the application against the external services.
 CMD ["node", "--version"]

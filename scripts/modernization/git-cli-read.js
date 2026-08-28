@@ -130,6 +130,36 @@ function treeEntry(repository, commitSha, pathname) {
   });
 }
 
+function recursiveTreeEntries(repository, commitSha, pathname) {
+  var args = ['ls-tree', '-r', '-z', commitSha];
+
+  if (pathname) {
+    args.push('--', pathname);
+  }
+
+  return runGit(repository, args, { encoding: null })
+    .then(function(output) {
+      return output.toString('utf8')
+        .split('\0')
+        .filter(Boolean)
+        .map(function(record) {
+          var tab = record.indexOf('\t');
+          if (tab < 0) {
+            throw new Error('Unexpected ls-tree record: ' + record);
+          }
+
+          var header = record.slice(0, tab).split(/\s+/);
+
+          return {
+            mode: header[0],
+            type: header[1],
+            sha: header[2],
+            path: record.slice(tab + 1)
+          };
+        });
+    });
+}
+
 function readBlob(repository, blobHash) {
   return runGitText(repository, ['cat-file', '-t', blobHash])
     .then(function(type) {
@@ -152,5 +182,6 @@ module.exports = {
   verifyRepository: verifyRepository,
   recentPublishedCommits: recentPublishedCommits,
   treeEntry: treeEntry,
+  recursiveTreeEntries: recursiveTreeEntries,
   readBlob: readBlob
 };

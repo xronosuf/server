@@ -92,82 +92,141 @@ function codeToCertificate(code, signature, callback) {
     }
 }
 
-exports.xourse = function(req, res) {
+exports.xourse = async function(req, res) {
     var user = req.user;
     var xourse = req.activity;
     console.log(xourse);
+
     // I need to basically do use
     xourse.path = req.activity.path;
-    xourse.locator = '/' + req.repositoryName + '/' + xourse.path;
-    xourse.locator = xourse.locator.replace( '.html', '' );
-    
-    mdb.Completion.find({user: req.user._id, repositoryName: req.repositoryName}).exec(
-	function( err, completions ) {
-	    if (err) {
-		renderError( res, err );
-	    } else {
-		var activityCount = 0;
-		var completionTotal = 0;
+    xourse.locator =
+        '/' + req.repositoryName + '/' + xourse.path;
+    xourse.locator =
+        xourse.locator.replace('.html', '');
 
-		xourse.activityList.forEach( function(activityPath) {
-		    var url = pathJoin( xourse.locator,
-					activityPath
-				      );
+    try {
+        var completions =
+            await mdb.Completion.find({
+                user: req.user._id,
+                repositoryName: req.repositoryName
+            }).exec();
 
-		    if (xourse.activities === undefined)
-			xourse.activities = {};
-		    
-		    if (xourse.activities[activityPath] === undefined) {
-			xourse.activities[activityPath] = {};
-			xourse.activities[activityPath].title = url;
-		    }
-		    
-		    xourse.activities[activityPath].url = '/course/' + normalize(url);
+        var activityCount = 0;
+        var completionTotal = 0;
 
-		    xourse.activities[activityPath].completion = 
-			_.max( _.filter( completions,
-					 function(c) { return c.activityPath == activityPath } )
-			       .map(
-				   function(c) { return c.complete; } ) );
+        xourse.activityList.forEach(function(activityPath) {
+            var url = pathJoin(
+                xourse.locator,
+                activityPath
+            );
 
-		    if (xourse.activities[activityPath].completion < 0)
-			xourse.activities[activityPath].completion = 0.0;
-		    
-		    if (!(activityPath.match(/^#/))) {
-			activityCount++;
-			completionTotal += xourse.activities[activityPath].completion;
-		    }
-		});
+            if (xourse.activities === undefined)
+                xourse.activities = {};
 
-		var score = Math.round(10000*completionTotal / activityCount)/100;
-		
-		var certificate = {
-		    name: req.user.name,
-		    email: req.user.email,
-		    user: "ximera.osu.edu/users/" + req.user._id,
-		    date: new Date(),
-		    course: xourse.locator,
-		    title: xourse.title,
-		    score: score
-		};
+            if (
+                xourse.activities[activityPath] ===
+                undefined
+            ) {
+                xourse.activities[activityPath] = {};
+                xourse.activities[activityPath].title =
+                    url;
+            }
 
-		certificateToCode( certificate, function(err, code, signature) {
-		    if (err) {
-			res.render('certificate/xourse', { xourse: xourse,
-							   certificate: certificate,
-							   score: score
-							 });		    
-		    } else {
-			res.render('certificate/xourse', { xourse: xourse,
-							   certificate: certificate,
-							   score: score,
-							   escapedCode: querystring.escape(code),
-							   escapedSignature: querystring.escape(signature)
-							 });
-		    }
-		});
-	    }
-	});
+            xourse.activities[activityPath].url =
+                '/course/' + normalize(url);
+
+            xourse.activities[activityPath].completion =
+                _.max(
+                    _.filter(
+                        completions,
+                        function(c) {
+                            return (
+                                c.activityPath ==
+                                activityPath
+                            );
+                        }
+                    ).map(
+                        function(c) {
+                            return c.complete;
+                        }
+                    )
+                );
+
+            if (
+                xourse.activities[activityPath]
+                    .completion < 0
+            ) {
+                xourse.activities[activityPath]
+                    .completion = 0.0;
+            }
+
+            if (!(activityPath.match(/^#/))) {
+                activityCount++;
+                completionTotal +=
+                    xourse.activities[
+                        activityPath
+                    ].completion;
+            }
+        });
+
+        var score =
+            Math.round(
+                10000 *
+                completionTotal /
+                activityCount
+            ) / 100;
+
+        var certificate = {
+            name: req.user.name,
+            email: req.user.email,
+            user:
+                "ximera.osu.edu/users/" +
+                req.user._id,
+            date: new Date(),
+            course: xourse.locator,
+            title: xourse.title,
+            score: score
+        };
+
+        /*
+         * This is an application callback, not a Mongoose
+         * callback, so it intentionally remains unchanged.
+         */
+        certificateToCode(
+            certificate,
+            function(err, code, signature) {
+                if (err) {
+                    res.render(
+                        'certificate/xourse',
+                        {
+                            xourse: xourse,
+                            certificate: certificate,
+                            score: score
+                        }
+                    );
+                } else {
+                    res.render(
+                        'certificate/xourse',
+                        {
+                            xourse: xourse,
+                            certificate: certificate,
+                            score: score,
+                            escapedCode:
+                                querystring.escape(
+                                    code
+                                ),
+                            escapedSignature:
+                                querystring.escape(
+                                    signature
+                                )
+                        }
+                    );
+                }
+            }
+        );
+    } catch (err) {
+        renderError(res, err);
+    }
 };
 
 exports.view = function(req, res) {

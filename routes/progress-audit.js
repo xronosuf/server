@@ -638,7 +638,7 @@ function redeemToken(req, res) {
                         return;
                     }
 
-                    mdb.AuditToken.update(
+                    mdb.AuditToken.updateOne(
                         { _id: auditToken._id },
                         { $set: { usedAt: new Date() } },
                         function(updateErr) {

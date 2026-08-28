@@ -109,7 +109,7 @@ exports.token = function(req,res) {
 			    res.status(400).send( 'Could not produce token.' );
 			} else {
 			    // Save token
-			    mdb.AccessToken.update(
+			    mdb.AccessToken.updateOne(
 				{keyid: keyid},
 				{keyid: keyid, token: token},
 				{upsert: true},

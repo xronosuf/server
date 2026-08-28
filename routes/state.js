@@ -312,7 +312,7 @@ handlers.patch = function(delta, checksum, truth) {
 	} catch (e) {
 	}
 	
-	mdb.State.update({activityHash: activityHash, user: userId}, {$set: {data: data}}, {upsert: true}, function (err, affected, raw) {
+	mdb.State.updateOne({activityHash: activityHash, user: userId}, {$set: {data: data}}, {upsert: true}, function (err, affected, raw) {
 	    if (err) {
         supportTraceLog(
             socket,
@@ -345,7 +345,7 @@ handlers.completion = function(c) {
 		 user: userId};
     }
 	
-    mdb.Completion.update(query, {$set: {complete: c.complete, date: new Date()}}, {upsert: true}, function (err, affected, raw) {
+    mdb.Completion.updateOne(query, {$set: {complete: c.complete, date: new Date()}}, {upsert: true}, function (err, affected, raw) {
 	var payload = [{activityPath: c.activityPath,
 			userId: userId,
 			repositoryName: c.repositoryName,

@@ -242,10 +242,9 @@ function addUserAccount(req, authField, authId, name, email, course, done) {
 
               function (callback) {
                 if (user && user._id) {
-                  mdb.State.update(
+                  mdb.State.updateMany(
                     { user: user._id },
                     { $set: { user: req.user._id } },
-                    { multi: true },
                     callback
                   );
                 } else {
@@ -255,10 +254,9 @@ function addUserAccount(req, authField, authId, name, email, course, done) {
 
               function (callback) {
                 if (user && user._id) {
-                  mdb.Completion.update(
+                  mdb.Completion.updateMany(
                     { user: user._id },
                     { $set: { user: req.user._id } },
-                    { multi: true },
                     callback
                   );
                 } else {

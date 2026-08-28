@@ -172,7 +172,7 @@ mdb.initialize(function (err) {
 
     // We may have a default LTI key
     if (config.ltiAuth) {
-	mdb.KeyAndSecret.update(
+	mdb.KeyAndSecret.updateOne(
 	    {ltiKey: config.lti.key},
 	    {ltiKey: config.lti.key, ltiSecret: config.lti.secret},
 	    {upsert: true},

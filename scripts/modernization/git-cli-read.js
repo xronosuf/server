@@ -160,6 +160,41 @@ function recursiveTreeEntries(repository, commitSha, pathname) {
     });
 }
 
+function initBareRepository(repository) {
+  return new Promise(function(resolve, reject) {
+    childProcess.execFile(
+      'git',
+      ['init', '--bare', repository],
+      {
+        encoding: 'utf8',
+        maxBuffer: 16 * 1024 * 1024
+      },
+      function(err) {
+        if (err) {
+          reject(err);
+          return;
+        }
+
+        resolve(repository);
+      }
+    );
+  });
+}
+
+function getConfig(repository, key) {
+  return runGitText(
+    repository,
+    ['config', '--get', key]
+  );
+}
+
+function setConfig(repository, key, value) {
+  return runGitText(
+    repository,
+    ['config', key, value]
+  );
+}
+
 function readBlob(repository, blobHash) {
   return runGitText(repository, ['cat-file', '-t', blobHash])
     .then(function(type) {
@@ -183,5 +218,8 @@ module.exports = {
   recentPublishedCommits: recentPublishedCommits,
   treeEntry: treeEntry,
   recursiveTreeEntries: recursiveTreeEntries,
+  initBareRepository: initBareRepository,
+  getConfig: getConfig,
+  setConfig: setConfig,
   readBlob: readBlob
 };

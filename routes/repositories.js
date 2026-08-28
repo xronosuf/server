@@ -4,7 +4,6 @@
  * output (and invalidate that cache whenever we receive a push). 
  */
 
-var nodegit = require('nodegit');
 var path = require('path');
 var fse = require("fs-extra");
 var fs = require("fs");
@@ -33,8 +32,6 @@ client.on('error', function (err) {
     console.log("Error " + err);
 });
 
-var repositoryCache = {};
-
 exports.normalizeName = function( req, res, next ) {
     if (req.params.repository)
 	req.params.repository = req.params.repository.replace( /[^0-9A-Za-z-\*]/, '' ).toLowerCase();
@@ -42,8 +39,6 @@ exports.normalizeName = function( req, res, next ) {
 }
 
 function invalidateRepositoryCache(repositoryName) {
-    delete repositoryCache[repositoryName];
-
     client.smembers("activities:" + repositoryName, 
 		  function (err, items) {
 		      if (err) {
@@ -57,28 +52,6 @@ function invalidateRepositoryCache(repositoryName) {
 			  state.push( repositoryName );
 		      }
 		  });
-};
-
-function openRepository(repositoryName) {
-    var repositoryPath = path.resolve(gitRepositoriesRoot, repositoryName + '.git');
-
-    return new Promise( function(resolve,reject) {
-	if (repositoryName in repositoryCache) {
-	    resolve( repositoryCache[repositoryName] );
-	} else {
-	    fs.stat(repositoryPath, function (err, stats){
-		if (err || !stats.isDirectory()) {
-		    if (err)
-			reject(err);
-		    else
-			reject('The repository is not a directory.');
-		} else {
-		    repositoryCache[repositoryName] = nodegit.Repository.openBare(repositoryPath);
-		    resolve( repositoryCache[repositoryName] );
-		}
-	    });
-	}
-    });
 };
 
 // BADBAD: should normalize repositoryname here
@@ -149,71 +122,169 @@ exports.git = function(req, res) {
     })).pipe(res);
 };
 
-exports.readRepositoryToken = function( repositoryName ) {
-    var repositoryPath = path.resolve(gitRepositoriesRoot, repositoryName + '.git');
+exports.readRepositoryToken = function(repositoryName) {
+    var repositoryPath =
+        path.resolve(
+            gitRepositoriesRoot,
+            repositoryName + '.git'
+        );
 
-    return new Promise( function(resolve, reject) {
-	nodegit.Repository.openBare(repositoryPath).then(function(repository) {
-	    repository.config().then(function(config) {
-		config.getStringBuf('ximera.token').then(function(buf) {
-		    resolve(buf);
-		}).catch(function(e) {
-		    reject('Repository ' + repositoryName + '.git is missing a Ximera token.');
-		});
-	    });
-	}).catch(function(e) {
-	    reject('Repository ' + repositoryName + '.git not found.');
-	});
-    });
+    return gitCli.verifyRepository(
+        gitRepositoriesRoot,
+        repositoryName
+    )
+        .catch(function() {
+            throw (
+                'Repository ' +
+                repositoryName +
+                '.git not found.'
+            );
+        })
+        .then(function() {
+            return gitCli.getConfig(
+                repositoryPath,
+                'ximera.token'
+            ).catch(function() {
+                throw (
+                    'Repository ' +
+                    repositoryName +
+                    '.git is missing a Ximera token.'
+                );
+            });
+        });
 };
 
-function makeTokenForKey( repository, keyid ) {
-    return new Promise( function(resolve, reject) {
-	repository.config().then(function(config) {
-	    // Use config
-	    crypto.randomBytes(48, function(err, buffer) {
-		var token = buffer.toString('base64');
-		config.setString ('ximera.keyid', keyid).
-		    then(function(result) {
-			config.setString ('ximera.token', token);
-			resolve(token);
-		    });
-	    });
-	}).catch(function(e) {
-	    reject('Could not save token.');
-	});
+function makeTokenForKey(repositoryPath, keyid) {
+    return new Promise(function(resolve, reject) {
+        crypto.randomBytes(
+            48,
+            function(err, buffer) {
+                if (err) {
+                    reject(
+                        'Could not save token.'
+                    );
+                    return;
+                }
+
+                var token =
+                    buffer.toString('base64');
+
+                gitCli.setConfig(
+                    repositoryPath,
+                    'ximera.keyid',
+                    keyid
+                )
+                    .then(function() {
+                        return gitCli.setConfig(
+                            repositoryPath,
+                            'ximera.token',
+                            token
+                        );
+                    })
+                    .then(function() {
+                        resolve(token);
+                    })
+                    .catch(function() {
+                        reject(
+                            'Could not save token.'
+                        );
+                    });
+            }
+        );
     });
 }
 
-exports.create = function(repositoryName, givenKeyid) {
-    var repositoryPath = path.resolve(gitRepositoriesRoot, repositoryName + '.git');
+exports.create = function(
+    repositoryName,
+    givenKeyid
+) {
+    var repositoryPath =
+        path.resolve(
+            gitRepositoriesRoot,
+            repositoryName + '.git'
+        );
 
-    return new Promise( function(resolve, reject) {
-	nodegit.Repository.open(repositoryPath).then(function(repository) {
-	    // Repository already exists.
-	    repository.config().then(function(config) {
-		config.getStringBuf('ximera.keyid').then(function(keyid) {
-		    if (keyid == givenKeyid)
-			resolve(makeTokenForKey( repository, keyid ));
-		    else
-			reject('You do not own the repository.'); // 403
-		}).catch(function(e) {
-		    reject('Repository ' + repositoryName + '.git is missing a GPG key fingerprint.'); // 404
-		});
-	    });
-	}).catch(function(e) {
-	    fse.ensureDir(repositoryPath, function(err) {
-		if (err) {
-		    reject(err); // 400
-		} else {
-		    nodegit.Repository.init(repositoryPath, 1).then(function(repository) {
-			resolve(makeTokenForKey( repository, givenKeyid ));
-		    }).catch(function(e) {
-			reject('Could not create repository.'); //  409
-		    });
-		}
-	    });
-	});
+    return new Promise(function(resolve, reject) {
+        fs.stat(
+            repositoryPath,
+            function(err, stats) {
+                if (!err && stats.isDirectory()) {
+                    gitCli.verifyRepository(
+                        gitRepositoriesRoot,
+                        repositoryName
+                    )
+                        .then(function() {
+                            return gitCli.getConfig(
+                                repositoryPath,
+                                'ximera.keyid'
+                            );
+                        })
+                        .then(function(keyid) {
+                            if (keyid == givenKeyid) {
+                                return makeTokenForKey(
+                                    repositoryPath,
+                                    keyid
+                                );
+                            }
+
+                            throw (
+                                'You do not own the repository.'
+                            );
+                        })
+                        .then(resolve)
+                        .catch(function(err) {
+                            if (
+                                err ===
+                                'You do not own the repository.'
+                            ) {
+                                reject(err);
+                                return;
+                            }
+
+                            reject(
+                                'Repository ' +
+                                repositoryName +
+                                '.git is missing a GPG key fingerprint.'
+                            );
+                        });
+
+                    return;
+                }
+
+                if (!err && !stats.isDirectory()) {
+                    reject(
+                        'Could not create repository.'
+                    );
+                    return;
+                }
+
+                fse.ensureDir(
+                    repositoryPath,
+                    function(ensureErr) {
+                        if (ensureErr) {
+                            reject(ensureErr);
+                            return;
+                        }
+
+                        gitCli.initBareRepository(
+                            repositoryPath
+                        )
+                            .then(function() {
+                                return makeTokenForKey(
+                                    repositoryPath,
+                                    givenKeyid
+                                );
+                            })
+                            .then(resolve)
+                            .catch(function() {
+                                reject(
+                                    'Could not create repository.'
+                                );
+                            });
+                    }
+                );
+            }
+        );
     });
 };
 

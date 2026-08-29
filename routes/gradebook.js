@@ -1,5 +1,5 @@
 var mdb = require('../mdb');
-var request = require('request');
+var legacyHttpClient = require('../lib/legacy-http-client');
 var pug = require('pug');
 var path = require('path');
 var config = require('../config');
@@ -181,11 +181,17 @@ function processGradebook(id, callback) {
                             bridge.oauthSignatureMethod
                     };
 
-                    request.post(
+                    legacyHttpClient.postOAuth1Xml(
                         {
-                            uri: url,
+                            url: url,
                             body: pox,
-                            oauth: oauth,
+                            callback: oauth.callback,
+                            consumerKey:
+                                oauth.consumer_key,
+                            consumerSecret:
+                                oauth.consumer_secret,
+                            signatureMethod:
+                                oauth.signature_method,
                             headers: {
                                 'Content-Type':
                                     'application/xml',

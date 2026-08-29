@@ -43,7 +43,7 @@ var express = require('express')
   , versionator = require('versionator')
   , WebSocketServer = require("ws").Server
   , basicAuth = require('express-basic-auth')
-  , request = require('request')
+  , legacyHttpClient = require('./lib/legacy-http-client')
   , crypto = require('crypto')
   , sageReliabilityPolicy = require('./sage-reliability-policy')
   ;
@@ -447,19 +447,20 @@ function sagecellProxyPost(
         serviceUrl
     );
 
-    request.post({
-url: serviceUrl,
-form: form,
-headers: supportTrace
-    ? {
-        "X-Xronos-Support-Trace":
-            supportTrace
-    }
-    : {},
-timeout: 60000
-    }, function(err, response, body) {
-callback(err, response, body);
-    });
+    legacyHttpClient.postForm(
+        serviceUrl,
+        form,
+        {
+            headers: supportTrace
+                ? {
+                    "X-Xronos-Support-Trace":
+                        supportTrace
+                }
+                : {},
+            timeout: 60000
+        },
+        callback
+    );
 }
 
 function sagecellProxyFinish(waitingKey, cacheKey, codeLength, source, statusCode, contentType, body, cacheable) {

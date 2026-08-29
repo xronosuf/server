@@ -447,7 +447,8 @@ function currentUserCanRedeemToken(req, auditToken, callback) {
     };
 
     if (auditToken.toolConsumerInstanceGuid) {
-        query.toolConsumerInstanceGuid = auditToken.toolConsumerInstanceGuid;
+        query.toolConsumerInstanceGuid =
+            auditToken.toolConsumerInstanceGuid;
     }
 
     if (auditToken.contextId) {
@@ -456,13 +457,15 @@ function currentUserCanRedeemToken(req, auditToken, callback) {
 
     mdb.LtiBridge.find(query)
         .lean()
-        .exec(function(err, bridges) {
-            if (err) {
-                callback(err, false);
-                return;
-            }
-
-            callback(null, bridges.some(hasInstructorRole));
+        .exec()
+        .then(function(bridges) {
+            callback(
+                null,
+                bridges.some(hasInstructorRole)
+            );
+        })
+        .catch(function(err) {
+            callback(err, false);
         });
 }
 
@@ -615,18 +618,13 @@ function redeemToken(req, res) {
         return;
     }
 
-    mdb.AuditToken.findOne({ tokenHash: tokenHash(rawToken) })
+    mdb.AuditToken.findOne({
+        tokenHash: tokenHash(rawToken)
+    })
         .lean()
-        .exec(function(err, auditToken) {
+        .exec()
+        .then(function(auditToken) {
             var unusable;
-
-            if (err) {
-                renderRedeemPage(req, res, Object.assign({
-                    error: 'There was a problem looking up the progress audit token.',
-                    token: rawToken
-                }, asOfParts));
-                return;
-            }
 
             unusable = tokenIsUsable(auditToken);
 
@@ -666,14 +664,15 @@ function redeemToken(req, res) {
 
                     mdb.AuditToken.updateOne(
                         { _id: auditToken._id },
-                        { $set: { usedAt: new Date() } },
-                        function(updateErr) {
-                            if (updateErr) {
-                                console.log('Error recording progress audit token use');
-                                console.log(updateErr);
-                            }
-                        }
-                    );
+                        { $set: { usedAt: new Date() } }
+                    )
+                        .exec()
+                        .catch(function(updateErr) {
+                            console.log(
+                                'Error recording progress audit token use'
+                            );
+                            console.log(updateErr);
+                        });
 
                     findCurrentMilestone(auditToken, function(err, currentMilestone) {
                         if (err) {
@@ -692,6 +691,18 @@ function redeemToken(req, res) {
                     });
                 });
             });
+        })
+        .catch(function(err) {
+            renderRedeemPage(
+                req,
+                res,
+                Object.assign({
+                    error:
+                        'There was a problem looking up the ' +
+                        'progress audit token.',
+                    token: rawToken
+                }, asOfParts)
+            );
         });
 }
 
@@ -717,10 +728,18 @@ function milestoneViewModel(milestone) {
 
 
 function findCurrentMilestone(scope, callback) {
-    mdb.ProgressMilestone.findOne(baseMilestoneQuery(scope))
+    mdb.ProgressMilestone.findOne(
+        baseMilestoneQuery(scope)
+    )
         .sort({ observedAt: -1 })
         .lean()
-        .exec(callback);
+        .exec()
+        .then(function(milestone) {
+            callback(null, milestone);
+        })
+        .catch(function(err) {
+            callback(err);
+        });
 }
 
 function auditReportViewModel(auditToken, asOf, milestone, currentMilestone) {

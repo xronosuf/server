@@ -16,15 +16,15 @@ RUN apt-get update \
  && rm -rf /var/lib/apt/lists/*
 
 # Copy dependency manifests first so ordinary source-code changes do not
-# invalidate the expensive npm-install layer. Once a current package-lock.json
-# is checked in, this layer can also switch from npm install to npm ci.
+# invalidate the expensive dependency-install layer.
 COPY package.json package-lock.json ./
 
-# Install the repository manifest exactly as checked in. This probe now
-# performs no dependency substitutions or package.json rewrites.
+# Install exactly the dependency graph recorded in package-lock.json. Using
+# npm ci avoids re-resolving dependency versions and fails if the manifest and
+# lockfile drift out of sync.
 RUN echo "Node: $(node --version)" \
  && echo "npm:  $(npm --version)" \
- && npm install --no-audit --no-fund
+ && npm ci --no-audit --no-fund
 
 # Copy application source only after dependencies have been installed. The
 # repository .dockerignore excludes runtime data such as repositories/,

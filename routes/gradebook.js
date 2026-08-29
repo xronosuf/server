@@ -127,66 +127,122 @@ function recordProgressMilestoneForBridge(req, repositoryName, bridge) {
 
 
 function processGradebook(id, callback) {
-	console.log('Processing gradebook ' + id)
-    mdb.LtiBridge.findOne( {_id: new mdb.ObjectId(id) }, function(err, bridge) {
-	if (err) {
-	    callback(err);
-	    return;
-	}
-	
-	var pox = passback({
-	    messageIdentifier: uuid.v1(),
-	    resultDataUrl: config.root + '/users/' + bridge.user._id + '/' + bridge.repository + '/' + bridge.path,
-	    resultScore: bridge.resultScore,
-	    resultTotalScore: bridge.resultTotalScore,
-	    sourcedId: bridge.lisResultSourcedid
-	});
+    console.log('Processing gradebook ' + id);
 
-	var url = bridge.lisOutcomeServiceUrl;
-					
-	mdb.KeyAndSecret.findOne(
-	    {ltiKey: bridge.oauthConsumerKey},
-	    function(err, keyAndSecret) {
-		if (err) {
-		    callback(err);
-		} else {
-		    if (!keyAndSecret) {
-			callback("Missing LTI secret.");
-		    } else {
-			var oauth = {
-			    callback: "about:blank",
-			    body_hash: true,			
-			    consumer_key: keyAndSecret.ltiKey,
-			    consumer_secret: keyAndSecret.ltiSecret,
-			    signature_method: bridge.oauthSignatureMethod
-			};
-			
-			request.post({
-			    uri: url,
-			    body: pox,
-			    oauth: oauth,
-			    headers: {
-				'Content-Type': 'application/xml',
-				'User-Agent': 'Xronos/1.0 (University of Florida; https://xronos.clas.ufl.edu)',
-			    }
-			}, function(err, response, body) {
-                    if (err) {
-                        console.log('Error when posting:');
-                        console.log(err);
-                        callback(err);
-                    } else if (canvasPassbackSucceeded(response, body)) {
-                        logCanvasPassbackSuccess(bridge);
-                        bridge.submittedScore = true;
-                        bridge.save(callback);
-                    } else {
-                        logCanvasPassbackFailure(bridge, response, body);
-                        callback(null);
+    mdb.LtiBridge.findOne({
+        _id: new mdb.ObjectId(id)
+    })
+        .exec()
+        .then(function(bridge) {
+            var pox = passback({
+                messageIdentifier: uuid.v1(),
+                resultDataUrl:
+                    config.root +
+                    '/users/' +
+                    bridge.user._id +
+                    '/' +
+                    bridge.repository +
+                    '/' +
+                    bridge.path,
+                resultScore:
+                    bridge.resultScore,
+                resultTotalScore:
+                    bridge.resultTotalScore,
+                sourcedId:
+                    bridge.lisResultSourcedid
+            });
+
+            var url =
+                bridge.lisOutcomeServiceUrl;
+
+            return mdb.KeyAndSecret.findOne({
+                ltiKey:
+                    bridge.oauthConsumerKey
+            })
+                .exec()
+                .then(function(keyAndSecret) {
+                    if (!keyAndSecret) {
+                        callback(
+                            "Missing LTI secret."
+                        );
+                        return;
                     }
+
+                    var oauth = {
+                        callback:
+                            "about:blank",
+                        body_hash:
+                            true,
+                        consumer_key:
+                            keyAndSecret.ltiKey,
+                        consumer_secret:
+                            keyAndSecret.ltiSecret,
+                        signature_method:
+                            bridge.oauthSignatureMethod
+                    };
+
+                    request.post(
+                        {
+                            uri: url,
+                            body: pox,
+                            oauth: oauth,
+                            headers: {
+                                'Content-Type':
+                                    'application/xml',
+                                'User-Agent':
+                                    'Xronos/1.0 ' +
+                                    '(University of Florida; ' +
+                                    'https://xronos.clas.ufl.edu)'
+                            }
+                        },
+                        function(
+                            err,
+                            response,
+                            body
+                        ) {
+                            if (err) {
+                                console.log(
+                                    'Error when posting:'
+                                );
+                                console.log(err);
+                                callback(err);
+                            } else if (
+                                canvasPassbackSucceeded(
+                                    response,
+                                    body
+                                )
+                            ) {
+                                logCanvasPassbackSuccess(
+                                    bridge
+                                );
+
+                                bridge.submittedScore =
+                                    true;
+
+                                bridge
+                                    .save()
+                                    .then(function() {
+                                        callback(null);
+                                    })
+                                    .catch(function(err) {
+                                        callback(err);
+                                    });
+                            } else {
+                                logCanvasPassbackFailure(
+                                    bridge,
+                                    response,
+                                    body
+                                );
+
+                                callback(null);
+                            }
+                        }
+                    );
                 });
-		    }
-		}
-	    });
-    });
+        })
+        .catch(function(err) {
+            callback(err);
+        });
 }
 
 function process() {

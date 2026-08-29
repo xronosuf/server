@@ -36,7 +36,10 @@ function createTokenForBridge(bridge, hours, callback) {
     var token = randomToken();
     var hash = tokenHash(token);
     var createdAt = new Date();
-    var expiresAt = new Date(createdAt.getTime() + expirationHours(hours) * 60 * 60 * 1000);
+    var expiresAt = new Date(
+        createdAt.getTime() +
+        expirationHours(hours) * 60 * 60 * 1000
+    );
 
     var auditToken = new mdb.AuditToken({
         tokenHash: hash,
@@ -45,7 +48,8 @@ function createTokenForBridge(bridge, hours, callback) {
         path: bridge.path,
 
         bridge: bridge._id,
-        toolConsumerInstanceGuid: bridge.toolConsumerInstanceGuid,
+        toolConsumerInstanceGuid:
+            bridge.toolConsumerInstanceGuid,
         contextId: bridge.contextId,
         resourceLinkId: bridge.resourceLinkId,
 
@@ -53,14 +57,23 @@ function createTokenForBridge(bridge, hours, callback) {
         expiresAt: expiresAt
     });
 
-    auditToken.save(function(err, saved) {
-        if (err && err.code === 11000) {
-            createTokenForBridge(bridge, hours, callback);
-            return;
-        }
+    auditToken
+        .save()
+        .then(function(saved) {
+            callback(null, token, saved);
+        })
+        .catch(function(err) {
+            if (err && err.code === 11000) {
+                createTokenForBridge(
+                    bridge,
+                    hours,
+                    callback
+                );
+                return;
+            }
 
-        callback(err, token, saved);
-    });
+            callback(err, token);
+        });
 }
 
 function tokenIsUsable(auditToken, now) {
@@ -103,30 +116,37 @@ function baseMilestoneQuery(scope) {
 function findMilestones(scope, asOf, callback) {
     var baseQuery = baseMilestoneQuery(scope);
 
-    mdb.ProgressMilestone.findOne(Object.assign({}, baseQuery, {
-        observedAt: { $lte: asOf }
-    }))
+    mdb.ProgressMilestone.findOne(
+        Object.assign({}, baseQuery, {
+            observedAt: {
+                $lte: asOf
+            }
+        })
+    )
         .sort({ observedAt: -1 })
         .lean()
-        .exec(function(err, milestone) {
-            if (err) {
-                callback(err);
-                return;
-            }
-
-            mdb.ProgressMilestone.findOne(Object.assign({}, baseQuery, {
-                observedAt: { $gt: asOf }
-            }))
+        .exec()
+        .then(function(milestone) {
+            return mdb.ProgressMilestone.findOne(
+                Object.assign({}, baseQuery, {
+                    observedAt: {
+                        $gt: asOf
+                    }
+                })
+            )
                 .sort({ observedAt: 1 })
                 .lean()
-                .exec(function(err, earliestAfter) {
-                    if (err) {
-                        callback(err);
-                        return;
-                    }
-
-                    callback(null, milestone, earliestAfter);
+                .exec()
+                .then(function(earliestAfter) {
+                    callback(
+                        null,
+                        milestone,
+                        earliestAfter
+                    );
                 });
+        })
+        .catch(function(err) {
+            callback(err);
         });
 }
 
@@ -333,7 +353,13 @@ function currentUserAssignmentBridge(req, callback) {
     mdb.LtiBridge.findOne(query)
         .sort({ _id: -1 })
         .lean()
-        .exec(callback);
+        .exec()
+        .then(function(bridge) {
+            callback(null, bridge);
+        })
+        .catch(function(err) {
+            callback(err);
+        });
 }
 
 function renderTokenPage(req, res, data) {

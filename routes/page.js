@@ -171,18 +171,23 @@ return;
     contextId: { $exists: true, $ne: null }
 })
 .sort({ _id: -1 })
-.exec(function(err, bridge) {
-    if (err) {
-callback(err);
-return;
-    }
-
+.exec()
+.then(function(bridge) {
     if (!bridge || !bridge.contextId) {
-callback(null, fallback);
-return;
+        callback(null, fallback);
+        return;
     }
 
-    callback(null, hashedRandomizationScope('canvas-context:' + bridge.contextId));
+    callback(
+        null,
+        hashedRandomizationScope(
+            'canvas-context:' +
+            bridge.contextId
+        )
+    );
+})
+.catch(function(err) {
+    callback(err);
 });
 }
 
@@ -346,79 +351,148 @@ exports.chooseMostRecentBlob = function(req, res, next) {
     var sha = null;
 
     if (shas.length > 0) {
-	sha = shas[0];
-	activities = activities.filter( function(activity) { return activity.sourceSha == sha; });
+        sha = shas[0];
+        activities = activities.filter(
+            function(activity) {
+                return activity.sourceSha == sha;
+            }
+        );
     }
 
     async.waterfall(
-	[		
-	    function(callback) {
-		// There may be duplicates here because the same
-		// activity can appear in multiple commits
-		activityHashes = activities.map( function(activity) { return activity.activityHash; } );
+        [
+            function(callback) {
+                // There may be duplicates here because the same
+                // activity can appear in multiple commits
+                activityHashes = activities.map(
+                    function(activity) {
+                        return activity.activityHash;
+                    }
+                );
 
-		activityHashes = activityHashes.filter(function(item, pos) {
-		    return activityHashes.indexOf(item) == pos;
-		});
+                activityHashes = activityHashes.filter(
+                    function(item, pos) {
+                        return (
+                            activityHashes.indexOf(item) == pos
+                        );
+                    }
+                );
 
-		// This is crucial, because otherwise we may load old data?
-		activityHashes = activityHashes.filter(function(item) {
-		    return item !== undefined;
-		});		
+                // This is crucial, because otherwise we may
+                // load old data?
+                activityHashes = activityHashes.filter(
+                    function(item) {
+                        return item !== undefined;
+                    }
+                );
 
-		var userId = req.user._id;
-		if (req.learner)
-		    userId = req.learner._id;
-		
-		mdb.State.find({user: userId, activityHash: { $in: activityHashes }}).exec( callback );
-	    },
-	    function( states, callback ) {
-		var activity = activities[0];
-		
-		if (activity === undefined) {
-		    callback("no activity found.");
-		    return;
-		}
-		
-		// If there are some states...
-		if (states.length > 0) {
-		    states = states.sort( function(a,b) {
-			return activityHashes.indexOf( a.activityHash ) - activityHashes.indexOf( b.activityHash );
-		    });
+                var userId = req.user._id;
 
-		    var latestState = states[0];
-		    // then the activity is the one associated with
-		    // the most recent state
-		    activity = activities.filter( function(a) {
-			return a.activityHash == latestState.activityHash;
-		    } )[0];
-		}
+                if (req.learner)
+                    userId = req.learner._id;
 
-		// If there's a more recent activity, let the user choose to update
-		if (activities[0].activityHash != activity.activityHash) {
-		    activity.freshestCommit = activities[0].sourceSha;
-		}
+                mdb.State.find({
+                    user: userId,
+                    activityHash: {
+                        $in: activityHashes
+                    }
+                })
+                    .exec()
+                    .then(function(states) {
+                        callback(null, states);
+                    })
+                    .catch(function(err) {
+                        callback(err);
+                    });
+            },
 
-		// store empty state for it so the next time we visit
-		// the page, we'll go to this sha
-		var userId = req.user._id;
-		if (req.learner)
-		    userId = req.learner._id;
-		
-		mdb.State.updateOne({activityHash: activity.activityHash, user: userId},
-				 {$setOnInsert: {data: {}}}, {upsert: true},
-				 function (err, affected, raw) {
-				     callback( err, activity );				     
-				 });
-	    },
-	], function(err, activity) {
-	    if (err) {
-		res.status(500).send(err);
-	    } else {
-		req.activity = activity;
-		next();
-	    }
-	});
+            function(states, callback) {
+                var activity = activities[0];
+
+                if (activity === undefined) {
+                    callback("no activity found.");
+                    return;
+                }
+
+                // If there are some states...
+                if (states.length > 0) {
+                    states = states.sort(
+                        function(a, b) {
+                            return (
+                                activityHashes.indexOf(
+                                    a.activityHash
+                                ) -
+                                activityHashes.indexOf(
+                                    b.activityHash
+                                )
+                            );
+                        }
+                    );
+
+                    var latestState = states[0];
+
+                    // then the activity is the one associated
+                    // with the most recent state
+                    activity = activities.filter(
+                        function(a) {
+                            return (
+                                a.activityHash ==
+                                latestState.activityHash
+                            );
+                        }
+                    )[0];
+                }
+
+                // If there's a more recent activity, let the
+                // user choose to update
+                if (
+                    activities[0].activityHash !=
+                    activity.activityHash
+                ) {
+                    activity.freshestCommit =
+                        activities[0].sourceSha;
+                }
+
+                // store empty state for it so the next time
+                // we visit the page, we'll go to this sha
+                var userId = req.user._id;
+
+                if (req.learner)
+                    userId = req.learner._id;
+
+                mdb.State.updateOne(
+                    {
+                        activityHash:
+                            activity.activityHash,
+                        user: userId
+                    },
+                    {
+                        $setOnInsert: {
+                            data: {}
+                        }
+                    },
+                    {
+                        upsert: true
+                    }
+                )
+                    .exec()
+                    .then(function() {
+                        callback(null, activity);
+                    })
+                    .catch(function(err) {
+                        callback(err, activity);
+                    });
+            },
+        ],
+        function(err, activity) {
+            if (err) {
+                res.status(500).send(err);
+            } else {
+                req.activity = activity;
+                next();
+            }
+        }
+    );
 };
 
 exports.serve = function( mimetype ){

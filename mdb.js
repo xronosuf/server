@@ -1,6 +1,5 @@
 var Grid = require("gridfs-stream");
 var mongoose = require("mongoose");
-var fstream = require("fstream");
 var config = require("./config");
 var fs = require("fs");
 var winston = require("winston");

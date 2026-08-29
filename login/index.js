@@ -37,7 +37,14 @@ module.exports.githubStrategy = function (rootUrl) {
         addUserAccount(req, "githubId", user.id, null, null, null, function () {
           // Save the github access token
           req.user.githubAccessToken = accessToken;
-          req.user.save(done);
+          req.user
+            .save()
+            .then(function (savedUser) {
+              done(null, savedUser);
+            })
+            .catch(function (err) {
+              done(err);
+            });
         });
       });
     }
@@ -100,20 +107,22 @@ module.exports.localStrategy = function (rootUrl) {
       // This is horrible, but at least it lets me check the login...
       // addUserAccount(req, 'password', password, username, null, null, done);
 
-      mdb.User.findOne({ username: username }, function (err, user) {
-        if (err) {
-          return done(err);
-        }
-        if (!user) {
-          return done(null, false);
-        }
-        // BADBAD: password should be hashed
-        if (user.password != password) {
-          return done(null, false);
-        }
-        req.user = user;
-        return done(null, user);
-      });
+      mdb.User.findOne({ username: username })
+        .exec()
+        .then(function (user) {
+          if (!user) {
+            return done(null, false);
+          }
+          // BADBAD: password should be hashed
+          if (user.password != password) {
+            return done(null, false);
+          }
+          req.user = user;
+          return done(null, user);
+        })
+        .catch(function (err) {
+          done(err);
+        });
     }
   );
 };
@@ -144,30 +153,35 @@ function addUserAccount(req, authField, authId, name, email, course, done) {
       },
       {
         new: true,
-      },
-      function (err, user) {
-        if (err) {
-          done(err, null);
-        } else {
-          if (!user) {
-            // New user, modify current user account instead.
-            req.user.name = name;
-            req.user.email = email;
-            req.user.course = course;
-            req.user[authField] = authId;
-            req.user.isGuest = false;
-            req.user.save(function (err) {
+      }
+    )
+      .exec()
+      .then(function (user) {
+        if (!user) {
+          // New user, modify current user account instead.
+          req.user.name = name;
+          req.user.email = email;
+          req.user.course = course;
+          req.user[authField] = authId;
+          req.user.isGuest = false;
+          req.user
+            .save()
+            .then(function () {
+              done(null, req.user);
+            })
+            .catch(function (err) {
               done(err, req.user);
             });
-          } else {
-            // BADBAD: it might be nice to copy over the guest
-            // data to the existing user account, but I'm so
-            // terrified of merging users.
-            done(null, user);
-          }
+        } else {
+          // BADBAD: it might be nice to copy over the guest
+          // data to the existing user account, but I'm so
+          // terrified of merging users.
+          done(null, user);
         }
-      }
-    );
+      })
+      .catch(function (err) {
+        done(err, null);
+      });
   } else {
     // Add account to existing user; remove account from other users.
 
@@ -177,17 +191,21 @@ function addUserAccount(req, authField, authId, name, email, course, done) {
       req.user.email = email;
       req.user.course = course;
       req.user[authField] = authId;
-      req.user.save(function (err) {
-        done(err, req.user);
-      });
+      req.user
+        .save()
+        .then(function () {
+          done(null, req.user);
+        })
+        .catch(function (err) {
+          done(err, req.user);
+        });
     } else {
       // Merge any existing accounts
 
       // Find any OTHER accounts (but there can be at most one)
-      mdb.User.findOne(searchFields, function (err, user) {
-        if (err) {
-          done(err, null);
-        } else {
+      mdb.User.findOne(searchFields)
+        .exec()
+        .then(function (user) {
           async.series(
             [
               function (callback) {
@@ -224,7 +242,14 @@ function addUserAccount(req, authField, authId, name, email, course, done) {
                     user.apiSecret = undefined;
                   }
 
-                  user.save(callback);
+                  user
+                    .save()
+                    .then(function (savedUser) {
+                      callback(null, savedUser);
+                    })
+                    .catch(function (err) {
+                      callback(err);
+                    });
                 } else {
                   callback(null);
                 }
@@ -237,16 +262,29 @@ function addUserAccount(req, authField, authId, name, email, course, done) {
                 req.user.course = course;
                 req.user[authField] = authId;
 
-                req.user.save(callback);
+                req.user
+                  .save()
+                  .then(function (savedUser) {
+                    callback(null, savedUser);
+                  })
+                  .catch(function (err) {
+                    callback(err);
+                  });
               },
 
               function (callback) {
                 if (user && user._id) {
                   mdb.State.updateMany(
                     { user: user._id },
-                    { $set: { user: req.user._id } },
-                    callback
-                  );
+                    { $set: { user: req.user._id } }
+                  )
+                    .exec()
+                    .then(function (result) {
+                      callback(null, result);
+                    })
+                    .catch(function (err) {
+                      callback(err);
+                    });
                 } else {
                   callback(null);
                 }
@@ -256,9 +294,15 @@ function addUserAccount(req, authField, authId, name, email, course, done) {
                 if (user && user._id) {
                   mdb.Completion.updateMany(
                     { user: user._id },
-                    { $set: { user: req.user._id } },
-                    callback
-                  );
+                    { $set: { user: req.user._id } }
+                  )
+                    .exec()
+                    .then(function (result) {
+                      callback(null, result);
+                    })
+                    .catch(function (err) {
+                      callback(err);
+                    });
                 } else {
                   callback(null);
                 }
@@ -268,8 +312,10 @@ function addUserAccount(req, authField, authId, name, email, course, done) {
               done(err, req.user);
             }
           );
-        }
-      });
+        })
+        .catch(function (err) {
+          done(err, null);
+        });
     }
   }
 }

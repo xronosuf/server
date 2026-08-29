@@ -8,7 +8,7 @@ var buffer24 = require("buffer24");
 var uint32 = require("uint32");
 var crc32 = require("fast-crc32c");
 var config = require("../config");
-var request = require("request");
+var httpClient = require("../lib/legacy-http-client");
 var uuid = require("node-uuid");
 
 var lrsRoot = config.repositories.root;
@@ -93,18 +93,13 @@ function recordStatement(repository, statement, callback) {
   var xapi_username = process.env.XAPI_USERNAME;
   var xapi_password = process.env.XAPI_PASSWORD;
   if (xapi_url && xapi_username && xapi_password) {
-    request.post(
+    httpClient.postJsonBasic(
+      xapi_url + "/xapi/statements",
+      statement,
+      xapi_username,
+      xapi_password,
       {
-        uri: xapi_url + "/xapi/statements",
-        body: JSON.stringify(statement),
-        auth: {
-          user: xapi_username,
-          pass: xapi_password,
-        },
-        headers: {
-          "Content-Type": "application/json",
-          "X-Experience-API-Version": "1.0.3",
-        },
+        "X-Experience-API-Version": "1.0.3",
       },
       function (err, response, body) {
         if (err) {

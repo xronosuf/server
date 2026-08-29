@@ -240,18 +240,15 @@ mdb.initialize(function(err) {
 
     mdb.LtiBridge.findById(bridgeId)
         .lean()
-        .exec(function(err, bridge) {
+        .exec()
+        .then(function(bridge) {
             var baseQuery;
 
-            if (err) {
-                console.error(err);
-                mdb.mongoose.disconnect();
-                process.exit(1);
-                return;
-            }
-
             if (!bridge) {
-                console.error('No LtiBridge found for --bridge ' + args.bridge);
+                console.error(
+                    'No LtiBridge found for --bridge ' +
+                    args.bridge
+                );
                 mdb.mongoose.disconnect();
                 process.exit(1);
                 return;
@@ -277,29 +274,38 @@ mdb.initialize(function(err) {
             }))
                 .sort({ observedAt: -1 })
                 .lean()
-                .exec(function(err, milestone) {
-                    if (err) {
-                        console.error(err);
-                        mdb.mongoose.disconnect();
-                        process.exit(1);
-                        return;
-                    }
-
-                    mdb.ProgressMilestone.findOne(Object.assign({}, baseQuery, {
-                        observedAt: { $gt: asOf }
-                    }))
+                .exec()
+                .then(function(milestone) {
+                    return mdb.ProgressMilestone
+                        .findOne(
+                            Object.assign(
+                                {},
+                                baseQuery,
+                                {
+                                    observedAt: {
+                                        $gt: asOf
+                                    }
+                                }
+                            )
+                        )
                         .sort({ observedAt: 1 })
                         .lean()
-                        .exec(function(err, earliestAfter) {
-                            if (err) {
-                                console.error(err);
-                                process.exitCode = 1;
-                            } else {
-                                printReport(bridge, asOf, milestone, earliestAfter);
-                            }
+                        .exec()
+                        .then(function(earliestAfter) {
+                            printReport(
+                                bridge,
+                                asOf,
+                                milestone,
+                                earliestAfter
+                            );
 
                             mdb.mongoose.disconnect();
                         });
                 });
+        })
+        .catch(function(err) {
+            console.error(err);
+            mdb.mongoose.disconnect();
+            process.exit(1);
         });
 });

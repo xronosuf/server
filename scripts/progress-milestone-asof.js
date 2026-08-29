@@ -167,16 +167,17 @@ function buildQueryFromBridge(args, callback) {
 
     mdb.LtiBridge.findById(bridgeId)
         .lean()
-        .exec(function(err, bridge) {
+        .exec()
+        .then(function(bridge) {
             var query;
 
-            if (err) {
-                callback(err);
-                return;
-            }
-
             if (!bridge) {
-                callback(new Error('No LtiBridge found for --bridge ' + args.bridge));
+                callback(
+                    new Error(
+                        'No LtiBridge found for --bridge ' +
+                        args.bridge
+                    )
+                );
                 return;
             }
 
@@ -192,10 +193,14 @@ function buildQueryFromBridge(args, callback) {
             }
 
             if (bridge.resourceLinkId) {
-                query.resourceLinkId = bridge.resourceLinkId;
+                query.resourceLinkId =
+                    bridge.resourceLinkId;
             }
 
             callback(null, query, bridge);
+        })
+        .catch(function(err) {
+            callback(err);
         });
 }
 
@@ -250,38 +255,34 @@ function findMilestones(query, asOf, limit, callback) {
     mdb.ProgressMilestone.findOne(beforeQuery)
         .sort({ observedAt: -1 })
         .lean()
-        .exec(function(err, latestAtOrBefore) {
-            if (err) {
-                callback(err);
-                return;
-            }
-
-            mdb.ProgressMilestone.findOne(afterQuery)
+        .exec()
+        .then(function(latestAtOrBefore) {
+            return mdb.ProgressMilestone
+                .findOne(afterQuery)
                 .sort({ observedAt: 1 })
                 .lean()
-                .exec(function(err, earliestAfter) {
-                    if (err) {
-                        callback(err);
-                        return;
-                    }
-
-                    mdb.ProgressMilestone.find(beforeQuery)
+                .exec()
+                .then(function(earliestAfter) {
+                    return mdb.ProgressMilestone
+                        .find(beforeQuery)
                         .sort({ observedAt: -1 })
                         .limit(limit)
                         .lean()
-                        .exec(function(err, nearbyBefore) {
-                            if (err) {
-                                callback(err);
-                                return;
-                            }
-
+                        .exec()
+                        .then(function(nearbyBefore) {
                             callback(null, {
-                                latestAtOrBefore: latestAtOrBefore,
-                                earliestAfter: earliestAfter,
-                                nearbyBefore: nearbyBefore
+                                latestAtOrBefore:
+                                    latestAtOrBefore,
+                                earliestAfter:
+                                    earliestAfter,
+                                nearbyBefore:
+                                    nearbyBefore
                             });
                         });
                 });
+        })
+        .catch(function(err) {
+            callback(err);
         });
 }
 

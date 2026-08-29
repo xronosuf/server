@@ -110,19 +110,17 @@ mdb.initialize(function(err) {
 
     hash = progressAudit.tokenHash(args.token);
 
-    mdb.AuditToken.findOne({ tokenHash: hash })
+    mdb.AuditToken.findOne({
+        tokenHash: hash
+    })
         .lean()
-        .exec(function(err, auditToken) {
-            var problem;
-
-            if (err) {
-                console.error(err);
-                mdb.mongoose.disconnect();
-                process.exit(1);
-                return;
-            }
-
-            problem = progressAudit.tokenIsUsable(auditToken, now);
+        .exec()
+        .then(function(auditToken) {
+            var problem =
+                progressAudit.tokenIsUsable(
+                    auditToken,
+                    now
+                );
 
             if (problem) {
                 console.error(problem);
@@ -131,22 +129,37 @@ mdb.initialize(function(err) {
                 return;
             }
 
-            progressAudit.findMilestones(auditToken, asOf, function(err, milestone, earliestAfter) {
-                if (err) {
-                    console.error(err);
-                    process.exitCode = 1;
-                } else {
-                    console.log(
-                        progressAudit.tokenReportLines(
-                            auditToken,
-                            asOf,
-                            milestone,
-                            earliestAfter
-                        ).join('\n')
-                    );
-                }
+            progressAudit.findMilestones(
+                auditToken,
+                asOf,
+                function(
+                    err,
+                    milestone,
+                    earliestAfter
+                ) {
+                    if (err) {
+                        console.error(err);
+                        process.exitCode = 1;
+                    } else {
+                        console.log(
+                            progressAudit
+                                .tokenReportLines(
+                                    auditToken,
+                                    asOf,
+                                    milestone,
+                                    earliestAfter
+                                )
+                                .join('\n')
+                        );
+                    }
 
-                mdb.mongoose.disconnect();
-            });
+                    mdb.mongoose.disconnect();
+                }
+            );
+        })
+        .catch(function(err) {
+            console.error(err);
+            mdb.mongoose.disconnect();
+            process.exit(1);
         });
 });

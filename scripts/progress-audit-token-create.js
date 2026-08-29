@@ -100,47 +100,92 @@ mdb.initialize(function(err) {
 
     mdb.LtiBridge.findById(bridgeId)
         .lean()
-        .exec(function(err, bridge) {
-            if (err) {
-                console.error(err);
-                mdb.mongoose.disconnect();
-                process.exit(1);
-                return;
-            }
-
+        .exec()
+        .then(function(bridge) {
             if (!bridge) {
-                console.error('No LtiBridge found for --bridge ' + args.bridge);
+                console.error(
+                    'No LtiBridge found for --bridge ' +
+                    args.bridge
+                );
                 mdb.mongoose.disconnect();
                 process.exit(1);
                 return;
             }
 
-            progressAudit.createTokenForBridge(bridge, hours, function(err, token, saved) {
-                if (err) {
-                    console.error(err);
-                    process.exitCode = 1;
-                } else {
-                    console.log('');
-                    console.log('Progress Audit Token Created');
-                    console.log('============================');
-                    console.log('');
-                    console.log('Repository:   ' + saved.repository);
-                    console.log('Path:         ' + saved.path);
-                    console.log('Bridge ID:    ' + saved.bridge);
-                    console.log('User ID:      ' + saved.user);
-                    console.log('Created:      ' + progressAudit.humanTime(saved.createdAt));
-                    console.log('Created UTC:  ' + progressAudit.iso(saved.createdAt));
-                    console.log('Expires:      ' + progressAudit.humanTime(saved.expiresAt));
-                    console.log('Expires UTC:  ' + progressAudit.iso(saved.expiresAt));
-                    console.log('');
-                    console.log('Token:');
-                    console.log(token);
-                    console.log('');
-                    console.log('Store/share this token carefully. It cannot be recovered from the database.');
-                    console.log('');
-                }
+            progressAudit.createTokenForBridge(
+                bridge,
+                hours,
+                function(err, token, saved) {
+                    if (err) {
+                        console.error(err);
+                        process.exitCode = 1;
+                    } else {
+                        console.log('');
+                        console.log(
+                            'Progress Audit Token Created'
+                        );
+                        console.log(
+                            '============================'
+                        );
+                        console.log('');
+                        console.log(
+                            'Repository:   ' +
+                            saved.repository
+                        );
+                        console.log(
+                            'Path:         ' +
+                            saved.path
+                        );
+                        console.log(
+                            'Bridge ID:    ' +
+                            saved.bridge
+                        );
+                        console.log(
+                            'User ID:      ' +
+                            saved.user
+                        );
+                        console.log(
+                            'Created:      ' +
+                            progressAudit.humanTime(
+                                saved.createdAt
+                            )
+                        );
+                        console.log(
+                            'Created UTC:  ' +
+                            progressAudit.iso(
+                                saved.createdAt
+                            )
+                        );
+                        console.log(
+                            'Expires:      ' +
+                            progressAudit.humanTime(
+                                saved.expiresAt
+                            )
+                        );
+                        console.log(
+                            'Expires UTC:  ' +
+                            progressAudit.iso(
+                                saved.expiresAt
+                            )
+                        );
+                        console.log('');
+                        console.log('Token:');
+                        console.log(token);
+                        console.log('');
+                        console.log(
+                            'Store/share this token carefully. ' +
+                            'It cannot be recovered from the database.'
+                        );
+                        console.log('');
+                    }
 
-                mdb.mongoose.disconnect();
-            });
+                    mdb.mongoose.disconnect();
+                }
+            );
+        })
+        .catch(function(err) {
+            console.error(err);
+            mdb.mongoose.disconnect();
+            process.exit(1);
         });
 });

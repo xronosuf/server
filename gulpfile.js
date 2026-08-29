@@ -25,6 +25,7 @@ var jsMainFile                = './public/javascripts/main.js';
 var jsBundleFile              = 'main.min.js';
 var jsServiceWorkerFile       = './public/javascripts/sw.js';
 var jsServiceWorkerBundleFile = 'sw.min.js';
+var mathExpressionsUmdFile    = './node_modules/math-expressions/build/math-expressions_umd.js';
 
 // Source and target SCSS files
 var cssMainFile       = './public/stylesheets/base.scss';
@@ -44,7 +45,6 @@ var options = {
 		    "targets": {
 			"browsers": ["last 2 versions", "safari >= 7"]
 		    }
-		}]
 	    ]
 	}]
     ],
@@ -65,10 +65,16 @@ function buildPipeline(b) {
         .pipe(gulp.dest(staticDirectoryJavascripts));
 }
 
-// Build JavaScript using Browserify
-gulp.task('js', function() {
-    return buildPipeline(bundler);
+// Copy the official alpha94 UMD build without sending it through Browserify 13.
+gulp.task('math-expressions', function() {
+    return gulp.src(mathExpressionsUmdFile)
+        .pipe(gulp.dest(staticDirectoryJavascripts));
 });
+
+// Build JavaScript using Browserify after the standalone math library is copied.
+gulp.task('js', gulp.series('math-expressions', function() {
+    return buildPipeline(bundler);
+}));
 
 ////////////////////////////////////////////////////////////////
 // Bundler for the service worker
@@ -83,7 +89,6 @@ var serviceWorkerBundler = browserify({
 		    "targets": {
 			"browsers": ["last 2 versions", "safari >= 7"]
 		    }
-		}]
 	    ]
 	}]
     ],
@@ -148,4 +153,3 @@ gulp.task('lint', function () {
 
 gulp.task('watch', gulp.series('watchify', 'csswatch', 'service-worker-watch'));
 gulp.task('default', gulp.series('js', 'css', 'service-worker'));
-

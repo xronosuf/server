@@ -10,7 +10,6 @@ var moment = require('moment');
 var async = require('async');
 var mdb = require('../mdb');
 var config = require('../config');   // for toValidPath ...
-var githubApi = require('github');
 
 function hasPermissionToView( viewer, viewee ) {
     if (viewer._id.equals(viewee._id))

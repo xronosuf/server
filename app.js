@@ -196,9 +196,6 @@ mdb.initialize(function (err) {
 	}));
     }
     
-passport.use(login.localStrategy(config.root));
-//passport.use(login.googleStrategy(config.root));
-passport.use(login.twitterStrategy(config.root));
 passport.use('lms', login.lmsStrategy(config.root));    
 passport.use(login.githubStrategy(config.root));
 
@@ -1082,30 +1079,6 @@ app.get('/sw.js', function(req, res) {
 
     ////////////////////////////////////////////////////////////////
     // Logins
-
-    // Google login.
-    /*app.get('/auth/google', passport.authenticate('google-openidconnect'));
-    app.get('/auth/google/callback',
-        passport.authenticate('google-openidconnect', {
-            successRedirect: config.toValidPath('/just-logged-in'),
-							    failureRedirect: '/auth/google'}));*/
-
-    if (config.localAuth) {
-	app.post('/auth/local', 
-		 passport.authenticate('local', { failureRedirect: '/' }),
-		 function(req, res) {
-		     res.redirect('/');
-		 });
-    }
-    
-    // Twitter login.
-    if (config.twitterAuth) {
-	app.get('/auth/twitter', passport.authenticate('twitter'));
-	app.get('/auth/twitter/callback',
-        passport.authenticate('twitter', {
-            successRedirect: config.toValidPath('/just-logged-in'),
-						   failureRedirect: '/auth/twitter'}));
-    }
 
     // GitHub login.
     if (config.githubAuth) {

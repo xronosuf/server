@@ -1,7 +1,4 @@
-//var GoogleStrategy = require("passport-google-openidconnect").Strategy,
-var  TwitterStrategy = require("passport-twitter").Strategy,
-  LocalStrategy = require("passport-local").Strategy,
-  LtiStrategy = require("./passport-lti").Strategy,
+var LtiStrategy = require("./passport-lti").Strategy,
   OAuth2Strategy = require("passport-oauth2").Strategy,
   async = require("async"),
   mdb = require("../mdb"),
@@ -47,82 +44,6 @@ module.exports.githubStrategy = function (rootUrl) {
             });
         });
       });
-    }
-  );
-};
-
-/*
-module.exports.googleStrategy = function (rootUrl) {
-  return new GoogleStrategy(
-    {
-      callbackURL: rootUrl + "/auth/google/callback",
-      clientID: config.google.clientID,
-      clientSecret: config.google.clientSecret,
-      scope: "email",
-      passReqToCallback: true,
-    },
-    function (req, iss, sub, profile, accessToken, refreshToken, done) {
-      addUserAccount(
-        req,
-        "googleOpenId",
-        profile.id,
-        profile.displayName,
-        null,
-        null,
-        done
-      );
-    }
-  );
-};*/
-
-module.exports.twitterStrategy = function (rootUrl) {
-  return new TwitterStrategy(
-    {
-      consumerKey: config.twitter.consumerKey,
-      consumerSecret: config.twitter.consumerSecret,
-      callbackURL: rootUrl + "/auth/twitter/callback",
-      passReqToCallback: true,
-    },
-    function (req, token, tokenSecret, profile, done) {
-      if (profile._json) profile = profile._json;
-      addUserAccount(
-        req,
-        "twitterOAuthId",
-        profile.id_str,
-        profile.name,
-        null,
-        null,
-        done
-      );
-    }
-  );
-};
-
-module.exports.localStrategy = function (rootUrl) {
-  return new LocalStrategy(
-    {
-      passReqToCallback: true,
-    },
-    function (req, username, password, done) {
-      // This is horrible, but at least it lets me check the login...
-      // addUserAccount(req, 'password', password, username, null, null, done);
-
-      mdb.User.findOne({ username: username })
-        .exec()
-        .then(function (user) {
-          if (!user) {
-            return done(null, false);
-          }
-          // BADBAD: password should be hashed
-          if (user.password != password) {
-            return done(null, false);
-          }
-          req.user = user;
-          return done(null, user);
-        })
-        .catch(function (err) {
-          done(err);
-        });
     }
   );
 };

@@ -45,6 +45,7 @@ var options = {
 		    "targets": {
 			"browsers": ["last 2 versions", "safari >= 7"]
 		    }
+		}]
 	    ]
 	}]
     ],
@@ -71,7 +72,7 @@ gulp.task('math-expressions', function() {
         .pipe(gulp.dest(staticDirectoryJavascripts));
 });
 
-// Build JavaScript using Browserify after the standalone math library is copied.
+// Build JavaScript using Browserify
 gulp.task('js', gulp.series('math-expressions', function() {
     return buildPipeline(bundler);
 }));
@@ -89,6 +90,7 @@ var serviceWorkerBundler = browserify({
 		    "targets": {
 			"browsers": ["last 2 versions", "safari >= 7"]
 		    }
+		}]
 	    ]
 	}]
     ],

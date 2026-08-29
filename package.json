@@ -54,7 +54,7 @@
     "jquery.kinetic": "^2.2.4",
     "jquery.transit": "^0.9.12",
     "jsondiffpatch": "^0.2.5",
-    "math-expressions": "^2.0.0-alpha1",
+    "math-expressions": "2.0.0-alpha94",
     "mathjax": "^2.7.4",
     "method-override": "^2.3.10",
     "moment": "^2.29.4",
@@ -88,7 +88,8 @@
       "jquery-fullsizable": "./node_modules/jquery-fullsizable/js/jquery-fullsizable.min.js",
       "pagedown-converter": "./vendor/pagedown-bootstrap/Markdown.Converter.js",
       "pagedown-sanitizer": "./vendor/pagedown-bootstrap/Markdown.Sanitizer.js",
-      "pagedown-editor": "./vendor/pagedown-bootstrap/Markdown.Editor.js"
+      "pagedown-editor": "./vendor/pagedown-bootstrap/Markdown.Editor.js",
+      "math-expressions": "./lib/math-expressions-compat.js"
     }
   },
   "devDependencies": {

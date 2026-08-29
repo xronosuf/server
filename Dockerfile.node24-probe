@@ -15,16 +15,21 @@ RUN apt-get update \
       python3 \
  && rm -rf /var/lib/apt/lists/*
 
-# Copy the application source before installing dependencies. The repository
-# .dockerignore excludes runtime data such as repositories/, node_modules/, and
-# local secrets so this remains a small, reproducible build context.
-COPY . .
+# Copy dependency manifests first so ordinary source-code changes do not
+# invalidate the expensive npm-install layer. Once a current package-lock.json
+# is checked in, this layer can also switch from npm install to npm ci.
+COPY package.json package-lock.json ./
 
 # Install the repository manifest exactly as checked in. This probe now
 # performs no dependency substitutions or package.json rewrites.
 RUN echo "Node: $(node --version)" \
  && echo "npm:  $(npm --version)" \
  && npm install --no-audit --no-fund
+
+# Copy application source only after dependencies have been installed. The
+# repository .dockerignore excludes runtime data such as repositories/,
+# node_modules/, and local secrets so this remains a small build context.
+COPY . .
 
 # Do not start Xronos from this probe image. A successful build only proves the
 # selected dependency graph can be installed under Node 24; later checkpoints

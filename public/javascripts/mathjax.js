@@ -25,8 +25,8 @@ window.MathJax = {
 
     TeX: {
 	equationNumbers: { autoNumber: "AMS" },
-	// siunitx copied from  https://github.com/mathjax/MathJax-third-party-extensions/blob/master/legacy/siunitx/siunitx.js
-	extensions: ["AMSmath.js","AMSsymbols.js","noErrors.js","noUndefined.js","color.js","cancel.js","mhchem.js", "siunitx.js" ],
+	// siunitx is bundled below from the tracked third-party extension copy.
+	extensions: ["AMSmath.js","AMSsymbols.js","noErrors.js","noUndefined.js","color.js","cancel.js","mhchem.js" ],
 	noErrors: {disabled: true},
 	Macros: {
 	    SI: ['\\num{#1}\\,\\si{#2}',2],
@@ -38,5 +38,9 @@ window.MathJax = {
     root: window.toValidPath("/node_modules/mathjax/")
 };
 require('mathjax2');
+
+// Keep Xronos' legacy third-party siunitx extension available without relying
+// on MathJax to fetch a non-package file from node_modules/mathjax/extensions.
+require('../../siunitx.js');
 
 module.exports = window.MathJax;

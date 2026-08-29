@@ -167,16 +167,7 @@ function bridgeHasPassbackFields(bridge) {
 }
 
 function saveBridge(bridge) {
-    return new Promise(function(resolve, reject) {
-        bridge.save(function(error) {
-            if (error) {
-                reject(error);
-                return;
-            }
-
-            resolve();
-        });
-    });
+    return bridge.save();
 }
 
 function redisZadd(client, score, member) {
@@ -188,16 +179,11 @@ function redisQuit(client) {
 }
 
 function disconnectMongo() {
-    return new Promise(function(resolve) {
-        if (!mdb.mongoose || !mdb.mongoose.connection) {
-            resolve();
-            return;
-        }
+    if (!mdb.mongoose || !mdb.mongoose.connection) {
+        return Promise.resolve();
+    }
 
-        mdb.mongoose.disconnect(function() {
-            resolve();
-        });
-    });
+    return mdb.mongoose.disconnect();
 }
 
 function summarizeByRepository(rows) {

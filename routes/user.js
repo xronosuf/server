@@ -579,7 +579,7 @@ exports.update = async function(req, res, next){
         if (req.body.displayName)
             document.displayName =
                 hash.displayName =
-                validator.toString(
+                String(
                     req.body.displayName
                 );
         else
@@ -645,7 +645,7 @@ exports.update = async function(req, res, next){
         if (req.body.biography) {
             document.biography =
                 hash.biography =
-                validator.toString(
+                String(
                     req.body.biography
                 );
         } else {
@@ -656,7 +656,7 @@ exports.update = async function(req, res, next){
         if (req.body.location) {
             document.location =
                 hash.location =
-                validator.toString(
+                String(
                     req.body.location
                 );
         }

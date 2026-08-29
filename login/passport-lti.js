@@ -1,10 +1,8 @@
 var util = require("util"),
   passport = require("passport"),
-  _ = require("underscore"),
   mdb = require("../mdb"),
   lti = require("ims-lti"),
-  config = require("../config"),
-  url = require("url");
+  config = require("../config");
 
 function LtiStrategy(options, verify) {
   this.name = "lti";
@@ -16,14 +14,24 @@ function LtiStrategy(options, verify) {
 util.inherits(LtiStrategy, passport.Strategy);
 
 LtiStrategy.prototype.authenticate = function (req) {
-  // I'm behind nginx so it looks like I'm serving http, but as far as the rest of the world is concerned, it's https
+  // Xronos is normally behind an HTTPS reverse proxy.  ims-lti only needs a
+  // small HTTP-request-shaped object to validate the OAuth signature, so avoid
+  // copying the entire Express request object: modern Express exposes several
+  // enumerable accessor properties and shallow-copying the request evaluates
+  // deprecated getters such as req.host.
   var protocol = "https";
   if (req.get("host") == "localhost:" + config.port) {
     protocol = "http";
   }
 
-  var myRequest = _.extend({}, req, { protocol: protocol });
-  myRequest.originalUrl = config.toValidPath(myRequest.originalUrl);
+  var myRequest = {
+    method: req.method,
+    url: req.url,
+    originalUrl: config.toValidPath(req.originalUrl),
+    protocol: protocol,
+    headers: req.headers,
+    body: req.body
+  };
   var self = this;
 
   function verified(err, user, info) {
@@ -45,7 +53,7 @@ LtiStrategy.prototype.authenticate = function (req) {
     .then(function (keyAndSecret) {
       if (!keyAndSecret) {
         self.error(
-          "The LTI key has not been registered with xake lti"
+          "The LTI key has not been registered with Xronos"
         );
         return;
       }

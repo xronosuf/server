@@ -154,13 +154,9 @@ exports.record = function recordProgressMilestone(options, callback) {
 
     mdb.ProgressMilestone.findOne(query)
         .sort({ observedAt: -1 })
-        .exec(function(err, previous) {
+        .exec()
+        .then(function(previous) {
             var milestone;
-
-            if (err) {
-                callback(err);
-                return;
-            }
 
             if (!scoreImproved(previous, score)) {
                 callback(null);
@@ -183,6 +179,16 @@ exports.record = function recordProgressMilestone(options, callback) {
                 now
             );
 
-            milestone.save(callback);
+            milestone
+                .save()
+                .then(function() {
+                    callback(null);
+                })
+                .catch(function(err) {
+                    callback(err);
+                });
+        })
+        .catch(function(err) {
+            callback(err);
         });
 };

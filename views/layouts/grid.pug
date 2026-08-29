@@ -48,6 +48,45 @@ html(lang="en")
       link(rel="stylesheet/less",type="text/css",href=toValidPath(versionPath(stylesheet)))
     script(src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/0.6.0/p5.js")
     script(type="text/javascript",src="//cdnjs.cloudflare.com/ajax/libs/seedrandom/2.4.3/seedrandom.min.js")
+    script(type="text/javascript").
+      (function() {
+        window.__xronosMathExpressionsSavedDefine = {
+          hadOwn: Object.prototype.hasOwnProperty.call(window, 'define'),
+          value: window.define
+        };
+        window.define = undefined;
+      })();
+    script(type="text/javascript",src=toValidPath(versionPath("/public/javascripts/math-expressions_umd.js")))
+    script(type="text/javascript").
+      (function() {
+        var savedDefine = window.__xronosMathExpressionsSavedDefine;
+        if (savedDefine) {
+          if (savedDefine.hadOwn) {
+            window.define = savedDefine.value;
+          } else {
+            try {
+              delete window.define;
+            } catch (err) {
+              window.define = savedDefine.value;
+            }
+          }
+          try {
+            delete window.__xronosMathExpressionsSavedDefine;
+          } catch (err) {
+            window.__xronosMathExpressionsSavedDefine = undefined;
+          }
+        }
+
+        var namespace = window.MathExpression;
+        var api = namespace;
+        if (api && api.default && typeof api.fromText !== 'function') {
+          api = api.default;
+        }
+        if (!api || typeof api.fromText !== 'function') {
+          throw new Error('Unable to initialize the MathExpressions global');
+        }
+        window.MathExpressions = api;
+      })();
     script(type="text/javascript",src=toValidPath(versionPath("/public/javascripts/main.min.js")))
 
     link(rel="shortcut icon",type="image/x-icon",href=toValidPath("/favicon.ico"))
@@ -71,7 +110,7 @@ html(lang="en")
         var e = document.createElement("script"); 
         e.src = "//browser-update.org/update.min.js"; 
         document.body.appendChild(e);
-      };
+      }
       try {document.addEventListener("DOMContentLoaded", $buo_f,false)}
       catch(e){window.attachEvent("onload", $buo_f)}
 

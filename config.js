@@ -149,30 +149,13 @@ config.smtp.address            = process.env.SMTP_FROM_ADDRESS || 'ximera@math.o
  * Authorization Configuration
  */
 
-config.localAuth = false;
-// if (config.environment == 'development') {
-//     config.localAuth = true;
-// }
-
-// Github
+// GitHub OAuth remains optional for legacy author/repository workflows.
 config.githubAuth              = process.env.GITHUB_AUTH ? true : false;
 config.github                  = {};
 config.github.clientID         = process.env.GITHUB_CLIENT_ID    || 'Your Key';
 config.github.clientSecret     = process.env.GITHUB_CLIENT_SECRET || 'Your Secret';
 
-// Twitter
-config.twitterAuth             = false;
-config.twitter                 = {};
-config.twitter.consumerKey     = process.env.TWITTER_CONSUMER_KEY    || 'Your Key';
-config.twitter.consumerSecret  = process.env.TWITTER_CONSUMER_SECRET || 'Your Secret';
-
-// Google
-config.googleAuth              = false;
-config.google                  = {};
-config.google.clientID         = process.env.GOOGLE_CLIENT_ID    || 'Your Key';
-config.google.clientSecret     = process.env.GOOGLE_CLIENT_SECRET || 'Your Secret';
-
-// LTI
+// LTI is the primary learner authentication mechanism.
 config.scopedSageBaseSeeds = process.env.XIMERA_SCOPED_SAGE_BASE_SEEDS === 'true';
 config.scopedSageBaseSeedsAfter = process.env.XIMERA_SCOPED_SAGE_BASE_SEEDS_AFTER || '2026-08-10T00:00:00-04:00';
 

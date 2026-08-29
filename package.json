@@ -35,7 +35,6 @@
     "express-rate-limit": "^2.7.0",
     "express-session": "1.19.0",
     "express-winston": "^2.5.1",
-    "faker": "^4.1.0",
     "fast-crc32c": "^1.0.4",
     "font-awesome": "^4.7.0",
     "fs-extra": "11.4.0",
@@ -114,9 +113,5 @@
     "yargs": "3.10.0",
     "@babel/core": "7.29.7",
     "@babel/preset-env": "7.29.7"
-  },
-  "optionalDependencies": {
-    "bufferutil": "^4.0.0",
-    "utf-8-validate": "^5.0.1"
   }
 }

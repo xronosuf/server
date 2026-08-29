@@ -13,7 +13,7 @@ var childProcess      = require('child_process');
 // *For Development Purposes*
 // Read in environment vars from .env file
 
-dotenv.load();
+dotenv.config();
 
 /**
  * Configuration File

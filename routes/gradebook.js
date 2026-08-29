@@ -428,16 +428,17 @@ exports.record = function(req, res, next) {
 
         console.log('gradebook.record for ' + req.user._id + ' (' + repositoryName +'/'+ req.params.path +')');
 
-        mdb.LtiBridge.find( {user: req.user._id, repository: repositoryName, path:req.params.path }, function(err, bridges) {
-            var gradeSync;
+        mdb.LtiBridge.find({
+            user: req.user._id,
+            repository: repositoryName,
+            path: req.params.path
+        })
+            .exec()
+            .then(function(bridges) {
+                var gradeSync =
+                    buildGradeSyncStatus(bridges);
 
-            if (err) {
-                console.log(err);
-                next(err);
-            } else {
-                gradeSync = buildGradeSyncStatus(bridges);
-
-                async.each( bridges,
+                async.each(bridges,
                     function(bridge, callback) {
                         var pointsPossible;
                         var resultScore;
@@ -496,30 +497,41 @@ exports.record = function(req, res, next) {
                         console.log('New best score for bridge: '+bridge.resultScore + ' / ' + bridge.resultTotalScore);
                         bridge.submittedScore = false;
 
-                        bridge.save(function(err) {
-                            if (err) {
-                                callback(err);
-                                return;
-                            }
+                        bridge
+                            .save()
+                            .then(function() {
+                                queueBridge(
+                                    bridge,
+                                    function(err) {
+                                        if (!err) {
+                                            gradeSync
+                                                .queuedGradePassbackCount += 1;
+                                            gradeSync
+                                                .queuedGradePassback = true;
+                                        }
 
-                            queueBridge(bridge, function(err) {
-                                if (!err) {
-                                    gradeSync.queuedGradePassbackCount += 1;
-                                    gradeSync.queuedGradePassback = true;
-                                }
-
+                                        callback(err);
+                                    }
+                                );
+                            })
+                            .catch(function(err) {
                                 callback(err);
                             });
-                        });
                     },
                     function(err) {
                         if (err)
                             res.status(500).json(err);
                         else
-                            res.json({ok: true, gradeSync: gradeSync});
+                            res.json({
+                                ok: true,
+                                gradeSync: gradeSync
+                            });
                     });
-            }
-        });
+            })
+            .catch(function(err) {
+                console.log(err);
+                next(err);
+            });
     }
 };
 

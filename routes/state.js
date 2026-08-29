@@ -152,23 +152,51 @@ handlers.watch = function(
     );
 
     // BADBAD: Need some security here...
-    console.log( "BADBAD: no security checks for " + userId );
+    console.log(
+        "BADBAD: no security checks for " + userId
+    );
 
     if (userId == null) {
-	userId = socket.session.guestUserId;
-	if (socket.session.passport) {
-	    userId = socket.session.passport.user || userId;
-	}
+        userId = socket.session.guestUserId;
+
+        if (socket.session.passport) {
+            userId =
+                socket.session.passport.user ||
+                userId;
+        }
     }
-    
-    mdb.Completion.find({user: userId}, { activityPath: 1, repositoryName: 1, complete: 1 }, function (err, completions) {
-	if (!err && completions)
-	    socket.sendJSON('completions', completions);
-    });
-    
+
+    /*
+     * This lookup intentionally remains independent of the
+     * initial State lookup below, preserving the old callback
+     * timing rather than serializing the two database reads.
+     */
+    mdb.Completion.find(
+        {user: userId},
+        {
+            activityPath: 1,
+            repositoryName: 1,
+            complete: 1
+        }
+    )
+        .exec()
+        .then(function(completions) {
+            if (completions) {
+                socket.sendJSON(
+                    'completions',
+                    completions
+                );
+            }
+        })
+        .catch(function() {
+            /*
+             * Legacy behavior ignored Completion lookup errors.
+             */
+        });
+
     socket.userId = userId;
-    userRooms.join( userId, socket );
-    
+    userRooms.join(userId, socket);
+
     if (!activityHash) {
         socket.sendJSON(
             'initial-state-result',
@@ -185,74 +213,110 @@ handlers.watch = function(
 
     var roomName =
         `/users/${userId}/state/${activityHash}`;
+
     socket.activityRoom = roomName;
     activityRooms.join(roomName, socket);
 
-    mdb.State.findOne(
-        {
-            activityHash: activityHash,
-            user: userId
-        },
-        function(err, state) {
-            var result =
-                initialStateProtocol.serverResult(
-                    activityHash,
-                    err,
-                    state
-                );
+    mdb.State.findOne({
+        activityHash: activityHash,
+        user: userId
+    })
+        .exec()
+        .then(function(state) {
+            sendInitialStateResult(
+                null,
+                state
+            );
+        })
+        .catch(function(err) {
+            sendInitialStateResult(
+                err,
+                null
+            );
+        });
 
-            if (result.outcome === 'failed') {
-                winston.error(
-                    "Initial page-state lookup failed " +
-                    "for activity hash. " +
-                    "supportTrace=" +
-                    (
-                        socket.supportTraceId ||
-                        "-"
-                    )
-                );
-            }
+    function sendInitialStateResult(err, state) {
+        var result =
+            initialStateProtocol.serverResult(
+                activityHash,
+                err,
+                state
+            );
 
-            if (
-                result.outcome === 'found' ||
-                result.outcome === 'empty'
-            ) {
-                socket.shadow = result.data;
-            }
-
-            socket.sendJSON(
-                'initial-state-result',
-                result
+        if (result.outcome === 'failed') {
+            winston.error(
+                "Initial page-state lookup failed " +
+                "for activity hash. " +
+                "supportTrace=" +
+                (
+                    socket.supportTraceId ||
+                    "-"
+                )
             );
         }
-    );
+
+        if (
+            result.outcome === 'found' ||
+            result.outcome === 'empty'
+        ) {
+            socket.shadow = result.data;
+        }
+
+        socket.sendJSON(
+            'initial-state-result',
+            result
+        );
+    }
 };
-    
+
 handlers.wantDifferential = function() {
     var socket = this;
-    
+
     var userId = socket.userId;
     var activityHash = socket.activityHash;
-	
-    if ( (!activityHash) || (!userId) )
-	return;
-	
-    mdb.State.findOne({activityHash: activityHash, user: userId} , function(err, state) {
-	if (err || (!state))
-	    return;
-	
-	var data = state.data;
-	
-	// Send a diff if needed
-	var delta = jsondiffpatch.diff(socket.shadow, data);
-	
-	if (delta !== undefined) {
-	    socket.sendJSON('patch', delta, checksumObject( socket.shadow ) );
-	    socket.shadow = jsondiffpatch.clone(data);		    
-	}
-    });
+
+    if ((!activityHash) || (!userId))
+        return;
+
+    mdb.State.findOne({
+        activityHash: activityHash,
+        user: userId
+    })
+        .exec()
+        .then(function(state) {
+            if (!state)
+                return;
+
+            var data = state.data;
+
+            // Send a diff if needed
+            var delta =
+                jsondiffpatch.diff(
+                    socket.shadow,
+                    data
+                );
+
+            if (delta !== undefined) {
+                socket.sendJSON(
+                    'patch',
+                    delta,
+                    checksumObject(
+                        socket.shadow
+                    )
+                );
+
+                socket.shadow =
+                    jsondiffpatch.clone(data);
+            }
+        })
+        .catch(function() {
+            /*
+             * Legacy behavior silently ignored State lookup
+             * failures in this handler.
+             */
+        });
 };
-    
+
 handlers.sync = function(data) {
     var socket = this;    
     var userId = socket.userId;
@@ -275,91 +339,183 @@ handlers.outOfSync = function() {
     socket.sendJSON('sync', socket.shadow);
 };
     
-handlers.patch = function(delta, checksum, truth) {
-    var socket = this;            
+handlers.patch = function(
+    delta,
+    checksum,
+    truth
+) {
+    var socket = this;
     var userId = socket.userId;
     var activityHash = socket.activityHash;
-	
-    if ( (!activityHash) || (!userId) )
-	return;
+
+    if ((!activityHash) || (!userId))
+        return;
 
     // Apply the patch to the shadow
-    if (checksumObject(socket.shadow) != checksum) {
-	socket.sendJSON( 'out-of-sync' );
-	return;
+    if (
+        checksumObject(socket.shadow) != checksum
+    ) {
+        socket.sendJSON('out-of-sync');
+        return;
     }
-	
+
     // Frankly this should never fail
     try {
-	jsondiffpatch.patch(socket.shadow, delta);
-    } catch (e) {
-	winston.error('could not patch a shadow that passed a checksum test');
-	winston.error(e);
-    }
-    
-    // Apply patch to the server state
-    mdb.State.findOne({activityHash: activityHash, user: userId} , function(err, state) {
-	var data;
-	
-	if (err || (!state))
-	    data = {};
-	else
-	    data = state.data;
-	
-	// fuzzypatch the object, which can fail
-	try {
-	    jsondiffpatch.patch(data, delta);
-	} catch (e) {
-	}
-	
-	mdb.State.updateOne({activityHash: activityHash, user: userId}, {$set: {data: data}}, {upsert: true}, function (err, affected, raw) {
-	    if (err) {
-        supportTraceLog(
-            socket,
-            "state-patch-failed"
+        jsondiffpatch.patch(
+            socket.shadow,
+            delta
         );
-		socket.sendJSON('patched', err);
-	    } else {
-		// tell other people in the room that we have a differential if they want it
-		activityRooms.broadcast( socket.activityRoom, null, 'have-differential', checksumObject( data ) );
-	    }
-	});
-    });
+    } catch (e) {
+        winston.error(
+            'could not patch a shadow that ' +
+            'passed a checksum test'
+        );
+        winston.error(e);
+    }
+
+    // Apply patch to the server state.
+    mdb.State.findOne({
+        activityHash: activityHash,
+        user: userId
+    })
+        .exec()
+        .then(function(state) {
+            return state;
+        })
+        .catch(function() {
+            /*
+             * Legacy behavior treated a lookup error the same
+             * as a missing state and continued with {}.
+             */
+            return null;
+        })
+        .then(function(state) {
+            var data;
+
+            if (!state)
+                data = {};
+            else
+                data = state.data;
+
+            // fuzzypatch the object, which can fail
+            try {
+                jsondiffpatch.patch(
+                    data,
+                    delta
+                );
+            } catch (e) {
+            }
+
+            return mdb.State.updateOne(
+                {
+                    activityHash: activityHash,
+                    user: userId
+                },
+                {
+                    $set: {
+                        data: data
+                    }
+                },
+                {
+                    upsert: true
+                }
+            )
+                .exec()
+                .then(function() {
+                    /*
+                     * Tell other people in the room that we
+                     * have a differential if they want it.
+                     */
+                    activityRooms.broadcast(
+                        socket.activityRoom,
+                        null,
+                        'have-differential',
+                        checksumObject(data)
+                    );
+                })
+                .catch(function(err) {
+                    supportTraceLog(
+                        socket,
+                        "state-patch-failed"
+                    );
+
+                    socket.sendJSON(
+                        'patched',
+                        err
+                    );
+                });
+        });
 };
-    
+
 handlers.completion = function(c) {
-    var socket = this;                
+    var socket = this;
     var userId = socket.userId;
     var activityHash = socket.activityHash;
-	
-    if ( (!activityHash) || (!userId) )
-	return;
-	
-    var query = {activityHash: activityHash,
-		 user: userId};
-	
+
+    if ((!activityHash) || (!userId))
+        return;
+
+    var query = {
+        activityHash: activityHash,
+        user: userId
+    };
+
     if (c.activityPath) {
-	query = {activityHash: activityHash,
-		 activityPath: c.activityPath,
-		 repositoryName: c.repositoryName,
-		 user: userId};
+        query = {
+            activityHash: activityHash,
+            activityPath: c.activityPath,
+            repositoryName: c.repositoryName,
+            user: userId
+        };
     }
-	
-    mdb.Completion.updateOne(query, {$set: {complete: c.complete, date: new Date()}}, {upsert: true}, function (err, affected, raw) {
-	var payload = [{activityPath: c.activityPath,
-			userId: userId,
-			repositoryName: c.repositoryName,
-			complete: c.complete}];
-	
-	// Tell other browsers viewing this user
-	userRooms.broadcast( socket.userId, null, 'completions', payload );
-	
-	// And tell any instructors what this student is doing
-	
-	socket.activityPath = c.activityPath;
-	socket.repositoryName = c.repositoryName;
-    });
+
+    /*
+     * Legacy behavior performed the broadcasts from the update
+     * callback regardless of whether updateOne reported an
+     * error. Preserve that behavior by invoking finish() from
+     * both promise outcomes.
+     */
+    mdb.Completion.updateOne(
+        query,
+        {
+            $set: {
+                complete: c.complete,
+                date: new Date()
+            }
+        },
+        {
+            upsert: true
+        }
+    )
+        .exec()
+        .then(finish, finish);
+
+    function finish() {
+        var payload = [{
+            activityPath: c.activityPath,
+            userId: userId,
+            repositoryName:
+                c.repositoryName,
+            complete: c.complete
+        }];
+
+        // Tell other browsers viewing this user
+        userRooms.broadcast(
+            socket.userId,
+            null,
+            'completions',
+            payload
+        );
+
+        // And tell any instructors what this student is doing
+        socket.activityPath =
+            c.activityPath;
+
+        socket.repositoryName =
+            c.repositoryName;
+    }
 };
+
 
 
 exports.connection = function( socket ) {

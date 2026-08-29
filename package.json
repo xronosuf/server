@@ -73,7 +73,7 @@
     "tether": "^1.4.3",
     "uint32": "^0.2.1",
     "underscore": "1.13.8",
-    "validator": "4.5.0",
+    "validator": "13.15.35",
     "versionator": "^2.0.0",
     "winston": "1.0.1",
     "ws": "6.2.6",

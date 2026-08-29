@@ -19,12 +19,12 @@ RUN apt-get update \
 # invalidate the expensive dependency-install layer.
 COPY package.json package-lock.json ./
 
-# Use npm install temporarily while the newly generated lockfile is repaired
-# to satisfy npm ci's stricter completeness checks. The dependency layer is
-# still isolated from ordinary source changes and can therefore be cached.
+# Install exactly the dependency graph recorded in package-lock.json. Using
+# npm ci avoids re-resolving dependency versions and fails if the manifest and
+# lockfile drift out of sync.
 RUN echo "Node: $(node --version)" \
  && echo "npm:  $(npm --version)" \
- && npm install --no-audit --no-fund
+ && npm ci --no-audit --no-fund
 
 # Copy application source only after dependencies have been installed. The
 # repository .dockerignore excludes runtime data such as repositories/,

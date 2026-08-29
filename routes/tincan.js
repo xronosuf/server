@@ -9,7 +9,7 @@ var uint32 = require("uint32");
 var crc32 = require("fast-crc32c");
 var config = require("../config");
 var httpClient = require("../lib/legacy-http-client");
-var uuid = require("node-uuid");
+var crypto = require("crypto");
 
 var lrsRoot = config.repositories.root;
 
@@ -191,7 +191,7 @@ exports.postStatements = function (req, res) {
   } else {
     req.body.forEach(function (data) {
       var statement = {
-        id: uuid.v4(),
+        id: crypto.randomUUID(),
       };
 
       if (!req.user.ltiUserId) {

@@ -4,7 +4,7 @@ var pug = require('pug');
 var path = require('path');
 var config = require('../config');
 var async = require('async');
-var uuid = require('node-uuid');
+var crypto = require('crypto');
 var progressMilestones = require('./progress-milestones');
 
 const Redis = require("ioredis");
@@ -135,7 +135,7 @@ function processGradebook(id, callback) {
         .exec()
         .then(function(bridge) {
             var pox = passback({
-                messageIdentifier: uuid.v1(),
+                messageIdentifier: crypto.randomUUID(),
                 resultDataUrl:
                     config.root +
                     '/users/' +

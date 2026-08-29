@@ -4,7 +4,6 @@
  */
 
 var crypto = require('crypto');
-var uuid = require('node-uuid');
 var validator = require('validator');
 var moment = require('moment');
 var async = require('async');
@@ -134,11 +133,11 @@ exports.putSecret = async function(req, res, next){
 
     var hash = {};
 
-    hash.apiKey = uuid.v4();
+    hash.apiKey = crypto.randomUUID();
 
     hash.apiSecret = crypto
         .createHash('sha256')
-        .update(uuid.v4())
+        .update(crypto.randomUUID())
         .update(
             crypto.randomBytes(256)
         )

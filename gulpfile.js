@@ -39,9 +39,11 @@ var options = {
 	[aliasify],
 	[babelify, {
 	    global: true,
-	    ignore: /\/node_modules\/(?!syntaxhighlighter|brush-)/,
+	    babelrc: false,
+	    configFile: false,
+	    ignore: [/\/node_modules\/(?!syntaxhighlighter|brush-)/],
 	    "presets": [
-		["env", {
+		["@babel/preset-env", {
 		    "targets": {
 			"browsers": ["last 2 versions", "safari >= 7"]
 		    }
@@ -85,8 +87,10 @@ var serviceWorkerBundler = browserify({
 	[aliasify],
 	[babelify, {
 	    global: true,
+	    babelrc: false,
+	    configFile: false,
 	    "presets": [
-		["env", {
+		["@babel/preset-env", {
 		    "targets": {
 			"browsers": ["last 2 versions", "safari >= 7"]
 		    }

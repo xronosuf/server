@@ -175,8 +175,11 @@ mdb.initialize(function (err) {
 	mdb.KeyAndSecret.updateOne(
 	    {ltiKey: config.lti.key},
 	    {ltiKey: config.lti.key, ltiSecret: config.lti.secret},
-	    {upsert: true},
-	    function(err) {
+	    {upsert: true}
+	)
+	    .exec()
+	    .catch(function() {
+	        // Preserve legacy behavior: startup ignored this error.
 	    });
     }
     
@@ -205,9 +208,16 @@ passport.serializeUser(function(user, done) {
 });
 
 passport.deserializeUser(function(id, done) {
-   mdb.User.findOne({_id: new mdb.ObjectId(id)}, function(err,document) {
-       done(err, document);
-   });
+   mdb.User.findOne({
+       _id: new mdb.ObjectId(id)
+   })
+       .exec()
+       .then(function(document) {
+           done(null, document);
+       })
+       .catch(function(err) {
+           done(err);
+       });
 });
 
     app.version = config.version;

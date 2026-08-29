@@ -11,7 +11,15 @@ function createGuestUser( req, res, next ) {
         remoteAddress: remoteAddress
     });
     req.session.guestUserId = req.user._id;
-    req.user.save(next);
+
+    req.user
+        .save()
+        .then(function() {
+            next();
+        })
+        .catch(function(err) {
+            next(err);
+        });
 };
 
 // Add guest users account if not logged in.
@@ -29,19 +37,27 @@ module.exports.middleware = function(req, res, next) {
     // If we've already created a guest account... 
     if (req.session.guestUserId) {
 	// attempt to load it
-        mdb.User.findOne({_id: req.session.guestUserId}, function (err, user) {
-            if (err) {
+        mdb.User.findOne({
+            _id: req.session.guestUserId
+        })
+            .exec()
+            .then(function(user) {
+                if (user) {
+                    req.user = user;
+                    next();
+                }
+                else {
+                    req.session.guestUserId = null;
+                    createGuestUser(
+                        req,
+                        res,
+                        next
+                    );
+                }
+            })
+            .catch(function(err) {
                 next(err);
-            }
-            else if (user) {
-                req.user = user;
-                next();
-            }
-            else {
-                req.session.guestUserId = null;
-		createGuestUser( req, res, next );		
-            }
-        });
+            });
 	
     } else {
 	createGuestUser( req, res, next );

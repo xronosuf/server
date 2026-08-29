@@ -38,32 +38,47 @@ LtiStrategy.prototype.authenticate = function (req) {
 
   var profile = req.body;
 
-  mdb.KeyAndSecret.findOne(
-    { ltiKey: profile.oauth_consumer_key },
-    function (err, keyAndSecret) {
-      if (err) self.error(err);
-      else {
-        if (!keyAndSecret) {
-          self.error("The LTI key has not been registered with xake lti");
-        } else {
-          self.provider = new lti.Provider(
-            keyAndSecret.ltiKey,
-            keyAndSecret.ltiSecret
-          );
-
-          self.provider.valid_request(myRequest, function (err, isValid) {
-            if (!isValid) {
-              return self.error(err);
-            } else {
-              // An LTI user may end up taking a course multiple times, but we want a fresh experience each time
-              var identifier = profile.user_id + "-" + profile.context_id;
-              self._verify(req, identifier, profile, verified);
-            }
-          });
-        }
+  mdb.KeyAndSecret.findOne({
+    ltiKey: profile.oauth_consumer_key
+  })
+    .exec()
+    .then(function (keyAndSecret) {
+      if (!keyAndSecret) {
+        self.error(
+          "The LTI key has not been registered with xake lti"
+        );
+        return;
       }
-    }
-  );
+
+      self.provider = new lti.Provider(
+        keyAndSecret.ltiKey,
+        keyAndSecret.ltiSecret
+      );
+
+      self.provider.valid_request(
+        myRequest,
+        function (err, isValid) {
+          if (!isValid) {
+            return self.error(err);
+          }
+
+          // An LTI user may end up taking a course multiple
+          // times, but we want a fresh experience each time.
+          var identifier =
+            profile.user_id + "-" + profile.context_id;
+
+          self._verify(
+            req,
+            identifier,
+            profile,
+            verified
+          );
+        }
+      );
+    })
+    .catch(function (err) {
+      self.error(err);
+    });
 };
 
 module.exports.Strategy = LtiStrategy;

@@ -367,28 +367,28 @@ function initializeZeroGradePassback(bridge, callback) {
   bridge.resultTotalScore = 0;
   bridge.submittedScore = false;
 
-  bridge.save(function (err) {
-    if (err) {
-      callback(err);
-      return;
-    }
+  bridge
+    .save()
+    .then(function () {
+      gradebook.queueBridge(bridge, function (err) {
+        if (!err) {
+          console.log(
+            "Queued initial zero grade passback for bridge " +
+              bridge._id +
+              " (" +
+              bridge.repository +
+              "/" +
+              bridge.path +
+              ")"
+          );
+        }
 
-    gradebook.queueBridge(bridge, function (err) {
-      if (!err) {
-        console.log(
-          "Queued initial zero grade passback for bridge " +
-            bridge._id +
-            " (" +
-            bridge.repository +
-            "/" +
-            bridge.path +
-            ")"
-        );
-      }
-
+        callback(err);
+      });
+    })
+    .catch(function (err) {
       callback(err);
     });
-  });
 }
 
 // Test this with  http://lti.tools/test/tc.php
@@ -412,7 +412,14 @@ function addLmsAccount(req, identifier, profile, done) {
       // Assuming that ltiId's are globally unique (!), see if a
       // user for this ltiId has already logged in
       function (callback) {
-        mdb.LtiBridge.findOne({ ltiId: identifier }, callback);
+        mdb.LtiBridge.findOne({ ltiId: identifier })
+          .exec()
+          .then(function (bridge) {
+            callback(null, bridge);
+          })
+          .catch(function (err) {
+            callback(err);
+          });
       },
 
       // Load the associated user (or use the current one, if there
@@ -422,7 +429,14 @@ function addLmsAccount(req, identifier, profile, done) {
           if (bridge.user == req.user._id) {
             callback(null, req.user);
           } else {
-            mdb.User.findOne({ _id: bridge.user }, callback);
+            mdb.User.findOne({ _id: bridge.user })
+              .exec()
+              .then(function (user) {
+                callback(null, user);
+              })
+              .catch(function (err) {
+                callback(err);
+              });
           }
         } else {
           callback(null, req.user);
@@ -451,7 +465,14 @@ function addLmsAccount(req, identifier, profile, done) {
         if (profile.resource_link_id)
           hash.resourceLinkId = profile.resource_link_id;
 
-        mdb.LtiBridge.findOne(hash, callback);
+        mdb.LtiBridge.findOne(hash)
+          .exec()
+          .then(function (bridge) {
+            callback(null, bridge);
+          })
+          .catch(function (err) {
+            callback(err);
+          });
       },
 
       // Update the bridge, or create a bridge if there isn't
@@ -539,28 +560,28 @@ function addLmsAccount(req, identifier, profile, done) {
         }
         // console.log(bridge);
 
-        bridge.save(function (err) {
-          if (err) {
+        bridge
+          .save()
+          .then(function () {
+            initializeZeroGradePassback(bridge, function (err) {
+              if (err) {
+                /*
+                 * A zero-grade initialization failure should not block the
+                 * student's LTI launch.  Log it and allow the login flow to
+                 * continue; later progress updates can still queue passback.
+                 */
+                console.log("Error queueing initial zero grade passback");
+                console.log(err);
+              }
+
+              callback(null, bridge);
+            });
+          })
+          .catch(function (err) {
             console.log("Error saving bridge");
             console.log(err);
             callback(err);
-            return;
-          }
-
-          initializeZeroGradePassback(bridge, function (err) {
-            if (err) {
-              /*
-               * A zero-grade initialization failure should not block the
-               * student's LTI launch.  Log it and allow the login flow to
-               * continue; later progress updates can still queue passback.
-               */
-              console.log("Error queueing initial zero grade passback");
-              console.log(err);
-            }
-
-            callback(null, bridge);
           });
-        });
       },
 
       // Update the current user object
@@ -584,8 +605,9 @@ function addLmsAccount(req, identifier, profile, done) {
         // Some denormalization is desirable in the user object
         // since we often have to determine whether or not someone
         // is an instructor in a course
-        mdb.LtiBridge.find({ user: bridge.user }, function (err, bridges) {
-          if (!err) {
+        mdb.LtiBridge.find({ user: bridge.user })
+          .exec()
+          .then(function (bridges) {
             updates.instructorRepositoryPaths = [];
 
             bridges.forEach(function (b) {
@@ -604,14 +626,24 @@ function addLmsAccount(req, identifier, profile, done) {
                 }
               });
             });
-          }
-          mdb.User.findOneAndUpdate(
-            { _id: bridge.user },
-            updates,
-            { new: true },
-            callback
-          );
-        });
+          })
+          .catch(function () {
+            // Preserve legacy behavior: this lookup failure did not block
+            // updating the user; it only skipped rebuilding instructor paths.
+          })
+          .then(function () {
+            return mdb.User.findOneAndUpdate(
+              { _id: bridge.user },
+              updates,
+              { new: true }
+            ).exec();
+          })
+          .then(function (user) {
+            callback(null, user);
+          })
+          .catch(function (err) {
+            callback(err);
+          });
       },
     ],
     function (err, result) {

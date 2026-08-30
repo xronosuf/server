@@ -260,7 +260,7 @@ if ! podman volume exists "$MONGO_VOLUME"; then
 fi
 VOLUME_PATH=$(podman volume inspect "$MONGO_VOLUME" --format '{{.Mountpoint}}')
 if find "$VOLUME_PATH" -mindepth 1 -print -quit | grep -q .; then
-    echo "ERROR: destination Mongo volume is not empty: $VOLUME" >&2
+    echo "ERROR: destination Mongo volume is not empty: $MONGO_VOLUME" >&2
     exit 1
 fi
 

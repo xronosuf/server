@@ -55,7 +55,6 @@ rollback() {
 
     if [[ "$ENV_SWAPPED" == "1" && -f "$ENV_BACKUP" ]]; then
         cp -p "$ENV_BACKUP" "$ENV_CURRENT"
-        chmod 600 "$ENV_CURRENT"
     fi
 
     if [[ "$LEGACY_STOPPED" == "1" ]]; then
@@ -118,8 +117,12 @@ echo "============================================================"
 
 [[ "$(hostname -s)" == "$EXPECTED_HOST" ]] || fail "wrong host"
 [[ -f "$ENV_CURRENT" && -f "$ENV_NEXT" ]] || fail "deployment env files missing"
-[[ "$(stat -c '%a' "$ENV_CURRENT")" == "600" ]] || fail "current env must be mode 600"
-[[ "$(stat -c '%a' "$ENV_NEXT")" == "600" ]] || fail "next env must be mode 600"
+ENV_MODE=$(stat -c '%a' "$ENV_CURRENT")
+case "$ENV_MODE" in
+    600|660) ;;
+    *) fail "current env must be mode 600 or 660 (found $ENV_MODE)" ;;
+esac
+[[ "$(stat -c '%a' "$ENV_NEXT")" == "$ENV_MODE" ]] || fail "next env mode must match current env mode $ENV_MODE"
 podman image exists "$APP_IMAGE" || fail "modern app image missing"
 podman network exists "$APP_NETWORK" || fail "modernization network missing"
 podman network exists "$SAGE_NETWORK" || fail "Sage network missing"
@@ -181,9 +184,7 @@ echo "Pending gradebook queue copied exactly: $legacy_count entries"
 
 [[ ! -e "$ENV_BACKUP" ]] || fail "env backup already exists: $ENV_BACKUP"
 cp -p "$ENV_CURRENT" "$ENV_BACKUP"
-chmod 600 "$ENV_BACKUP"
 cp -p "$ENV_NEXT" "${ENV_CURRENT}.cutover-tmp"
-chmod 600 "${ENV_CURRENT}.cutover-tmp"
 mv -f "${ENV_CURRENT}.cutover-tmp" "$ENV_CURRENT"
 ENV_SWAPPED=1
 ROLLBACK_ARMED=1

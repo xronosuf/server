@@ -25,7 +25,7 @@ var createActivityCard = function() {
 
     if (!(activityCard.hasClass('part'))) {
         if (activityCard.hasClass('chapter')) itself = 1;
-        activityCard.attr('data-chapter-counter', activityCard.prevUntil('.activity-card.part', '.activity-card.chapter').length + itself);
+        activityCard.attr('data-chapter-counter', activityCard.prevAll('.activity-card.chapter').length + itself);
         label = activityCard.attr('data-chapter-counter');
     }
     

@@ -24,14 +24,9 @@ SAGE_BUILD_CONTEXT="${XRONOS_SAGE_BUILD_CONTEXT:-}"
 cd "$REPO"
 HEAD_SHA="$(git rev-parse HEAD)"
 SHORT_SHA="$(git rev-parse --short=7 HEAD)"
-if [ -z "$APP_IMAGE" ]; then
-  APP_IMAGE="localhost/xronos-server:${SHORT_SHA}"
-fi
+[ -n "$APP_IMAGE" ] || APP_IMAGE="localhost/xronos-server:${SHORT_SHA}"
 
-fail() {
-  echo "ERROR: $*" >&2
-  exit 1
-}
+fail() { echo "ERROR: $*" >&2; exit 1; }
 
 ensure_network() {
   local name="$1"
@@ -60,6 +55,14 @@ ensure_pullable_image() {
   else
     echo "Pulling missing image $image"
     podman pull "$image"
+  fi
+}
+
+ensure_attached() {
+  local container="$1" network="$2"
+  if ! podman inspect "$container" --format '{{range $name, $net := .NetworkSettings.Networks}}{{$name}} {{end}}' | grep -qw "$network"; then
+    echo "Connecting $container to $network"
+    podman network connect "$network" "$container"
   fi
 }
 
@@ -102,15 +105,13 @@ wait_sage() {
 }
 
 wait_app() {
-  local i code
+  local expected="$1" i code
   for i in $(seq 1 120); do
     code="$(curl -sS --max-time 2 -o /tmp/xronos-start-app.$$ -w '%{http_code}' "http://127.0.0.1:${APP_HOST_PORT}/" 2>/dev/null || true)"
-    if [ "$code" = 200 ]; then
-      if grep -q "$HEAD_SHA" /tmp/xronos-start-app.$$; then
-        rm -f /tmp/xronos-start-app.$$
-        echo "Xronos ready after check $i"
-        return 0
-      fi
+    if [ "$code" = 200 ] && grep -q "$expected" /tmp/xronos-start-app.$$; then
+      rm -f /tmp/xronos-start-app.$$
+      echo "Xronos ready after check $i with marker $expected"
+      return 0
     fi
     sleep 1
   done
@@ -118,160 +119,108 @@ wait_app() {
   return 1
 }
 
-ensure_attached() {
-  local container="$1" network="$2"
-  if podman inspect "$container" --format '{{range $name, $net := .NetworkSettings.Networks}}{{$name}} {{end}}' | grep -qw "$network"; then
-    return 0
-  fi
-  echo "Connecting $container to $network"
-  podman network connect "$network" "$container"
+app_declared_version() {
+  podman inspect "$APP" --format '{{range .Config.Env}}{{println .}}{{end}}' \
+    | sed -n 's/^XRONOS_APPLICATION_VERSION=//p' \
+    | head -1
 }
 
-start_existing_or_create_mongo() {
+start_mongo() {
   if podman container exists "$MONGO"; then
-    if [ "$(podman inspect "$MONGO" --format '{{.State.Status}}')" != running ]; then
-      echo "Starting existing Mongo container $MONGO"
-      podman start "$MONGO" >/dev/null
-    else
-      echo "Mongo container $MONGO: already running"
-    fi
+    [ "$(podman inspect "$MONGO" --format '{{.State.Status}}')" = running ] || podman start "$MONGO" >/dev/null
     ensure_attached "$MONGO" "$APP_NETWORK"
-    return
+  else
+    echo "Creating Mongo container $MONGO"
+    podman run -d --name "$MONGO" --network "$APP_NETWORK" \
+      -v "$MONGO_VOLUME:/data/db" \
+      "$MONGO_IMAGE" --bind_ip_all --dbpath /data/db >/dev/null
   fi
-  echo "Creating Mongo container $MONGO"
-  podman run -d --name "$MONGO" --network "$APP_NETWORK" \
-    -v "$MONGO_VOLUME:/data/db" \
-    "$MONGO_IMAGE" --bind_ip_all --dbpath /data/db >/dev/null
 }
 
-start_existing_or_create_redis() {
+start_redis() {
   if podman container exists "$REDIS"; then
-    if [ "$(podman inspect "$REDIS" --format '{{.State.Status}}')" != running ]; then
-      echo "Starting existing Redis container $REDIS"
-      podman start "$REDIS" >/dev/null
-    else
-      echo "Redis container $REDIS: already running"
-    fi
+    [ "$(podman inspect "$REDIS" --format '{{.State.Status}}')" = running ] || podman start "$REDIS" >/dev/null
     ensure_attached "$REDIS" "$APP_NETWORK"
-    return
+  else
+    echo "Creating Redis container $REDIS"
+    podman run -d --name "$REDIS" --network "$APP_NETWORK" \
+      "$REDIS_IMAGE" --save "" --appendonly no >/dev/null
   fi
-  echo "Creating Redis container $REDIS"
-  podman run -d --name "$REDIS" --network "$APP_NETWORK" \
-    "$REDIS_IMAGE" --save "" --appendonly no >/dev/null
 }
 
-start_existing_or_create_sage() {
+start_sage() {
   if podman container exists "$SAGE"; then
-    if [ "$(podman inspect "$SAGE" --format '{{.State.Status}}')" != running ]; then
-      echo "Starting existing SageCell container $SAGE"
-      podman start "$SAGE" >/dev/null
-    else
-      echo "SageCell container $SAGE: already running"
-    fi
+    [ "$(podman inspect "$SAGE" --format '{{.State.Status}}')" = running ] || podman start "$SAGE" >/dev/null
     ensure_attached "$SAGE" "$SAGE_NETWORK"
-    return
-  fi
-  if ! podman image exists "$SAGE_IMAGE"; then
-    if [ -n "$SAGE_BUILD_CONTEXT" ]; then
-      echo "Building missing SageCell image from $SAGE_BUILD_CONTEXT"
+  else
+    if ! podman image exists "$SAGE_IMAGE"; then
+      [ -n "$SAGE_BUILD_CONTEXT" ] || fail "SageCell image $SAGE_IMAGE is missing and XRONOS_SAGE_BUILD_CONTEXT is not set"
       podman build -t "$SAGE_IMAGE" "$SAGE_BUILD_CONTEXT"
-    else
-      fail "SageCell image $SAGE_IMAGE is missing and XRONOS_SAGE_BUILD_CONTEXT is not set"
     fi
+    echo "Creating SageCell container $SAGE"
+    podman run -d --name "$SAGE" --network "$SAGE_NETWORK" \
+      -v "$SAGE_VOLUME:/var/lib/sagecell" \
+      "$SAGE_IMAGE" sagecell >/dev/null
   fi
-  echo "Creating SageCell container $SAGE"
-  podman run -d --name "$SAGE" --network "$SAGE_NETWORK" \
-    -v "$SAGE_VOLUME:/var/lib/sagecell" \
-    "$SAGE_IMAGE" sagecell >/dev/null
 }
 
-count_gradebook_workers() {
-  local c count=0
+find_workers() {
+  local c
   while IFS= read -r c; do
     [ -n "$c" ] || continue
     if podman exec "$c" test -f /usr/var/server/routes/gradebook.js >/dev/null 2>&1 \
        && podman exec "$c" /bin/sh -lc 'grep -q "setInterval( process, 10000 )" /usr/var/server/routes/gradebook.js' >/dev/null 2>&1; then
       echo "$c"
-      count=$((count + 1))
     fi
   done < <(podman ps --format '{{.Names}}')
-  return "$count"
 }
 
-printf '============================================================\n'
-printf 'XRONOS STACK START\n'
-printf '============================================================\n\n'
+printf '============================================================\nXRONOS STACK START\n============================================================\n\n'
 
 [ -f "$ENVFILE" ] || fail "persistent deployment config missing: $ENVFILE"
-mode="$(stat -c '%a' "$ENVFILE")"
-[ "$mode" = 600 ] || fail "$ENVFILE must have mode 600 (found $mode)"
+[ "$(stat -c '%a' "$ENVFILE")" = 600 ] || fail "$ENVFILE must have mode 600"
 [ -d "$REPO/repositories" ] || fail "repositories directory missing"
-
-branch="$(git branch --show-current)"
-[ -n "$branch" ] || fail "repository is not on a branch"
+[ -n "$(git branch --show-current)" ] || fail "repository is not on a branch"
 [ -z "$(git status --porcelain)" ] || fail "repository worktree is dirty"
 
 echo "Repository: $REPO"
-echo "Branch:     $branch"
+echo "Branch:     $(git branch --show-current)"
 echo "Commit:     $HEAD_SHA"
-echo "App image:  $APP_IMAGE"
 echo
 
-echo "Checking networks and persistent volumes"
 ensure_network "$APP_NETWORK"
 ensure_network "$SAGE_NETWORK"
 ensure_volume "$MONGO_VOLUME"
 ensure_volume "$SAGE_VOLUME"
-
-echo
-echo "Checking backing-service images"
 ensure_pullable_image "$MONGO_IMAGE"
 ensure_pullable_image "$REDIS_IMAGE"
-if podman image exists "$SAGE_IMAGE"; then
-  echo "Image $SAGE_IMAGE: present"
-fi
 
-echo
-echo "Starting backing services"
-start_existing_or_create_mongo
+start_mongo
 wait_mongo || fail "Mongo did not become ready"
-start_existing_or_create_redis
+start_redis
 wait_redis || fail "Redis did not become ready"
-start_existing_or_create_sage
+start_sage
 wait_sage || fail "SageCell did not become ready"
 
-echo
-echo "Checking for competing running Xronos applications"
-workers=()
-while IFS= read -r c; do
-  [ -n "$c" ] || continue
-  if podman exec "$c" test -f /usr/var/server/routes/gradebook.js >/dev/null 2>&1 \
-     && podman exec "$c" /bin/sh -lc 'grep -q "setInterval( process, 10000 )" /usr/var/server/routes/gradebook.js' >/dev/null 2>&1; then
-    workers+=("$c")
-  fi
-done < <(podman ps --format '{{.Names}}')
+mapfile -t workers < <(find_workers)
 for c in "${workers[@]:-}"; do
   if [ -n "$c" ] && [ "$c" != "$APP" ]; then
     fail "competing gradebook-capable application is already running: $c"
   fi
 done
 
-echo
-echo "Preparing application image/container"
 if podman container exists "$APP"; then
-  existing_image="$(podman inspect "$APP" --format '{{.ImageName}}')"
-  echo "Existing app container image: $existing_image"
-  if [ "$(podman inspect "$APP" --format '{{.State.Status}}')" != running ]; then
-    echo "Starting existing application container $APP"
-    podman start "$APP" >/dev/null
-  else
-    echo "Application container $APP: already running"
-  fi
+  EXPECTED_APP_VERSION="${XRONOS_EXPECTED_APP_VERSION:-$(app_declared_version)}"
+  [ -n "$EXPECTED_APP_VERSION" ] || fail "existing app container has no XRONOS_APPLICATION_VERSION; set XRONOS_EXPECTED_APP_VERSION explicitly"
+  echo "Existing app image: $(podman inspect "$APP" --format '{{.ImageName}}')"
+  echo "Expected deployed marker: $EXPECTED_APP_VERSION"
+  [ "$(podman inspect "$APP" --format '{{.State.Status}}')" = running ] || podman start "$APP" >/dev/null
   ensure_attached "$APP" "$APP_NETWORK"
   ensure_attached "$APP" "$SAGE_NETWORK"
 else
+  EXPECTED_APP_VERSION="${XRONOS_EXPECTED_APP_VERSION:-$HEAD_SHA}"
   if ! podman image exists "$APP_IMAGE"; then
-    echo "Building missing Xronos image $APP_IMAGE from canonical Dockerfile"
+    echo "Building missing Xronos image $APP_IMAGE"
     podman build -t "$APP_IMAGE" "$REPO"
   fi
   echo "Creating application container $APP"
@@ -279,16 +228,18 @@ else
     -p "0.0.0.0:${APP_HOST_PORT}:${APP_CONTAINER_PORT}" \
     -e "NODE_ENV=${NODE_ENV_VALUE}" \
     -e "PORT=${APP_CONTAINER_PORT}" \
-    -e "XRONOS_APPLICATION_VERSION=${HEAD_SHA}" \
+    -e "XRONOS_APPLICATION_VERSION=${EXPECTED_APP_VERSION}" \
     -v "$REPO/repositories:/usr/var/server/repositories" \
     "$APP_IMAGE" >/dev/null
   ensure_attached "$APP" "$SAGE_NETWORK"
 fi
 
-wait_app || fail "Xronos did not become ready with application marker $HEAD_SHA"
+wait_app "$EXPECTED_APP_VERSION" || fail "Xronos did not become ready with marker $EXPECTED_APP_VERSION"
 
-echo
-echo "Verifying resolved runtime configuration"
+mapfile -t workers < <(find_workers)
+[ "${#workers[@]}" -eq 1 ] || fail "expected exactly one gradebook-capable application, found ${#workers[@]}"
+[ "${workers[0]}" = "$APP" ] || fail "gradebook worker is ${workers[0]}, expected $APP"
+
 podman exec -i "$APP" node - <<'NODE'
 const config = require('/usr/var/server/config');
 const mongo = new URL(config.mongodb.uri);
@@ -299,25 +250,11 @@ console.log('redis=' + config.redis.url + ':' + config.redis.port);
 console.log('sage=' + sage.hostname + ':' + (sage.port || 80));
 NODE
 
-workers=()
-while IFS= read -r c; do
-  [ -n "$c" ] || continue
-  if podman exec "$c" test -f /usr/var/server/routes/gradebook.js >/dev/null 2>&1 \
-     && podman exec "$c" /bin/sh -lc 'grep -q "setInterval( process, 10000 )" /usr/var/server/routes/gradebook.js' >/dev/null 2>&1; then
-    workers+=("$c")
-  fi
-done < <(podman ps --format '{{.Names}}')
-[ "${#workers[@]}" -eq 1 ] || fail "expected exactly one gradebook-capable application, found ${#workers[@]}"
-[ "${workers[0]}" = "$APP" ] || fail "gradebook worker is ${workers[0]}, expected $APP"
-
 public_code="$(curl -k -sS --max-time 10 -o /tmp/xronos-start-public.$$ -w '%{http_code}' "$PUBLIC_URL/" 2>/dev/null || true)"
-echo "Public endpoint HTTP=$public_code"
 rm -f /tmp/xronos-start-public.$$ || true
 
-printf '\n============================================================\n'
-printf 'XRONOS STACK READY\n'
-printf '============================================================\n'
-printf 'App:      %s (%s)\n' "$APP" "$(podman inspect "$APP" --format '{{.State.Status}}')"
+printf '\n============================================================\nXRONOS STACK READY\n============================================================\n'
+printf 'App:      %s (%s) marker=%s\n' "$APP" "$(podman inspect "$APP" --format '{{.State.Status}}')" "$EXPECTED_APP_VERSION"
 printf 'Mongo:    %s (%s)\n' "$MONGO" "$(podman inspect "$MONGO" --format '{{.State.Status}}')"
 printf 'Redis:    %s (%s)\n' "$REDIS" "$(podman inspect "$REDIS" --format '{{.State.Status}}')"
 printf 'SageCell: %s (%s)\n' "$SAGE" "$(podman inspect "$SAGE" --format '{{.State.Status}}')"

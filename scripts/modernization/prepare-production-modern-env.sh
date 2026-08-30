@@ -7,7 +7,13 @@ DEST=${2:-/home/ximera/xronosuf/server/repositories/.env.modernization-next}
 [[ -f "$SOURCE" ]] || { echo "ERROR: source env missing: $SOURCE" >&2; exit 1; }
 [[ "$SOURCE" != "$DEST" ]] || { echo "ERROR: source and destination must differ" >&2; exit 1; }
 
-python3 - "$SOURCE" "$DEST" <<'PY'
+SOURCE_MODE=$(stat -c '%a' "$SOURCE")
+case "$SOURCE_MODE" in
+    600|660) ;;
+    *) echo "ERROR: source env mode must be 600 or 660, found $SOURCE_MODE" >&2; exit 1 ;;
+esac
+
+python3 - "$SOURCE" "$DEST" "$SOURCE_MODE" <<'PY'
 from pathlib import Path
 import os
 import re
@@ -15,6 +21,7 @@ import sys
 
 src = Path(sys.argv[1])
 dst = Path(sys.argv[2])
+mode = int(sys.argv[3], 8)
 
 updates = {
     "XIMERA_START_MONGODB": "0",
@@ -50,12 +57,15 @@ for key, value in updates.items():
 text = "\n".join(out) + "\n"
 tmp = dst.with_name(dst.name + ".tmp")
 tmp.write_text(text)
-os.chmod(tmp, 0o600)
+os.chmod(tmp, mode)
 os.replace(tmp, dst)
-os.chmod(dst, 0o600)
+os.chmod(dst, mode)
 PY
 
-[[ "$(stat -c '%a' "$DEST")" == "600" ]] || { echo "ERROR: destination mode is not 600" >&2; exit 1; }
+[[ "$(stat -c '%a' "$DEST")" == "$SOURCE_MODE" ]] || {
+    echo "ERROR: destination mode does not match source mode $SOURCE_MODE" >&2
+    exit 1
+}
 
 # Validate only non-secret modernization routing values. Never print the full env.
 for expected in \
@@ -73,7 +83,7 @@ do
 done
 
 echo "Prepared modernization env: $DEST"
-echo "Mode: 600"
+echo "Mode preserved from source: $SOURCE_MODE"
 echo "Mongo: xronos-mongo7:27017/ximera"
 echo "Redis: xronos-redis74:6379"
 echo "SageCell: sagecell:8888/service"

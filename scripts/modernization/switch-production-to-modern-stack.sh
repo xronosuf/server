@@ -195,8 +195,12 @@ podman stop --time 10 "$LEGACY_APP" >/dev/null || podman kill "$LEGACY_APP" >/de
 LEGACY_STOPPED=1
 [[ "$(podman inspect "$LEGACY_APP" --format '{{.State.Status}}')" != "running" ]] || fail "legacy container did not stop"
 
-[[ ! $(podman container exists "$SMOKE_APP"; echo $?) -eq 0 ]] || fail "$SMOKE_APP already exists"
-[[ ! $(podman container exists "$MODERN_APP"; echo $?) -eq 0 ]] || fail "$MODERN_APP already exists"
+if podman container exists "$SMOKE_APP"; then
+    fail "$SMOKE_APP already exists"
+fi
+if podman container exists "$MODERN_APP"; then
+    fail "$MODERN_APP already exists"
+fi
 
 # First start on an unpublished-to-nginx smoke port. Production remains down.
 run_modern_app "$SMOKE_APP" "$SMOKE_PORT"

@@ -56,7 +56,7 @@
     "jquery-ui": "^1.13.2",
     "jquery.kinetic": "^2.2.4",
     "jquery.transit": "^0.9.12",
-    "jsondiffpatch": "^0.2.5",
+    "jsondiffpatch": "^0.7.6",
     "markdown": "0.5.0",
     "math-expressions": "^2.0.0-alpha1",
     "mathjax": "^2.7.4",

@@ -1370,11 +1370,11 @@
                 return group
             }
 
-            group1 = makeGroup(1);
+            var group1 = makeGroup(1);
             buttons.bold = makeButton("wmd-bold-button", "Bold - Ctrl+B", "fa fa-bold", bindCommand("doBold"), group1);
             buttons.italic = makeButton("wmd-italic-button", "Italic - Ctrl+I", "fa fa-italic", bindCommand("doItalic"), group1);
             
-            group2 = makeGroup(2);
+            var group2 = makeGroup(2);
             buttons.link = makeButton("wmd-link-button", "Link - Ctrl+L", "fa fa-globe", bindCommand(function (chunk, postProcessing) {
                 return this.doLinkOrImage(chunk, postProcessing, false);
             }), group2);
@@ -1384,7 +1384,7 @@
                 return this.doLinkOrImage(chunk, postProcessing, true);
             }), group2);
 
-            group3 = makeGroup(3);
+            var group3 = makeGroup(3);
             buttons.olist = makeButton("wmd-olist-button", "Numbered List - Ctrl+O", "fa fa-list-ol", bindCommand(function (chunk, postProcessing) {
                 this.doList(chunk, postProcessing, true);
             }), group3);
@@ -1394,7 +1394,7 @@
             buttons.heading = makeButton("wmd-heading-button", "Heading - Ctrl+H", "icon-header", bindCommand("doHeading"), group3);
             buttons.hr = makeButton("wmd-hr-button", "Horizontal Rule - Ctrl+R", "icon-hr-line", bindCommand("doHorizontalRule"), group3);
             
-            group4 = makeGroup(4);
+            var group4 = makeGroup(4);
             buttons.undo = makeButton("wmd-undo-button", "Undo - Ctrl+Z", "fa fa-undo", null, group4);
             buttons.undo.execute = function (manager) { if (manager) manager.undo(); };
 
@@ -1406,7 +1406,7 @@
             buttons.redo.execute = function (manager) { if (manager) manager.redo(); };
 
             if (helpOptions) {
-                group5 = makeGroup(5);
+                var group5 = makeGroup(5);
                 group5.className = group5.className + " pull-right";
                 var helpButton = document.createElement("button");
                 var helpButtonImage = document.createElement("i");

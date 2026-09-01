@@ -2,7 +2,7 @@ var mdb = require('../mdb');
 var winston = require("winston");
 var path = require('path');
 var url = require('url');
-var gpg = require('gpg');
+var gpg = require('../lib/safe-gpg');
 var async = require("async");
 var crypto = require('crypto');
 var base64url = require('base64url');
@@ -297,7 +297,6 @@ exports.add = function(req, res) {
 	req.body.keytext = [ req.body.keytext ];
     
     async.forEachSeries(req.body.keytext, function(keytext, next) {
-	console.log( "import: " + keytext );
 	gpg.importKey(keytext, function(err) {
 	    if(err)
 		return next(err);

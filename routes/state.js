@@ -118,13 +118,60 @@ var handlers = {};
 
 handlers.wantCommit = function(repositoryName, filename) {
     var socket = this;
+
+    if (
+        typeof repositoryName !== 'string' ||
+        repositoryName.length === 0 ||
+        typeof filename !== 'string' ||
+        filename.length === 0
+    ) {
+        winston.error(
+            'Ignoring invalid want-commit request: repository=' +
+            String(repositoryName) +
+            ' filename=' +
+            String(filename)
+        );
+        return;
+    }
+
     socket.repositoryName = repositoryName;
-    
-    repositoryRooms.join( repositoryName, socket );
-	
-    repositories.activitiesFromRecentCommitsOnMaster( repositoryName, filename ).then( function(activities) {
-	socket.sendJSON( 'commit', repositoryName, filename, activities[0].sourceSha, activities[0].hash );
-    });
+
+    repositoryRooms.join(repositoryName, socket);
+
+    repositories
+        .activitiesFromRecentCommitsOnMaster(
+            repositoryName,
+            filename
+        )
+        .then(function(activities) {
+            if (!activities || !activities.length) {
+                winston.error(
+                    'No activity found for want-commit: ' +
+                    repositoryName +
+                    '/' +
+                    filename
+                );
+                return;
+            }
+
+            socket.sendJSON(
+                'commit',
+                repositoryName,
+                filename,
+                activities[0].sourceSha,
+                activities[0].hash
+            );
+        })
+        .catch(function(err) {
+            winston.error(
+                'want-commit lookup failed for ' +
+                repositoryName +
+                '/' +
+                filename +
+                ': ' +
+                String(err)
+            );
+        });
 };
 
 handlers.ping = function(sentAt) {

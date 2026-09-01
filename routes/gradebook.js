@@ -1,5 +1,6 @@
 var mdb = require('../mdb');
 var legacyHttpClient = require('../lib/legacy-http-client');
+var gradebookRetryPolicy = require('../lib/gradebook-retry-policy');
 var pug = require('pug');
 var path = require('path');
 var config = require('../config');
@@ -64,6 +65,32 @@ function logCanvasPassbackSuccess(bridge) {
 
 // We now wait many minutes for grades to settle
 var DEBOUNCE = 1000 * 60 * 3;
+var RETRY_DELAY = 1000 * 60;
+
+function retryBridge(bridge, callback) {
+    var retryAt = Date.now() + RETRY_DELAY;
+
+    client.zadd(
+        'gradebook',
+        retryAt,
+        bridge._id.toString(),
+        function(err) {
+            if (err) {
+                callback(err);
+                return;
+            }
+
+            console.log(
+                'Requeued Canvas grade passback for bridge ' +
+                bridge._id +
+                ' (' + bridge.repository + '/' + bridge.path + ')' +
+                ' after transient failure'
+            );
+
+            callback(null);
+        }
+    );
+}
 
 function canvasPointsPossible(bridge) {
     return parseFloat(bridge && bridge.pointsPossible);
@@ -211,7 +238,20 @@ function processGradebook(id, callback) {
                                     'Error when posting:'
                                 );
                                 console.log(err);
-                                callback(err);
+
+                                if (
+                                    gradebookRetryPolicy.shouldRetry(
+                                        err,
+                                        response
+                                    )
+                                ) {
+                                    retryBridge(
+                                        bridge,
+                                        callback
+                                    );
+                                } else {
+                                    callback(null);
+                                }
                             } else if (
                                 canvasPassbackSucceeded(
                                     response,
@@ -240,7 +280,19 @@ function processGradebook(id, callback) {
                                     body
                                 );
 
-                                callback(null);
+                                if (
+                                    gradebookRetryPolicy.shouldRetry(
+                                        null,
+                                        response
+                                    )
+                                ) {
+                                    retryBridge(
+                                        bridge,
+                                        callback
+                                    );
+                                } else {
+                                    callback(null);
+                                }
                             }
                         }
                     );
@@ -271,7 +323,12 @@ function process() {
 		    callback(err);
 		}
 	    });
-	});
+	}, function(err) {
+        if (err) {
+            console.log('Gradebook batch processing error:');
+            console.log(err);
+        }
+    });
     });
 }
 // Look if there is anything to process every few seconds

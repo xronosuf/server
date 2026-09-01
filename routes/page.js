@@ -14,6 +14,7 @@ var striptags = require('striptags');
 var url = require('url');
 var config = require('../config');
 var crypto = require('crypto');
+var fixActivityHTML = require('../lib/activity-html-compat');
 
 function authorization(req,res,next) {
     var authorization = undefined;
@@ -100,8 +101,7 @@ exports.parseActivity = function(req,res,next) {
 };
 
 exports.fixHTML = function (activity) {
-	return (activity.html) ? activity.html.replace(/&#x003C;/g, '<')
-						.replace(/&#x003E;/g, '>') : activity.html;
+	return fixActivityHTML(activity.html);
 }
 
 

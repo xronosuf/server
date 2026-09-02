@@ -54,6 +54,36 @@ SageCell image/build maintenance now belongs in the standalone
 See `SAGECELL.md` before changing Sage routing, caching, fallback behavior, or
 container operation.
 
+## Legacy retired activity routes
+
+Xronos contains a small explicit deny-list for historical activity URLs that
+were accidentally published and should no longer resolve.
+
+In September 2026, an early publication of the consolidated `mac2233`
+repository was made before four section xourse files were placed at their
+intended paths. This created valid-looking but incorrect public aliases under:
+
+- `/mac2233/Limits/`
+- `/mac2233/ApplicationsOfDerivatives/`
+- `/mac2233/TheoryOfDerivatives/`
+- `/mac2233/Integration/`
+
+The supported publications use these prefixes instead:
+
+- `/mac2233/limitsSection/Limits/`
+- `/mac2233/applicationsOfDerivatives/ApplicationsOfDerivatives/`
+- `/mac2233/theoryOfDerivatives/TheoryOfDerivatives/`
+- `/mac2233/integrationSection/Integration/`
+
+The bad aliases can resolve to the same underlying activity blobs as the
+correct paths, so deleting publication blobs is not an appropriate cleanup.
+They are therefore rejected explicitly before normal activity resolution.
+
+This deny-list records specific historical mistakes only. Do **not** infer from
+it that every activity must have an associated xourse, and do not generalize
+the implementation into such a publication rule. Future publication
+architecture, including Modulus, may use different routing semantics.
+
 ## Build/runtime note
 
 The current server still depends on a historical base-image / preinstalled

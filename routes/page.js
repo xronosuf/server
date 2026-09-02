@@ -73,9 +73,62 @@ exports.create = function(req, res) {
     return;
 };
 
+/*
+ * Explicitly retired legacy activity-route prefixes.
+ *
+ * These are historical MAC2233 aliases created by an accidental publication
+ * in which section xourse files were placed at the wrong level.  The actual
+ * activity blobs are still required by the correctly prefixed publications,
+ * so the bad public URLs cannot be removed by deleting those blobs.
+ *
+ * This is intentionally an explicit compatibility deny-list.  It must NOT be
+ * generalized into a rule that activities require an associated xourse:
+ * future publication models (including Modulus) may not preserve that
+ * assumption.
+ */
+var retiredActivityRoutePrefixes = {
+    mac2233: [
+        'Limits/',
+        'ApplicationsOfDerivatives/',
+        'TheoryOfDerivatives/',
+        'Integration/'
+    ]
+};
+
+function isRetiredActivityRoute(repositoryName, pathname) {
+    var repository =
+        String(repositoryName || '').toLowerCase();
+
+    var route = String(pathname || '');
+
+    var prefixes =
+        retiredActivityRoutePrefixes[repository] || [];
+
+    return prefixes.some(function(prefix) {
+        return route.indexOf(prefix) === 0;
+    });
+}
+
 exports.activitiesFromRecentCommitsOnMaster = function(req, res, next) {
     var repositoryName = req.params.repository;
     req.repositoryName = req.params.repository;
+
+    if (
+        isRetiredActivityRoute(
+            repositoryName,
+            req.params.path
+        )
+    ) {
+        return res.status(404).render(
+            '404',
+            {
+                status: 404,
+                url: req.url,
+                repositoryName: req.repositoryName
+            }
+        );
+    }
+
     repositories.activitiesFromRecentCommitsOnMaster( repositoryName, req.params.path )
 	.then( function(activities) {
 	    req.activities = activities;

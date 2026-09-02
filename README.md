@@ -59,16 +59,31 @@ container operation.
 Xronos contains a small explicit deny-list for historical activity URLs that
 were accidentally published and should no longer resolve.
 
-In September 2026, an early publication of the consolidated `mac2233`
-repository was made before four section xourse files were placed at their
-intended paths. This created valid-looking but incorrect public aliases under:
+The deny-list is implemented in `routes/page.js` as
+`retiredActivityRoutePrefixes`. It is checked by
+`activitiesFromRecentCommitsOnMaster` before normal repository/activity
+resolution. Each entry is scoped to a repository name and contains one or more
+case-sensitive path prefixes. If the requested repository and path match a
+listed prefix, Xronos immediately renders the normal 404 response instead of
+attempting activity resolution.
+
+The current deny-list contains only these `mac2233` prefixes:
+
+- `Limits/`
+- `ApplicationsOfDerivatives/`
+- `TheoryOfDerivatives/`
+- `Integration/`
+
+Equivalently, the retired public URL families are:
 
 - `/mac2233/Limits/`
 - `/mac2233/ApplicationsOfDerivatives/`
 - `/mac2233/TheoryOfDerivatives/`
 - `/mac2233/Integration/`
 
-The supported publications use these prefixes instead:
+These aliases were created in September 2026 by an early publication of the
+consolidated `mac2233` repository before four section xourse files were placed
+at their intended paths. The supported publications use these prefixes instead:
 
 - `/mac2233/limitsSection/Limits/`
 - `/mac2233/applicationsOfDerivatives/ApplicationsOfDerivatives/`
@@ -78,6 +93,29 @@ The supported publications use these prefixes instead:
 The bad aliases can resolve to the same underlying activity blobs as the
 correct paths, so deleting publication blobs is not an appropriate cleanup.
 They are therefore rejected explicitly before normal activity resolution.
+
+### Maintaining the deny-list
+
+To retire another known-bad historical route family, add the repository/path
+prefix to `retiredActivityRoutePrefixes` in `routes/page.js`. Keep entries as
+narrow as possible and prefer a specific historical prefix over a generalized
+routing rule. After editing, verify both sides of the behavior: representative
+retired URLs should return 404, while the intended/canonical URLs must continue
+to return 200.
+
+To restore a previously retired route family, remove only its corresponding
+prefix from `retiredActivityRoutePrefixes`, rebuild/redeploy the application,
+and verify that the route once again reaches normal activity resolution. If an
+entire repository entry becomes empty, remove that repository key as well.
+
+Changes to the deny-list require a new application image/deployment because
+`routes/page.js` is baked into the Xronos application image; changing the Git
+working tree alone does not modify the running server container.
+
+When adding or removing an entry, also update this README so the documented
+current list remains authoritative for maintainers. If a crawler or external
+audit inventory explicitly lists the retired URLs, update that inventory too so
+intentional 404s are not reported as regressions.
 
 This deny-list records specific historical mistakes only. Do **not** infer from
 it that every activity must have an associated xourse, and do not generalize

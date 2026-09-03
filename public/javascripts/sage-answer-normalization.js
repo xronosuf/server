@@ -7,13 +7,9 @@
  *     \text{\texttt{DNE}}
  *
  * That is appropriate display TeX, but it is not the canonical value an
- * answer box should compare against.  In particular, format=string must see
+ * answer box should compare against. In particular, format=string must see
  * "DNE", not the TeX wrapper, while ordinary expression answers still need a
  * stable textual token that can be parsed by math-expressions.
- *
- * This helper intentionally recognizes only the complete nested
- * \text{\texttt{...}} wrapper. Other Sage LaTeX is returned as "not a Sage
- * string" so numeric/symbolic answer behavior remains unchanged.
  */
 
 function readCommandArgument(source, commandName) {
@@ -73,6 +69,12 @@ function decodeTextttContent(text) {
         .replace(/\\([_#$%&{}])/g, "$1")
         .replace(/\\textbackslash\s*\{\s*\}/g, "\\");
 }
+
+exports.containsSageMacro = function(latex) {
+    return /\\(?:sage|sagestr|xronosSageById|xronosSageStrById)\s*\{/.test(
+        String(latex || "")
+    );
+};
 
 exports.extractSageString = function(latex) {
     var textContent = readCommandArgument(latex, "text");

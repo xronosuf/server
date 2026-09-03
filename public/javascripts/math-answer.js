@@ -3,6 +3,7 @@ var jqueryUI = require('jquery-ui/ui/unique-id');
 var _ = require('underscore');
 var MathJax = require('./mathjax');
 var mathAnswerTex = require('./math-answer-tex');
+var mathAnswerString = require('./math-answer-string');
 var TinCan = require('./tincan');
 var database = require('./database');
 var Expression = require('math-expressions');
@@ -971,9 +972,13 @@ mjElement.show();
 	}
 
 	if (format == 'string') {
-		correctAnswerText = correctAnswerText.replace('<math>', '').replace('</math>', '');
-		correctAnswerText = correctAnswerText.replace('<mtext>', '').replace('</mtext>', '');
-		correctAnswerText = correctAnswerText.trim();
+		/*
+		 * Recover the literal canonical string from generated MathML.
+		 * Do not depend on exact wrapper serialization such as bare
+		 * <math> and <mtext> tags.
+		 */
+		correctAnswerText =
+			mathAnswerString.fromMathMl(correctAnswerText);
 	}
 
 	if (format == 'integer') {

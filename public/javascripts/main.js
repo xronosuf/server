@@ -3514,8 +3514,23 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
 	    var answer;
 
 	    if (format == 'string') {
-		answer = this.GetArgument(name);
-		answer = MML.mtext(answer);
+		/*
+		 * Literal string answers must remain literal so spaces and other
+		 * textual content are preserved.  A string answer containing Sage,
+		 * however, must be parsed so the nested Sage macro is actually
+		 * discovered and resolved.  The resulting Sage string is normalized
+		 * to mtext by the Sage answer-key path before validation.
+		 */
+		var stringAnswer = this.GetArgument(name);
+
+		if (sageAnswerNormalization.containsSageMacro(stringAnswer)) {
+		    answer = TEX.Parse(
+			stringAnswer,
+			this.stack.env
+		    ).mml();
+		} else {
+		    answer = MML.mtext(stringAnswer);
+		}
 	    } else if ((format == 'integer') || (format == 'float')) {
 		answer = this.GetArgument(name);
 		answer = MML.mn(answer);

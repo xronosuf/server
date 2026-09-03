@@ -739,6 +739,8 @@ var Desmos = require('./desmos');
 var Javascript = require('./javascript');
 
 var sagemath = require('./sagemath');
+var sageAnswerNormalization =
+    require('./sage-answer-normalization');
 
 
 /*
@@ -3060,7 +3062,37 @@ MathJax.Hub.Register.StartupHook("TeX Jax Ready",function () {
                         if (latexify != true)
                             result = eval(result);
 
-                        var mml = TEX.Parse(result, env).mml();
+                        /*
+                         * Sage latex() renders Python/Sage strings as display
+                         * TeX such as:
+                         *
+                         *     \\text{\\texttt{DNE}}
+                         *
+                         * When the Sage call supplies an answer key, that
+                         * display wrapper is not the canonical answer value.
+                         * Normalize only recognized Sage string wrappers here,
+                         * before answer-format-specific validation. This keeps
+                         * both ordinary expression answers and format=string
+                         * answers aligned with the value the author supplied.
+                         *
+                         * Numeric and symbolic Sage LaTeX is deliberately left
+                         * on the existing TEX.Parse path.
+                         */
+                        var normalizedSageAnswer =
+                            sageCallRuntime.consumer === "answer-key"
+                                ? sageAnswerNormalization
+                                    .extractSageString(result)
+                                : null;
+
+                        var mml =
+                            normalizedSageAnswer !== null
+                                ? MML.mtext(
+                                    normalizedSageAnswer
+                                )
+                                : TEX.Parse(
+                                    result,
+                                    env
+                                ).mml();
 
                         if (mml.inferred) {
                             mml = MML.apply(

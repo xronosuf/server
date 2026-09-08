@@ -28,6 +28,10 @@ SHORT_SHA="$(git rev-parse --short=7 HEAD)"
 
 fail() { echo "ERROR: $*" >&2; exit 1; }
 
+looks_like_git_sha() {
+  [[ "$1" =~ ^[0-9a-fA-F]{40}$ ]]
+}
+
 ensure_network() {
   local name="$1"
   if podman network exists "$name"; then
@@ -210,8 +214,23 @@ for c in "${workers[@]:-}"; do
 done
 
 if podman container exists "$APP"; then
-  EXPECTED_APP_VERSION="${XRONOS_EXPECTED_APP_VERSION:-$(app_declared_version)}"
-  [ -n "$EXPECTED_APP_VERSION" ] || fail "existing app container has no XRONOS_APPLICATION_VERSION; set XRONOS_EXPECTED_APP_VERSION explicitly"
+  DECLARED_APP_VERSION="$(app_declared_version)"
+  [ -n "$DECLARED_APP_VERSION" ] || fail "existing app container has no XRONOS_APPLICATION_VERSION"
+
+  if [ -n "${XRONOS_EXPECTED_APP_VERSION:-}" ]; then
+    EXPECTED_APP_VERSION="$XRONOS_EXPECTED_APP_VERSION"
+  else
+    EXPECTED_APP_VERSION="$DECLARED_APP_VERSION"
+    if looks_like_git_sha "$DECLARED_APP_VERSION" && [ "$DECLARED_APP_VERSION" != "$HEAD_SHA" ]; then
+      fail "existing app version $DECLARED_APP_VERSION does not match repository HEAD $HEAD_SHA; recreate the app container for this checkout, or set XRONOS_EXPECTED_APP_VERSION explicitly for an intentional non-HEAD deployment"
+    fi
+    if ! looks_like_git_sha "$DECLARED_APP_VERSION"; then
+      echo "WARNING: existing app uses custom application-version marker: $DECLARED_APP_VERSION"
+      echo "         Git HEAD identity cannot be inferred from that marker."
+    fi
+  fi
+
+  [ "$DECLARED_APP_VERSION" = "$EXPECTED_APP_VERSION" ] || fail "existing app marker $DECLARED_APP_VERSION does not match expected marker $EXPECTED_APP_VERSION"
   echo "Existing app image: $(podman inspect "$APP" --format '{{.ImageName}}')"
   echo "Expected deployed marker: $EXPECTED_APP_VERSION"
   [ "$(podman inspect "$APP" --format '{{.State.Status}}')" = running ] || podman start "$APP" >/dev/null

@@ -360,6 +360,8 @@ exports.render = function(req, res, next) {
 				activity.chapter = activity.xourse.activities[activity.xourse.activityList[j]];
 				break;
 			    }
+			}
+		    }
 		}
 	    }
 	    
@@ -384,166 +386,59 @@ exports.render = function(req, res, next) {
 			     repositoryName: req.repositoryName,
 			     learner: req.learner,
 			     user: req.user,			     
-				 randomizationScope: req.randomizationScope || fallbackRandomizationScope(req.repositoryName),
-				 scopedSageBaseSeeds: req.scopedSageBaseSeeds || scopedSageBaseSeedsEnabled(),
-				 url: req.url });
+			     randomizationScope: req.randomizationScope || fallbackRandomizationScope(req.repositoryName),
+			     scopedSageBaseSeeds: req.scopedSageBaseSeeds || scopedSageBaseSeedsEnabled(),
+			     url: req.url });
     }
 };
 
 
-// choose a specific commit based on the user's available states,
-// unless there is a ?sha after the url, in which case we should just
-// use that specic blob.  we also should mark if we need to update?
+/*
+ * Always select the newest published activity for each new page request.
+ * Ximera's current publication policy favors forced updates because keeping
+ * learners on several historical page generations creates confusing and hard
+ * to diagnose differences in content, CSS, JavaScript, and other page assets.
+ * Existing already-open tabs are deliberately left alone; the newest version
+ * takes effect only on the learner's next navigation or reload, where the new
+ * activity hash naturally receives fresh state while older state remains stored.
+ */
 exports.chooseMostRecentBlob = function(req, res, next) {
-    var activities = req.activities;
-    var activityHashes = undefined;
+    var activities = req.activities || [];
+    var activity = activities[0];
 
-    var shas = Object.keys(req.query);
-    var sha = null;
-
-    if (shas.length > 0) {
-        sha = shas[0];
-        activities = activities.filter(
-            function(activity) {
-                return activity.sourceSha == sha;
-            }
-        );
+    if (activity === undefined) {
+        res.status(500).send("no activity found.");
+        return;
     }
 
-    async.waterfall(
-        [
-            function(callback) {
-                // There may be duplicates here because the same
-                // activity can appear in multiple commits
-                activityHashes = activities.map(
-                    function(activity) {
-                        return activity.activityHash;
-                    }
-                );
+    var userId = req.user._id;
 
-                activityHashes = activityHashes.filter(
-                    function(item, pos) {
-                        return (
-                            activityHashes.indexOf(item) == pos
-                        );
-                    }
-                );
+    if (req.learner) {
+        userId = req.learner._id;
+    }
 
-                // This is crucial, because otherwise we may
-                // load old data?
-                activityHashes = activityHashes.filter(
-                    function(item) {
-                        return item !== undefined;
-                    }
-                );
-
-                var userId = req.user._id;
-
-                if (req.learner)
-                    userId = req.learner._id;
-
-                mdb.State.find({
-                    user: userId,
-                    activityHash: {
-                        $in: activityHashes
-                    }
-                })
-                    .exec()
-                    .then(function(states) {
-                        callback(null, states);
-                    })
-                    .catch(function(err) {
-                        callback(err);
-                    });
-            },
-
-            function(states, callback) {
-                var activity = activities[0];
-
-                if (activity === undefined) {
-                    callback("no activity found.");
-                    return;
-                }
-
-                // If there are some states...
-                if (states.length > 0) {
-                    states = states.sort(
-                        function(a, b) {
-                            return (
-                                activityHashes.indexOf(
-                                    a.activityHash
-                                ) -
-                                activityHashes.indexOf(
-                                    b.activityHash
-                                )
-                            );
-                        }
-                    );
-
-                    var latestState = states[0];
-
-                    // then the activity is the one associated
-                    // with the most recent state
-                    activity = activities.filter(
-                        function(a) {
-                            return (
-                                a.activityHash ==
-                                latestState.activityHash
-                            );
-                        }
-                    )[0];
-                }
-
-                // If there's a more recent activity, let the
-                // user choose to update
-                if (
-                    activities[0].activityHash !=
-                    activity.activityHash
-                ) {
-                    activity.freshestCommit =
-                        activities[0].sourceSha;
-                }
-
-                // store empty state for it so the next time
-                // we visit the page, we'll go to this sha
-                var userId = req.user._id;
-
-                if (req.learner)
-                    userId = req.learner._id;
-
-                mdb.State.updateOne(
-                    {
-                        activityHash:
-                            activity.activityHash,
-                        user: userId
-                    },
-                    {
-                        $setOnInsert: {
-                            data: {}
-                        }
-                    },
-                    {
-                        upsert: true
-                    }
-                )
-                    .exec()
-                    .then(function() {
-                        callback(null, activity);
-                    })
-                    .catch(function(err) {
-                        callback(err, activity);
-                    });
-            },
-        ],
-        function(err, activity) {
-            if (err) {
-                res.status(500).send(err);
-            } else {
-                req.activity = activity;
-                next();
+    mdb.State.updateOne(
+        {
+            activityHash: activity.activityHash,
+            user: userId
+        },
+        {
+            $setOnInsert: {
+                data: {}
             }
+        },
+        {
+            upsert: true
         }
-    );
+    )
+        .exec()
+        .then(function() {
+            req.activity = activity;
+            next();
+        })
+        .catch(function(err) {
+            res.status(500).send(err);
+        });
 };
 
 exports.serve = function( mimetype ){
@@ -558,7 +453,7 @@ exports.serve = function( mimetype ){
 					   file.data = blob;
 					   res.contentType( mimetype );
 					   setETag( res );	
-					   res.set('Cache-Control', 'public, max-age=3600');	
+					   res.set('Cache-Control', 'public, no-cache');	
 					   res.end( blob, 'binary' );		
 				       })
 				       .catch( function(err) {
@@ -567,9 +462,9 @@ exports.serve = function( mimetype ){
 						       res.set('Cache-Control', 'no-store');
 						       res.status(200).send('');
 						       return;
-						   }
+					   }
 
-						   res.sendStatus(404)
+					   res.sendStatus(404)
 					   		//next(new Error(err));
 				       });
 			       });
@@ -590,7 +485,6 @@ exports.source = function(req, res, next) {
 
 exports.ltiConfig = function(req, res) {
     var file = req.activities[0];
-
     var hash = {
 	title: 'Ximera ' + file.path.replace(/\.html$/,''),
 	description: '',
@@ -598,7 +492,6 @@ exports.ltiConfig = function(req, res) {
 	domain: url.parse(config.root).hostname
     };
         
-	
     res.render('lti/config', hash);
 };
 
@@ -608,9 +501,9 @@ exports.fetchMetadataFromActivity = function(req, res, next) {
 	repositories.readBlob( req.repositoryName, req.activity.metadataHash )
 	    .then( function(blob) {
 		req.repositoryMetadata = JSON.parse(blob);
-		next();
-	    })
-	    .catch(function(err) {
+		next();	    
+	})
+	.catch( function(err) {
 		next(new Error(err));
 	    });
     } else {

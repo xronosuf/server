@@ -30,6 +30,8 @@ var mathExpressionsUmdFile    = './node_modules/math-expressions/build/math-expr
 // Source and target SCSS files
 var cssMainFile       = './public/stylesheets/base.scss';
 var cssFiles          = './public/stylesheets/**/*.scss';
+var guppyKatexFonts   = './node_modules/guppy-dev/lib/katex/fonts/*';
+var guppyFontTarget   = './public/stylesheets/fonts';
 
 ////////////////////////////////////////////////////////////////
 // Browserify bundler
@@ -119,12 +121,23 @@ gulp.task('service-worker', function() {
 
 ////////////////////////////////////////////////////////////////
 // Build CSS
-gulp.task('css', function(){
+//
+// Guppy's bundled KaTeX CSS uses relative `fonts/...` URLs. Once base.css is
+// served from a versioned /public/.../stylesheets namespace, those references
+// must resolve inside that same immutable generation. Copy the package fonts
+// beside the generated stylesheet rather than allowing them to fall through to
+// mutable or missing URLs.
+gulp.task('guppy-fonts', function() {
+    return gulp.src(guppyKatexFonts)
+        .pipe(gulp.dest(guppyFontTarget));
+});
+
+gulp.task('css', gulp.series('guppy-fonts', function(){
     return gulp.src(cssMainFile)
         .pipe(sass())
         .pipe(gulpif(argv.production, cleanCSS({})))
         .pipe(gulp.dest(staticDirectoryCSS));
-});
+}));
 
 ////////////////////////////////////////////////////////////////
 // Watch JS + CSS using watchify + gulp.watch

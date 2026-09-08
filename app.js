@@ -970,7 +970,16 @@ sagecellProxyFinish(waitingKey, cacheKey, code.length, "local", statusCode, cont
 });
 
 app.get('/sw.js', function(req, res) {
-	res.sendFile('public/javascripts/sw.min.js', { root: __dirname });
+        // This endpoint is now a retirement worker for historical
+        // root-scoped Xronos service-worker registrations.
+        res.set(
+            'Cache-Control',
+            'private, no-cache, no-store, must-revalidate'
+        );
+	res.sendFile(
+            'public/javascripts/sw.min.js',
+            { root: __dirname }
+        );
     });    
     
     versionator = versionator.createBasic('v' + app.version);
@@ -986,11 +995,26 @@ app.get('/sw.js', function(req, res) {
 
     app.locals.toValidPath = config.toValidPath
 
-    app.use('/public', versionator.middleware);
-    app.use('/public', express.static(path.join(__dirname, 'public'), {maxAge: '1y'}));;
-    app.use('/lib/guppy', express.static(path.join(__dirname, 'node_modules/guppy-dev/lib'), {maxAge: '1y'}));
-    app.use('/node_modules', versionator.middleware);    
-    app.use('/node_modules', express.static(path.join(__dirname, 'node_modules'), {maxAge: '1y'}));
+    require('./lib/static-asset-routes').install(
+        app,
+        {
+            root: __dirname,
+            applicationVersion: app.version
+        }
+    );
+
+    // Static requests have already been handled above. Dynamic GET
+    // responses should revalidate so an ordinary navigation cannot remain
+    // on stale HTML from a previous frontend generation.
+    app.use(function(req, res, next) {
+        if (req.method === 'GET') {
+            res.set(
+                'Cache-Control',
+                'private, no-cache'
+            );
+        }
+        next();
+    });
 
 
     app.use(passport.initialize());

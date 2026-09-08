@@ -284,7 +284,7 @@ var etag = 'sha:' + activity.hash +
 ETag.checkIfNoneMatch( req, res, etag,
        function( setETag ) {
    setETag(res);
-   res.set('Cache-Control', 'private, max-age=3600');
+   res.set('Cache-Control', 'private, no-cache');
    exports.render( req, res, next );
        } );
     });

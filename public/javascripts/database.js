@@ -101,6 +101,38 @@ function startHeartbeat(socketForHeartbeat, attempt) {
                         WEBSOCKET_HEARTBEAT_STALE
                 }
             );
+
+            /*
+             * readyState can remain OPEN after the underlying path has
+             * become unusable.  Merely reporting degradation leaves
+             * differentialSynchronization() believing the connection is
+             * healthy, so a reload appears to be the only recovery.
+             *
+             * Actively close this stale transport and let the existing
+             * close/backoff path establish a fresh socket.
+             */
+            saveWorkStatus(
+                'error',
+                "Connection became unresponsive. Reconnecting..."
+            );
+
+            try {
+                socketForHeartbeat.close(
+                    4000,
+                    "heartbeat stale"
+                );
+            } catch (closeErr) {
+                pageRuntime.service(
+                    "state-websocket-liveness",
+                    "recycle-failed",
+                    {
+                        attempt: attempt,
+                        reason: "heartbeat-close-failed"
+                    }
+                );
+            }
+
+            return;
         }
 
         try {
@@ -510,7 +542,7 @@ function connectToServer() {
 	    var i;
 	    for( i=0; i<arguments.length; i++ )
 		parameters[i] = arguments[i];
-	    socket.send( JSON.stringify( parameters ) );
+	    this.send( JSON.stringify( parameters ) );
 	};
     } catch (err) {
         pageRuntime.service(
@@ -530,9 +562,45 @@ function connectToServer() {
         );
 
 	saveWorkStatus( 'error', "Could not connect.  Your work is not being saved." );
+
+        socket = undefined;
+
+        backOff = backOff * 2.0;
+        if (backOff > 15000) {
+            backOff = 15000;
+        }
+
+        pageRuntime.service(
+            "state-websocket",
+            "retry-scheduled",
+            {
+                attempt: attempt,
+                reason: "construction-failed",
+                delayMilliseconds: backOff
+            }
+        );
+
+        window.setTimeout(
+            connectToServer,
+            backOff
+        );
+
+        return;
     }
 
     socket.addEventListener('error', function (event) {
+        if (event.currentTarget !== socket) {
+            pageRuntime.service(
+                "state-websocket",
+                "superseded-error",
+                {
+                    attempt: attempt
+                }
+            );
+
+            return;
+        }
+
         pageRuntime.service(
             "state-websocket",
             "error",
@@ -545,6 +613,20 @@ function connectToServer() {
     });
 
     socket.addEventListener('close', function (event) {
+        if (event.currentTarget !== socket) {
+            pageRuntime.service(
+                "state-websocket",
+                "superseded-close",
+                {
+                    attempt: attempt,
+                    code: event.code,
+                    clean: event.wasClean
+                }
+            );
+
+            return;
+        }
+
         pageRuntime.service(
             "state-websocket",
             "closed",
@@ -565,6 +647,8 @@ function connectToServer() {
                 }
             );
         }
+
+        socket = undefined;
 
 	backOff = backOff * 2.0;
 	if (backOff > 15000) backOff = 15000;
@@ -614,13 +698,17 @@ function connectToServer() {
 
 	console.log( "WebSocket open!");
 	saveWorkStatus( 'save' );	
-	socket.sendJSON(
+	event.currentTarget.sendJSON(
         'watch',
         learnerId,
         findActivityHash(),
         pageRuntime.supportTraceId()
     );
-	socket.sendJSON( 'want-commit', repositoryName, filename );
+	event.currentTarget.sendJSON(
+        'want-commit',
+        repositoryName,
+        filename
+    );
 
         startHeartbeat(
             event.currentTarget,
@@ -631,14 +719,28 @@ function connectToServer() {
     var handlers = {};
     
     handlers.push = function() {
-	socket.sendJSON( 'want-commit', repositoryName, filename );	
+	this.sendJSON(
+            'want-commit',
+            repositoryName,
+            filename
+        );
     };
 
-    handlers.commit = function (remoteRepositoryName, remoteFilename, commitHash, remoteContentHash) {
-	if (remoteContentHash != activityHash) {
-	    $('#update-version-button').attr('href', window.location.pathname + "?" + commitHash );
-	    $('#pageUpdate').show();
-	}
+    handlers.commit = function (
+        remoteRepositoryName,
+        remoteFilename,
+        commitHash,
+        remoteContentHash
+    ) {
+        if (remoteContentHash != activityHash) {
+            pageRuntime.event(
+                "new-publication-available",
+                {
+                    action:
+                        "use-latest-on-next-navigation"
+                }
+            );
+        }
     };
 
     function releaseInitialState(
@@ -943,7 +1045,10 @@ function connectToServer() {
 	var camelCased = message.replace(/-([a-z])/g, function (g) { return g[1].toUpperCase(); });
 
 	if (handlers[camelCased]) {
-	    handlers[camelCased].apply( socket, payload.slice(1) );
+	    handlers[camelCased].apply(
+                event.currentTarget,
+                payload.slice(1)
+            );
 	} else {
 	    console.log( "Do not know how to handle " + message );
 	}

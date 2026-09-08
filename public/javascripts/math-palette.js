@@ -1,4 +1,6 @@
 var $ = require('jquery');
+var applicationVersionPath = require('./application-version-path');
+var fallbackVersion = require('../../dbm.json').version;
 
 // https://github.com/daniel3735928559/guppy
 var Guppy = require('guppy-dev/src/guppy.js');
@@ -6,12 +8,26 @@ var Guppy = require('guppy-dev/src/guppy.js');
 var Expression = require('math-expressions');
 var guppyDiv = undefined;
 var callback = undefined;
+var applicationVersion = applicationVersionPath.pageApplicationVersion(
+    document,
+    fallbackVersion
+);
 
 $(function() {
     if ($("#guppy").length > 0) {
-	Guppy.init({"path":"/lib/guppy",
-		    "symbols":window.toValidPath("/public/json/symbols.json")
-		   });
+	Guppy.init({
+            "path": window.toValidPath(
+                applicationVersionPath.versionedNodeModulesPath(
+                    applicationVersion,
+                    'guppy-dev/lib'
+                )
+            ),
+	    "symbols": window.toValidPath(
+                '/public/v' +
+                applicationVersion +
+                '/json/symbols.json'
+            )
+	});
 	
 	guppyDiv = new Guppy("guppy", {
  	    settings: {

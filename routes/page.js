@@ -558,7 +558,7 @@ exports.serve = function( mimetype ){
 					   file.data = blob;
 					   res.contentType( mimetype );
 					   setETag( res );	
-					   res.set('Cache-Control', 'public, no-cache');	
+					   res.set('Cache-Control', 'public, max-age=3600');	
 					   res.end( blob, 'binary' );		
 				       })
 				       .catch( function(err) {
@@ -598,6 +598,7 @@ exports.ltiConfig = function(req, res) {
 	domain: url.parse(config.root).hostname
     };
         
+	
     res.render('lti/config', hash);
 };
 
@@ -609,7 +610,7 @@ exports.fetchMetadataFromActivity = function(req, res, next) {
 		req.repositoryMetadata = JSON.parse(blob);
 		next();
 	    })
-	    .catch( function(err) {
+	    .catch(function(err) {
 		next(new Error(err));
 	    });
     } else {

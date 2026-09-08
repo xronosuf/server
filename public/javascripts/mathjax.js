@@ -1,3 +1,10 @@
+var applicationVersionPath = require('./application-version-path');
+var fallbackVersion = require('../../dbm.json').version;
+var applicationVersion = applicationVersionPath.pageApplicationVersion(
+    document,
+    fallbackVersion
+);
+
 window.MathJax = {
     delayStartupUntil : "configured",
 
@@ -35,7 +42,12 @@ window.MathJax = {
 	}
     },
 
-    root: window.toValidPath("/node_modules/mathjax/")
+    root: window.toValidPath(
+        applicationVersionPath.versionedNodeModulesPath(
+            applicationVersion,
+            'mathjax/'
+        )
+    )
 };
 require('mathjax2');
 

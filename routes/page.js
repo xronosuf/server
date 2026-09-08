@@ -360,8 +360,6 @@ exports.render = function(req, res, next) {
 				activity.chapter = activity.xourse.activities[activity.xourse.activityList[j]];
 				break;
 			    }
-			}
-		    }
 		}
 	    }
 	    
@@ -560,7 +558,7 @@ exports.serve = function( mimetype ){
 					   file.data = blob;
 					   res.contentType( mimetype );
 					   setETag( res );	
-					   res.set('Cache-Control', 'public, max-age=3600');	
+					   res.set('Cache-Control', 'public, no-cache');	
 					   res.end( blob, 'binary' );		
 				       })
 				       .catch( function(err) {
@@ -656,6 +654,7 @@ exports.defaultHomePage = function(req, res, next) {
 		.catch( function(err) {
 			console.log("No main/index.html homepage found; use default index.pug");
 			res.render('index', { title: 'Home', landingPage: true });
+	    	// next(err);
 	    	// next(err);
 		});
 	}

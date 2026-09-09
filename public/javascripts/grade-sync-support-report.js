@@ -2,6 +2,7 @@
 
 var MAX_BRIDGES = 10;
 var MAX_CATEGORIES = 10;
+var MAX_RECOVERY_EVENTS = 5;
 
 function finiteNumber(value) {
     return typeof value === 'number' && isFinite(value) ? value : null;
@@ -141,10 +142,8 @@ function copyGradeSync(gradeSync) {
     };
 }
 
-function copyRecovery(recovery) {
-    if (!recovery || typeof recovery !== 'object') {
-        return null;
-    }
+function copyRecoveryEvent(recovery) {
+    recovery = recovery || {};
 
     return {
         eventId: text(recovery.eventId),
@@ -152,6 +151,16 @@ function copyRecovery(recovery) {
         recorded: boolean(recovery.recorded),
         observedAt: text(recovery.observedAt)
     };
+}
+
+function copyRecoveries(recoveries) {
+    if (!Array.isArray(recoveries)) {
+        return [];
+    }
+
+    return recoveries
+        .slice(0, MAX_RECOVERY_EVENTS)
+        .map(copyRecoveryEvent);
 }
 
 function copyEnvironment(environment) {
@@ -169,6 +178,8 @@ function copyEnvironment(environment) {
 function build(options) {
     options = options || {};
 
+    var recoveries = copyRecoveries(options.recoveries);
+
     return {
         reportType: 'xronos-grade-sync-report',
         schemaVersion: 2,
@@ -177,7 +188,10 @@ function build(options) {
         path: text(options.path),
         gradeSync: copyGradeSync(options.gradeSync),
         gradeSyncDiagnostics: copyDiagnostics(options.gradeSyncDiagnostics),
-        recovery: copyRecovery(options.recovery),
+        recoveries: recoveries,
+        recoveriesTruncated:
+            Array.isArray(options.recoveries) &&
+            options.recoveries.length > MAX_RECOVERY_EVENTS,
         environment: copyEnvironment(options.environment)
     };
 }
@@ -189,3 +203,4 @@ function format(report) {
 exports.build = build;
 exports.format = format;
 exports.MAX_BRIDGES = MAX_BRIDGES;
+exports.MAX_RECOVERY_EVENTS = MAX_RECOVERY_EVENTS;

@@ -12,6 +12,7 @@ TEST_FILES=(
   test/grade-sync-diagnostic-report.js
   test/lti-launch-reference.js
   test/grade-sync-browser-contract.js
+  test/grade-sync-integration-patcher.js
 )
 
 SOURCE_FILES=(
@@ -22,6 +23,7 @@ SOURCE_FILES=(
   lib/lti-launch-reference.js
   public/javascripts/grade-sync-presentation.js
   public/javascripts/gradebook.js
+  scripts/modernization/apply-grade-sync-integration.js
 )
 
 run_syntax_checks() {
@@ -69,7 +71,7 @@ set -eu
 
 TEST_ROOT=/tmp/xronos-grade-sync-regression
 rm -rf "$TEST_ROOT"
-mkdir -p "$TEST_ROOT/lib" "$TEST_ROOT/public/javascripts" "$TEST_ROOT/test"
+mkdir -p "$TEST_ROOT/lib" "$TEST_ROOT/public/javascripts" "$TEST_ROOT/scripts/modernization" "$TEST_ROOT/routes" "$TEST_ROOT/login" "$TEST_ROOT/test"
 
 cp /workspace/lib/grade-sync-status.js "$TEST_ROOT/lib/"
 cp /workspace/lib/lti-bridge-diagnostics.js "$TEST_ROOT/lib/"
@@ -79,6 +81,9 @@ cp /workspace/lib/lti-launch-reference.js "$TEST_ROOT/lib/"
 cp /workspace/lib/late-grade-policy.js "$TEST_ROOT/lib/"
 cp /workspace/public/javascripts/grade-sync-presentation.js "$TEST_ROOT/public/javascripts/"
 cp /workspace/public/javascripts/gradebook.js "$TEST_ROOT/public/javascripts/"
+cp /workspace/scripts/modernization/apply-grade-sync-integration.js "$TEST_ROOT/scripts/modernization/"
+cp /workspace/routes/gradebook.js "$TEST_ROOT/routes/"
+cp /workspace/login/index.js "$TEST_ROOT/login/"
 cp /workspace/test/grade-sync-status.js "$TEST_ROOT/test/"
 cp /workspace/test/grade-sync-presentation.js "$TEST_ROOT/test/"
 cp /workspace/test/lti-bridge-diagnostics.js "$TEST_ROOT/test/"
@@ -86,6 +91,7 @@ cp /workspace/test/grade-sync-runtime.js "$TEST_ROOT/test/"
 cp /workspace/test/grade-sync-diagnostic-report.js "$TEST_ROOT/test/"
 cp /workspace/test/lti-launch-reference.js "$TEST_ROOT/test/"
 cp /workspace/test/grade-sync-browser-contract.js "$TEST_ROOT/test/"
+cp /workspace/test/grade-sync-integration-patcher.js "$TEST_ROOT/test/"
 
 cd "$TEST_ROOT"
 
@@ -97,7 +103,8 @@ NODE_PATH=/usr/var/server/node_modules \
   test/grade-sync-runtime.js \
   test/grade-sync-diagnostic-report.js \
   test/lti-launch-reference.js \
-  test/grade-sync-browser-contract.js
+  test/grade-sync-browser-contract.js \
+  test/grade-sync-integration-patcher.js
 '
 }
 

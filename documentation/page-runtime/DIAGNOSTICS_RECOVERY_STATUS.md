@@ -111,7 +111,7 @@ user id. A follow-up dry run reported zero disposable records.
 
 ## Stage 2 — grade-sync indicator
 
-Status: **deployed on test; live LTI/browser validation pending**.
+Status: **implemented, deployed on test, and live Canvas/browser validated**.
 
 The student-facing question is deliberately narrow:
 
@@ -139,31 +139,33 @@ Implemented components:
   placeholder counters;
 - queue lookup failure is recorded as `queueStatusAvailable=false` without
   falsely turning an otherwise usable bridge into a disconnected state;
-- `routes/gradebook.js` now uses the runtime helper after score processing and
+- `routes/gradebook.js` uses the runtime helper after score processing and
   returns the shared `gradeSync` status from the real Redis/Mongo snapshot.
 
-The operational route/login integration was applied with the guarded patcher,
-passed syntax checks, passed the Stage 2/3 regression suite both before and
-after patch application, and was committed as:
+The operational route/login integration was applied with guarded patching and
+validated by the targeted regression suite. A later session-preservation fix
+was committed as:
 
-`90ce6aac5bc402e56926d9a18d475f84c3ae8563`
+`3377834c878710509e105df7ce42aa8cc43bfe83`
 
-A new test image was then built and deployed at:
+The corresponding test image is deployed as:
 
-`f8a18ea45b9c36862861270ec8c34013988ec8fb`
+`localhost/xronos-server:3377834`
 
 Deployment validation confirmed the application marker, internal/public HTTP
 responses, exactly one running gradebook-capable application container, and the
-new Stage 2/3 source inside the container. The retained rollback container is:
+expected staged-login source shape inside the container. The immediately prior
+Stage 2/3 image is retained as rollback:
 
-`devximserver-pre-grade-sync`
+`devximserver-pre-lti-session`
 
-The final Stage-2 validation is now a fresh Canvas Test Student launch and
-browser check of the assignment-specific pill.
+Live Canvas Test Student validation confirmed that the student pill reports
+`Grade sync connected` for the current assignment while the detailed runtime
+state may legitimately be `pending` during queued passback.
 
 ## Stage 3 — grade-sync diagnostics
 
-Status: **deployed on test; live LTI diagnostic-response validation pending**.
+Status: **core diagnostics implemented, deployed on test, and live Canvas validated**.
 
 Implemented components:
 
@@ -178,11 +180,10 @@ Implemented components:
 - missing current-session launch identity is reported explicitly as
   `current-launch-reference-unavailable` rather than guessed from historical
   bridge data;
-- `lib/lti-launch-reference.js` records only the saved bridge id,
+- `lib/lti-launch-reference.js` stages only the saved bridge id,
   consumer/context/resource identifiers, Xronos repository/path, and timestamp
-  in the session. It does not retain the launch POST body or credentials;
-- `login/index.js` now records the exact saved LTI bridge as the current-session
-  launch reference;
+  before Passport login completes, then commits that privacy-safe reference to
+  the regenerated authenticated session in the post-auth LTI route;
 - `routes/gradebook.js` returns `gradeSyncDiagnostics` alongside `gradeSync`.
 
 Because the existing gradebook query already returns all bridges for the same
@@ -193,14 +194,21 @@ another database query to every progress update.
 Diagnostic wording intentionally avoids claiming that a student never launched
 from Canvas merely because Xronos lacks a matching bridge record.
 
-The deployed test image is the same Stage 2/3 image:
+Live Canvas Test Student validation on the deployed `3377834` image confirmed:
 
-`f8a18ea45b9c36862861270ec8c34013988ec8fb`
+- `launchReferenceRecorded: true`;
+- `launchMatch.primary: "exact"`;
+- exactly one matching page/context/resource bridge;
+- privacy-safe diagnostic output with no sourcedid, OAuth secret/key, outcome
+  URL, cookie, or full launch payload exposure;
+- correct open passback-window reporting and queued/pending runtime state.
 
-The next Stage-3 step is to verify a fresh deployed LTI launch records the exact
-current-session bridge reference and that the subsequent gradebook response
-contains the expected privacy-safe `gradeSyncDiagnostics` object. No additional
-persistence layer is required for that validation.
+The completion UI was also rechecked during this validation. A previously seen
+one-time 0%-until-refresh symptom did not reproduce: a 60%-complete activity
+loaded showing 60%, changed immediately to 80% after another answer, and several
+additional pages also restored and updated their completion labels immediately.
+No completion-UI code change is planned unless that earlier transient behavior
+can be reproduced.
 
 ## Grade-sync regression runner
 
@@ -209,10 +217,9 @@ It covers the status classifier, student presentation, LTI bridge diagnostics,
 Redis runtime evidence, diagnostic report, launch-session reference, browser
 integration contract, and guarded route/login integration.
 
-Current verified targeted result after operational integration and immediately
-before the Stage 2/3 test deployment:
+Current verified targeted result for the deployed live-validated source:
 
-- Stage 2/3 regression: 41 passing;
+- Stage 2/3 regression: 45 passing;
 - late-grade regression: 33 passing.
 
 ## Stage 4 — recovery

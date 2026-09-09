@@ -34,43 +34,20 @@ function countOccurrences(source, needle) {
     }
 }
 
-function routeBlock(source, startMarker, endMarker, label) {
-    var start = source.indexOf(startMarker);
-    var secondStart = start === -1
-        ? -1
-        : source.indexOf(startMarker, start + 1);
-    var end = start === -1
-        ? -1
-        : source.indexOf(endMarker, start + startMarker.length);
-
-    if (start === -1 || end === -1 || end <= start) {
-        throw new Error('Could not locate expected ' + label + ' route.');
-    }
-
-    if (secondStart !== -1) {
-        throw new Error('Expected exactly one ' + label + ' route.');
-    }
-
-    return {
-        start: start,
-        end: end,
-        text: source.slice(start, end)
-    };
-}
-
-function replaceRouteBlock(source, block, replacement) {
-    return source.slice(0, block.start) + replacement + source.slice(block.end);
-}
-
 function patchLogin(source) {
-    if (source.indexOf('ltiLaunchReference.stage(req, bridge);') !== -1) {
+    var staged = '            ltiLaunchReference.stage(req, bridge);';
+
+    if (source.indexOf(staged) !== -1) {
+        if (countOccurrences(source, staged) !== 1) {
+            throw new Error('Expected exactly one staged LTI launch reference.');
+        }
         return source;
     }
 
     return replaceOnce(
         source,
         '            ltiLaunchReference.record(req, bridge);',
-        '            ltiLaunchReference.stage(req, bridge);',
+        staged,
         'pre-login launch-reference recording'
     );
 }
@@ -78,20 +55,55 @@ function patchLogin(source) {
 function patchApp(source) {
     var importNeedle =
         "ltiLaunchReference = require('./lib/lti-launch-reference')";
-    var lmsStart =
-        "        app.post('/lms', passport.authenticate('lms', {";
-    var assignmentStart =
-        "        app.post('/:repository/:path(*)/lti',";
-    var afterLtiRoutes = "    }\n    \n    app.get('/logout'";
-    var lms;
-    var assignment;
+    var legacyImport =
+        "  , legacyHttpClient = require('./lib/legacy-http-client')\n";
+    var imported =
+        legacyImport +
+        "  , ltiLaunchReference = require('./lib/lti-launch-reference')\n";
+
+    var legacyLms =
+        "        app.post('/lms', passport.authenticate('lms', {\n" +
+        "            successRedirect: config.toValidPath('/just-logged-in'),\n" +
+        "\t\t\t\t\t\t\tfailureRedirect: '/',\n" +
+        "\t\t\t\t\t\t\tfailureFlash: true}));";
+
+    var integratedLms =
+        "        app.post('/lms',\n" +
+        "                 passport.authenticate('lms', {\n" +
+        "                     failureRedirect: '/',\n" +
+        "                     failureFlash: true\n" +
+        "                 }),\n" +
+        "                 function(req, res, next) {\n" +
+        "                     ltiLaunchReference.commit(req);\n\n" +
+        "                     if (req.session) {\n" +
+        "                         req.session.save(function(err) {\n" +
+        "                             if (err) {\n" +
+        "                                 return next(err);\n" +
+        "                             }\n" +
+        "                             res.redirect(\n" +
+        "                                 config.toValidPath('/just-logged-in')\n" +
+        "                             );\n" +
+        "                         });\n" +
+        "                     } else {\n" +
+        "                         res.redirect(\n" +
+        "                             config.toValidPath('/just-logged-in')\n" +
+        "                         );\n" +
+        "                     }\n" +
+        "                 });";
+
+    var legacyAssignmentHandler =
+        "                 function(req, res, next) {\n" +
+        "                     var destination = '/' + req.params.repository;";
+    var integratedAssignmentHandler =
+        "                 function(req, res, next) {\n" +
+        "                     ltiLaunchReference.commit(req);\n" +
+        "                     var destination = '/' + req.params.repository;";
 
     if (source.indexOf(importNeedle) === -1) {
         source = replaceOnce(
             source,
-            "  , legacyHttpClient = require('./lib/legacy-http-client')\n",
-            "  , legacyHttpClient = require('./lib/legacy-http-client')\n" +
-            "  , ltiLaunchReference = require('./lib/lti-launch-reference')\n",
+            legacyImport,
+            imported,
             'app launch-reference import'
         );
     }
@@ -100,68 +112,30 @@ function patchApp(source) {
         throw new Error('Expected exactly one LTI launch-reference import.');
     }
 
-    lms = routeBlock(
-        source,
-        lmsStart,
-        assignmentStart,
-        '/lms'
-    );
-
-    if (lms.text.indexOf('ltiLaunchReference.commit(req);') === -1) {
-        if (
-            lms.text.indexOf(
-                "successRedirect: config.toValidPath('/just-logged-in')"
-            ) === -1 ||
-            lms.text.indexOf("failureRedirect: '/'") === -1
-        ) {
-            throw new Error('Legacy /lms route shape is not recognized.');
-        }
-
-        source = replaceRouteBlock(
+    if (source.indexOf(integratedLms) === -1) {
+        source = replaceOnce(
             source,
-            lms,
-            "        app.post('/lms',\n" +
-            "                 passport.authenticate('lms', {\n" +
-            "                     failureRedirect: '/',\n" +
-            "                     failureFlash: true\n" +
-            "                 }),\n" +
-            "                 function(req, res, next) {\n" +
-            "                     ltiLaunchReference.commit(req);\n\n" +
-            "                     if (req.session) {\n" +
-            "                         req.session.save(function(err) {\n" +
-            "                             if (err) {\n" +
-            "                                 return next(err);\n" +
-            "                             }\n" +
-            "                             res.redirect(\n" +
-            "                                 config.toValidPath('/just-logged-in')\n" +
-            "                             );\n" +
-            "                         });\n" +
-            "                     } else {\n" +
-            "                         res.redirect(\n" +
-            "                             config.toValidPath('/just-logged-in')\n" +
-            "                         );\n" +
-            "                     }\n" +
-            "                 });\n"
+            legacyLms,
+            integratedLms,
+            'legacy /lms authenticate route'
         );
     }
 
-    assignment = routeBlock(
-        source,
-        assignmentStart,
-        afterLtiRoutes,
-        'assignment LTI'
-    );
+    if (countOccurrences(source, integratedLms) !== 1) {
+        throw new Error('Expected exactly one integrated /lms route.');
+    }
 
-    if (assignment.text.indexOf('ltiLaunchReference.commit(req);') === -1) {
+    if (source.indexOf(integratedAssignmentHandler) === -1) {
         source = replaceOnce(
             source,
-            "                 function(req, res, next) {\n" +
-            "                     var destination = '/' + req.params.repository;",
-            "                 function(req, res, next) {\n" +
-            "                     ltiLaunchReference.commit(req);\n" +
-            "                     var destination = '/' + req.params.repository;",
+            legacyAssignmentHandler,
+            integratedAssignmentHandler,
             'assignment LTI post-auth handler'
         );
+    }
+
+    if (countOccurrences(source, integratedAssignmentHandler) !== 1) {
+        throw new Error('Expected exactly one integrated assignment LTI handler.');
     }
 
     if (countOccurrences(source, 'ltiLaunchReference.commit(req);') !== 2) {
@@ -191,7 +165,6 @@ exports.countOccurrences = countOccurrences;
 exports.patchApp = patchApp;
 exports.patchLogin = patchLogin;
 exports.replaceOnce = replaceOnce;
-exports.routeBlock = routeBlock;
 
 if (require.main === module) {
     patchFile('login/index.js', patchLogin);

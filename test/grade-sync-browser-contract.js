@@ -6,6 +6,10 @@ var source = fs.readFileSync(
     path.join(__dirname, '../public/javascripts/gradebook.js'),
     'utf8'
 );
+var pageTemplate = fs.readFileSync(
+    path.join(__dirname, '../views/page.pug'),
+    'utf8'
+);
 
 describe('grade sync browser integration', function() {
     it('uses the shared grade-sync presentation policy', function() {
@@ -40,6 +44,17 @@ describe('grade sync browser integration', function() {
         assert.ok(source.indexOf('window.xronosSupportEmail') !== -1);
         assert.ok(
             source.indexOf('Generate and copy the diagnostic report below') !== -1
+        );
+    });
+
+    it('exposes the deployed application version to support reports', function() {
+        assert.ok(
+            source.indexOf('window.xronosApplicationVersion') !== -1
+        );
+        assert.ok(
+            pageTemplate.indexOf(
+                'window.xronosApplicationVersion = !{JSON.stringify(config.version || "")};'
+            ) !== -1
         );
     });
 

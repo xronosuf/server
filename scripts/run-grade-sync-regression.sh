@@ -9,6 +9,7 @@ TEST_FILES=(
   test/grade-sync-presentation.js
   test/lti-bridge-diagnostics.js
   test/grade-sync-runtime.js
+  test/grade-sync-browser-contract.js
 )
 
 SOURCE_FILES=(
@@ -16,6 +17,7 @@ SOURCE_FILES=(
   lib/lti-bridge-diagnostics.js
   lib/grade-sync-runtime.js
   public/javascripts/grade-sync-presentation.js
+  public/javascripts/gradebook.js
 )
 
 run_syntax_checks() {
@@ -70,10 +72,12 @@ cp /workspace/lib/lti-bridge-diagnostics.js "$TEST_ROOT/lib/"
 cp /workspace/lib/grade-sync-runtime.js "$TEST_ROOT/lib/"
 cp /workspace/lib/late-grade-policy.js "$TEST_ROOT/lib/"
 cp /workspace/public/javascripts/grade-sync-presentation.js "$TEST_ROOT/public/javascripts/"
+cp /workspace/public/javascripts/gradebook.js "$TEST_ROOT/public/javascripts/"
 cp /workspace/test/grade-sync-status.js "$TEST_ROOT/test/"
 cp /workspace/test/grade-sync-presentation.js "$TEST_ROOT/test/"
 cp /workspace/test/lti-bridge-diagnostics.js "$TEST_ROOT/test/"
 cp /workspace/test/grade-sync-runtime.js "$TEST_ROOT/test/"
+cp /workspace/test/grade-sync-browser-contract.js "$TEST_ROOT/test/"
 
 cd "$TEST_ROOT"
 
@@ -82,7 +86,8 @@ NODE_PATH=/usr/var/server/node_modules \
   test/grade-sync-status.js \
   test/grade-sync-presentation.js \
   test/lti-bridge-diagnostics.js \
-  test/grade-sync-runtime.js
+  test/grade-sync-runtime.js \
+  test/grade-sync-browser-contract.js
 '
 }
 

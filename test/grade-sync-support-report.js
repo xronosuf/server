@@ -71,6 +71,13 @@ describe('grade sync support report', function() {
                 lisResultSourcedid: 'SECRET',
                 outcomeUrl: 'SECRET'
             },
+            recovery: {
+                eventId: 'recovery-event-1',
+                action: 'recheck-status',
+                recorded: true,
+                observedAt: '2026-09-09T20:29:59.000Z',
+                secret: 'SECRET'
+            },
             environment: {
                 userAgent: 'browser',
                 platform: 'platform',
@@ -83,11 +90,17 @@ describe('grade sync support report', function() {
         var formatted = report.format(built);
 
         assert.strictEqual(built.reportType, 'xronos-grade-sync-report');
-        assert.strictEqual(built.schemaVersion, 1);
+        assert.strictEqual(built.schemaVersion, 2);
         assert.strictEqual(built.gradeSync.state, 'ready');
         assert.strictEqual(built.gradeSyncDiagnostics.launchMatch.primary, 'exact');
         assert.strictEqual(built.gradeSyncDiagnostics.bridges.length, 10);
         assert.strictEqual(built.gradeSyncDiagnostics.bridgesTruncated, true);
+        assert.deepStrictEqual(built.recovery, {
+            eventId: 'recovery-event-1',
+            action: 'recheck-status',
+            recorded: true,
+            observedAt: '2026-09-09T20:29:59.000Z'
+        });
         assert.strictEqual(formatted.indexOf('SECRET'), -1);
         assert.strictEqual(formatted.indexOf('lisResultSourcedid'), -1);
         assert.strictEqual(formatted.indexOf('oauthConsumerKey'), -1);
@@ -101,10 +114,12 @@ describe('grade sync support report', function() {
             path: '/testsuite/test-suite-xourse',
             gradeSync: {state: 'error'},
             gradeSyncDiagnostics: null,
+            recovery: null,
             environment: {}
         });
 
         assert.strictEqual(built.gradeSync.state, 'error');
         assert.strictEqual(built.gradeSyncDiagnostics, null);
+        assert.strictEqual(built.recovery, null);
     });
 });

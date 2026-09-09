@@ -239,4 +239,5 @@ exports.RETENTION_DAYS = RETENTION_DAYS;
 exports.allowedAction = allowedAction;
 exports.loadSnapshot = loadSnapshot;
 exports.recoveryEvent = recoveryEvent;
+exports.recoveryEventModel = recoveryEventModel;
 exports.saveRecoveryEvent = saveRecoveryEvent;

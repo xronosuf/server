@@ -1,19 +1,14 @@
 var $ = require('jquery');
 var _ = require('underscore');
 var debugLog = require('./debug-log');
-
-var xronosGradeSyncMessages = {
-    syncing: 'Xronos currently sees a Canvas grade-sync connection for this assignment.',
-    notSyncing: 'Xronos does not currently see a Canvas grade-sync connection for this page. Your work may be saved in Xronos, but it may not be sent to the Canvas gradebook. If this is a graded assignment, please open it from Canvas before continuing.',
-    checking: 'Xronos is checking whether this assignment has an active Canvas grade-sync connection.',
-    error: 'Xronos could not verify Canvas grade-sync status. Your work may be saved in Xronos, but you should reopen the assignment from Canvas if this message persists.'
-};
+var gradeSyncPresentation = require('./grade-sync-presentation');
 
 var xronosEnsureGradeSyncIndicator = function() {
     var indicator;
     var target;
     var label;
     var help;
+    var checking = gradeSyncPresentation.presentation(null);
 
     if (typeof document === 'undefined') {
         return null;
@@ -30,7 +25,7 @@ var xronosEnsureGradeSyncIndicator = function() {
 
         indicator.innerHTML =
             '<span class="xronos-grade-sync-dot" aria-hidden="true"></span>' +
-            '<span class="xronos-grade-sync-label">Checking grade sync</span>' +
+            '<span class="xronos-grade-sync-label">' + checking.label + '</span>' +
             '<button type="button" class="xronos-grade-sync-help" aria-label="More information about Canvas grade sync">?</button>';
 
         target = document.getElementById('show-me-another-button');
@@ -49,7 +44,7 @@ var xronosEnsureGradeSyncIndicator = function() {
 
         if (help) {
             help.addEventListener('click', function(event) {
-                var message = indicator.getAttribute('data-grade-sync-message') || xronosGradeSyncMessages.checking;
+                var message = indicator.getAttribute('data-grade-sync-message') || checking.message;
                 event.preventDefault();
                 event.stopPropagation();
                 window.alert(message);
@@ -60,7 +55,7 @@ var xronosEnsureGradeSyncIndicator = function() {
     label = indicator.querySelector('.xronos-grade-sync-label');
 
     if (label && !label.textContent) {
-        label.textContent = 'Checking grade sync';
+        label.textContent = checking.label;
     }
 
     return indicator;
@@ -69,13 +64,13 @@ var xronosEnsureGradeSyncIndicator = function() {
 var xronosUpdateGradeSyncStatus = function(gradeSync) {
     var indicator = xronosEnsureGradeSyncIndicator();
     var label;
-    var message;
-    var state;
+    var rendered;
 
     if (!indicator) {
         return;
     }
 
+    rendered = gradeSyncPresentation.presentation(gradeSync);
     label = indicator.querySelector('.xronos-grade-sync-label');
 
     indicator.classList.remove(
@@ -85,31 +80,17 @@ var xronosUpdateGradeSyncStatus = function(gradeSync) {
         'xronos-grade-sync-error'
     );
 
-    if (!gradeSync) {
-        state = 'checking';
-        message = xronosGradeSyncMessages.checking;
-        indicator.classList.add('xronos-grade-sync-checking');
-        if (label) label.textContent = 'Checking grade sync';
-    } else if (gradeSync.state === 'syncing' || gradeSync.hasActiveGradePassback) {
-        state = 'syncing';
-        message = xronosGradeSyncMessages.syncing;
-        indicator.classList.add('xronos-grade-sync-syncing');
-        if (label) label.textContent = 'Grade syncing';
-    } else if (gradeSync.state === 'error') {
-        state = 'error';
-        message = xronosGradeSyncMessages.error;
-        indicator.classList.add('xronos-grade-sync-error');
-        if (label) label.textContent = 'Grade sync unknown';
-    } else {
-        state = 'not-syncing';
-        message = xronosGradeSyncMessages.notSyncing;
-        indicator.classList.add('xronos-grade-sync-not-syncing');
-        if (label) label.textContent = 'Grade not syncing';
+    indicator.classList.add(
+        'xronos-grade-sync-' + rendered.cssState
+    );
+
+    if (label) {
+        label.textContent = rendered.label;
     }
 
-    indicator.setAttribute('data-grade-sync-state', state);
-    indicator.setAttribute('data-grade-sync-message', message);
-    indicator.setAttribute('title', message);
+    indicator.setAttribute('data-grade-sync-state', rendered.state);
+    indicator.setAttribute('data-grade-sync-message', rendered.message);
+    indicator.setAttribute('title', rendered.message);
 };
 
 

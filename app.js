@@ -44,6 +44,7 @@ var express = require('express')
   , WebSocketServer = require("ws").Server
   , basicAuth = require('express-basic-auth')
   , legacyHttpClient = require('./lib/legacy-http-client')
+  , ltiLaunchReference = require('./lib/lti-launch-reference')
   , crypto = require('crypto')
   , sageReliabilityPolicy = require('./sage-reliability-policy')
   ;
@@ -1117,13 +1118,33 @@ app.get('/sw.js', function(req, res) {
 
     // LTI login
     if (config.ltiAuth) {
-        app.post('/lms', passport.authenticate('lms', {
-            successRedirect: config.toValidPath('/just-logged-in'),
-							failureRedirect: '/',
-							failureFlash: true}));
+        app.post('/lms',
+                 passport.authenticate('lms', {
+                     failureRedirect: '/',
+                     failureFlash: true
+                 }),
+                 function(req, res, next) {
+                     ltiLaunchReference.commit(req);
+
+                     if (req.session) {
+                         req.session.save(function(err) {
+                             if (err) {
+                                 return next(err);
+                             }
+                             res.redirect(
+                                 config.toValidPath('/just-logged-in')
+                             );
+                         });
+                     } else {
+                         res.redirect(
+                             config.toValidPath('/just-logged-in')
+                         );
+                     }
+                 });
         app.post('/:repository/:path(*)/lti',
                  passport.authenticate('lms', { failureRedirect: '/' }),
                  function(req, res, next) {
+                     ltiLaunchReference.commit(req);
                      var destination = '/' + req.params.repository;
 
                      if (req.params.path) {

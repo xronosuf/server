@@ -485,7 +485,7 @@ function addLmsAccount(req, identifier, profile, done) {
         bridge
           .save()
           .then(function () {
-            ltiLaunchReference.record(req, bridge);
+            ltiLaunchReference.stage(req, bridge);
             initializeZeroGradePassback(bridge, function (err) {
               if (err) {
                 /*

@@ -193,9 +193,22 @@ exports.monitorActivity = function( activity ) {
 	    $(this).persistentData( update );
 	});
 
-	$('.youtube-player', activity).each( function() {
-	    $(this).persistentData( update );
-	});
+        /*
+         * YT.Player replaces the authored .youtube-player placeholder with an
+         * iframe.  A persistentData listener attached directly to the old DOM
+         * node is therefore lost, even though the replacement iframe retains
+         * the same id/classes and continues to persist fractionViewed.
+         *
+         * persistentData writes emit ximera:database on the current element.
+         * Listen for those events through the stable activity container so
+         * video progress continues to trigger page/completion/grade updates
+         * after YouTube replaces the player node.
+         */
+        activity.on(
+            'ximera:database.xronos-video-progress',
+            '.youtube-player',
+            update
+        );
     });
     
 };

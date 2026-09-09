@@ -91,6 +91,13 @@ exports.initialize = function initialize(callback) {
         resultTotalScore: Number,
         submittedScore: Boolean,
 
+        // Raw Xronos result last accepted by Canvas.  Keep this
+        // separate from resultScore/resultTotalScore, which continue
+        // to represent the newest candidate waiting for passback.
+        lastSubmittedResultScore: Number,
+        lastSubmittedResultTotalScore: Number,
+        lastSubmittedAt: Date,
+
         oauthConsumerKey: String,
         oauthSignatureMethod: String,
         lisResultSourcedid: String,

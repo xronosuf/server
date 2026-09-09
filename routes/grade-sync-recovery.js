@@ -10,6 +10,7 @@ var ltiLaunchReference = require('../lib/lti-launch-reference');
 var Redis = require('ioredis');
 var redisClient = null;
 var RecoveryEvent = null;
+var COLLECTION_NAME = 'gradeSyncRecoveryEvents';
 var RETENTION_DAYS = 90;
 var ALLOWED_ACTIONS = {
     'recheck-status': true,
@@ -60,6 +61,7 @@ function recoveryEventModel() {
         queueStatusAvailable: Boolean,
         currentLaunchBridgeId: String
     }, {
+        collection: COLLECTION_NAME,
         minimize: false
     });
 
@@ -235,6 +237,7 @@ exports.recordAndRecheck = function(req, res, next) {
 };
 
 exports.ALLOWED_ACTIONS = ALLOWED_ACTIONS;
+exports.COLLECTION_NAME = COLLECTION_NAME;
 exports.RETENTION_DAYS = RETENTION_DAYS;
 exports.allowedAction = allowedAction;
 exports.loadSnapshot = loadSnapshot;

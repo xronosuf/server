@@ -28,6 +28,12 @@ describe('LTI launch session integration patcher', function() {
             'utf8'
         );
         var patched = patcher.patchApp(source);
+        var lmsStart = patched.indexOf("app.post('/lms'");
+        var assignmentStart = patched.indexOf(
+            "app.post('/:repository/:path(*)/lti'",
+            lmsStart
+        );
+        var lmsRoute = patched.slice(lmsStart, assignmentStart);
 
         assert.ok(
             patched.indexOf(
@@ -37,8 +43,15 @@ describe('LTI launch session integration patcher', function() {
         assert.ok(
             patched.indexOf('ltiLaunchReference.commit(req);') !== -1
         );
+        assert.ok(lmsStart !== -1);
+        assert.ok(assignmentStart !== -1);
         assert.ok(
-            patched.indexOf("successRedirect: config.toValidPath('/just-logged-in')") === -1
+            lmsRoute.indexOf(
+                "successRedirect: config.toValidPath('/just-logged-in')"
+            ) === -1
+        );
+        assert.ok(
+            lmsRoute.indexOf('ltiLaunchReference.commit(req);') !== -1
         );
         assert.strictEqual(
             patcher.patchApp(patched),

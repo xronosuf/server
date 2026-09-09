@@ -10,9 +10,8 @@ is reusable by the replacement server.
 ## Four-stage program
 
 1. Reduce problems that are currently "fixed" by a hard reload.
-2. Make the LTI / Canvas grade-sync indicator report real sync state.
-3. Add student-facing grade-sync diagnostics for cases where Canvas grades do
-   not update.
+2. Make the LTI / Canvas grade-sync indicator report real assignment-specific connection state.
+3. Add student/support grade-sync diagnostics for cases where Canvas grades do not update.
 4. Add student-driven recovery actions and record those actions for support.
 
 Root causes should be corrected before recovery controls are added, so recovery
@@ -22,167 +21,147 @@ features do not hide defects.
 
 Status: **closed for the defects identified in this audit**.
 
-### Publication / cache policy
+The major Stage-1 changes are complete and validated on the test VM:
 
-The legacy per-learner historical-publication selection has been retired.
-Every new page request, navigation, or reload now selects the latest published
-activity. An already-open browser tab is not forcibly replaced mid-session.
-Old `State` records remain stored; if the latest publication has a different
-activity hash it naturally receives a fresh state record.
+- every new navigation/reload selects the latest publication rather than a historical learner-pinned blob;
+- old explicit commit-query selection no longer pins normal learner navigation backward;
+- application-owned static assets use application-version namespaces and cache-safe routing;
+- legacy service-worker/cache-storage behavior is retired;
+- optional external interactives use bounded failure handling rather than blocking the page indefinitely;
+- synchronous startup subpath discovery was removed in favor of rendered metadata;
+- stale/half-dead WebSockets are actively recycled;
+- obsolete Update UI is removed while already-open tabs remain stable until navigation/reload.
 
-Consequences:
+A controlled SIGSTOP/SIGCONT test verified stale-heartbeat recovery without replacing the application process. Normal save/reload, offline recovery, publication refresh, and browser-generation checks also passed.
 
-- old `?<commitSHA>` publication-selection URLs no longer select historical
-  content;
-- the old manual Update modal is obsolete and is no longer triggered;
-- repository-served mutable assets use revalidation so page and repository
-  assets share the same latest-publication intent;
-- normal reload/navigation is the transition to the newest publication.
+No further Page Runtime Coordinator architecture is planned for its own sake.
 
-A controlled republish test verified that Redis publication-history cache
-invalidation occurs on publication, a normal reload selects the newest
-publication, an old explicit commit query cannot pin the page backward, and an
-already-open tab remains unchanged until navigation/reload.
+## Late Canvas passback policy — implemented and verified
 
-### Browser cache / application generation
+Late passback became a prerequisite for trustworthy Stage 2/3 diagnostics and is now implemented on the branch and deployed on the test VM.
 
-Application-owned static assets use the application-version namespace and
-immutable caching. Unversioned compatibility paths revalidate. The legacy
-service worker and legacy browser Cache Storage entries are retired. A stale
-application-version marker is detectable.
+Current policy:
 
-### Optional interactive dependencies
+- normal passback before `dueDate`;
+- late passback through Canvas `untilDate` when available;
+- documented 130-day fallback horizon when Canvas supplied no `untilDate`;
+- read current Canvas `readResult` immediately before a late write;
+- never knowingly lower the current effective Canvas grade;
+- defer near the next late interval boundary so safety prediction and write use the same interval;
+- read Canvas immediately after an accepted late write and store the raw/effective observation.
 
-Optional external interactive libraries no longer wait indefinitely. Desmos
-loading is bounded, generic optional interactive dependency failures are
-contained to the relevant interactive, and failure is recorded through the
-privacy-safe runtime diagnostics instead of blocking unrelated page content.
+Controlled Canvas testing established that `readResult` is the effective post-penalty score and that Canvas can retroactively recalculate an existing submission when the due date changes.
 
-### Startup ordering
+### Authoritative evidence rules
 
-The synchronous startup `HEAD` request that existed only to discover the
-Xronos subpath has been removed. Normal layouts now render
-`meta[name="xronos-subpath"]`; browser startup reads that metadata with a
-local-storage fallback for malformed/nonstandard pages.
+Only an immediate post-write `readResult` is allowed to teach Canvas late-policy mechanics. Pre-write reads remain current-state truth, but cannot be interpreted causally as the transformation of an earlier Xronos passback.
 
-Existing activity initialization remains gated by the initial-state protocol.
-The audit did not find evidence that additional Page Runtime Coordinator
-architecture would improve current operational reliability, so no new
-coordinator work is planned for its own sake.
+Exact context-wide deduction evidence outranks weaker bridge-local lower-bound evidence. This rule was added after a controlled test reproduced a real lowering defect: a manually-entered Canvas grade of 3.50/10 caused local evidence to infer an optimistic deduction rate and Xronos incorrectly submitted a result that Canvas reduced to 3.36/10. The corrected implementation blocks that exact reproduction in regression tests.
 
-### State WebSocket recovery
+Grade floors are learned only from authoritative post-write observations that exceed an already-known exact floorless prediction. A merely low observed grade is not considered floor evidence.
 
-The state WebSocket now:
+The late-grade regression runner is:
 
-- actively recycles a transport whose heartbeat is stale rather than leaving a
-  locally-`OPEN` socket in place;
-- retries after WebSocket construction failure instead of falling through into
-  listener setup on an invalid socket;
-- binds sends and message handlers to the socket that actually raised the
-  event rather than the mutable module-global socket;
-- ignores close/error events from superseded sockets;
-- clears the current socket before the existing reconnect/backoff path runs.
+`scripts/run-late-grade-regression.sh`
 
-The old publication-update WebSocket handler now records only a
-`new-publication-available` runtime event with the action
-`use-latest-on-next-navigation`; it does not expose the obsolete manual Update
-button.
+Current targeted suite: 33 passing tests after floor inference was added.
 
-### Stage-1 validation completed on the test VM
+The real controlled observation history was also checked read-only: four authoritative post-write observations derive an exact 10% deduction per late interval and no grade floor; ambiguous pre-write observations are excluded.
 
-Validated application commit:
+Validated/deployed test application commit for this work:
 
-`74cc17f0aead8ca2592cc117133263c06de93e2b`
+`fd3f10741e5a13b46cf9a5456f3643a2a6574dcf`
 
-Validation included:
+Rollback container retained on the test VM:
 
-- focused reload-sensitive contract tests;
-- existing application-version, legacy-cache, static-asset, initial-state, and
-  runtime-coordinator tests;
-- full frontend build;
-- deployed version / repository / container-marker identity checks;
-- normal browser save -> reload -> restore, followed by edit -> save -> reload
-  -> restore;
-- normal browser offline recovery: the support banner reported that work was
-  not syncing, connectivity was restored without reloading, a new answer was
-  saved, and the new value survived a later normal reload;
-- half-dead WebSocket recovery: only the in-container `node app.js` process was
-  suspended with `SIGSTOP` while the container, TCP stack, Mongo, Redis, and
-  SageCell remained running. The browser raised the sync-warning banner during
-  the stall, the warning cleared immediately after `SIGCONT`, and a new answer
-  saved after recovery survived a later normal reload. The same application
-  PID survived the STOP/CONT test.
+`devximserver-pre-late-floor`
 
-This directly validates the stale-heartbeat recovery path rather than only the
-ordinary socket-close path.
+### Manual-grade behavior
 
-## Stage 2 — grade-sync indicator audit
+A controlled test showed that a later automatic LTI passback can replace a manually entered Canvas grade. Reliable manual-grade provenance is not available from the current LTI 1.1 `readResult` interface, so legacy Xronos will not attempt heuristic manual-grade suppression at this time. Policy discussion may revisit this later.
 
-Status: **in progress**.
+## Student reset utility — implemented and verified
 
-### Current semantic defect
+`scripts/reset-student-data.js` provides a guarded reset path for repeated Test Student work and rare support resets.
 
-The current green `Grade syncing` indicator is not proof that the current
-best grade has reached Canvas. The server currently classifies a bridge as
-`syncing` when it is passback-capable and still open: it has
-`lisResultSourcedid`, `lisOutcomeServiceUrl`, a positive Canvas
-`pointsPossible`, and is not beyond the bridge due date.
+Safety behavior:
 
-That is a useful **connection/capability** fact, but it is weaker than actual
-sync state.
+- dry-run by default;
+- default target is the unique Xronos user named exactly `Test Student`;
+- `--execute` required for mutation;
+- explicit `--user OBJECT_ID` targeting supported;
+- executing an explicit-user reset also requires `--confirm-non-test`;
+- `User` identity is preserved;
+- State, Completion, ProgressMilestone, AuditToken, LtiBridge, and queued Redis gradebook members are removed;
+- context-wide late-policy evidence is preserved by default and removed only with `--purge-policy-evidence`.
 
-The data model and gradebook worker already contain stronger signals:
+The full Test Student scrub was exercised on the separate test VM. It removed 72 State records, 63 Completion records, 19 ProgressMilestones, 10 LTI bridges, 8 explicitly-selected controlled late-policy observations, and one queued Redis gradebook member while preserving the same Test Student User ObjectId and LTI user id. A follow-up dry run reported zero disposable records.
 
-- `LtiBridge.submittedScore` is set to `false` when a better Xronos score is
-  recorded and is set to `true` only after Canvas returns both HTTP 2xx and an
-  IMS response containing `imsx_codeMajor=success`;
-- pending passbacks live in the Redis sorted set `gradebook`;
-- the current grade-sync response already contains placeholder
-  `queuedGradePassbackCount` / `queuedGradePassback` fields, but they are not
-  populated;
-- the current response distinguishes `no-bridge`, `missing-passback-fields`,
-  `grade-passback-closed`, and `active-passback`.
+## Stage 2 — grade-sync indicator
 
-Therefore Stage 2 should not treat `active-passback` as synonymous with
-"synced".
+Status: **classifier/presentation complete; live integration in progress**.
 
-### Proposed Stage-2 status model
+The student-facing question is deliberately narrow:
 
-Keep bridge/capability reasons available for diagnostics, while exposing a
-student-facing state based on the strongest evidence available:
+> Is this Xronos assignment currently connected in the way required for progress to reach this Canvas assignment?
 
-1. **no-bridge** — no bridge for this user/repository/path.
-2. **missing-passback-fields** — a bridge exists but cannot pass a grade to
-   Canvas.
-3. **grade-passback-closed** — a passback-capable bridge exists but its grade
-   passback window is closed.
-4. **passback-ready** — an open, passback-capable bridge exists, but there is
-   no evidence that the current best score has been accepted by Canvas and it
-   is not currently known to be queued.
-5. **passback-pending** — the current bridge is present in the Redis gradebook
-   queue (including transient retry requeues).
-6. **passback-accepted** — `submittedScore === true`, meaning the last queued
-   best score for that bridge received an accepted Canvas LTI 1.1 passback
-   response.
+Student-facing vocabulary:
 
-If a permanent Canvas failure leaves `submittedScore === false` and no queue
-entry, that is materially different from both pending and accepted. Stage 2
-should preserve enough reason information for Stage 3 to explain this case
-without incorrectly claiming that the student never launched from Canvas.
+- `Grade sync connected`
+- `Grade sync not connected`
+- `Grade sync closed`
+- `Checking grade sync`
+- `Grade sync unavailable`
 
-### Stage-2 implementation boundary
+The server-side classifier already distinguishes:
 
-The next code change should:
+- no bridge;
+- bridge missing passback fields;
+- passback window closed;
+- open/passback-ready bridge;
+- queued/pending bridge;
+- Canvas-accepted passback.
 
-- populate queue state from Redis instead of leaving the queue fields dead;
-- classify each relevant bridge with the strongest available evidence;
-- avoid the label `Grade syncing` when the only known fact is bridge
-  capability;
-- retain safe reason codes for the later Stage-3 diagnostic report;
-- add focused tests for the status classifier before changing student-visible
-  wording;
-- avoid storing OAuth secrets, cookies, authorization headers, full LTI POST
-  bodies, or other unnecessary personal data.
+Detailed ready/pending/accepted transport state belongs in diagnostics while all usable open states collapse to `Grade sync connected` for the primary pill.
 
-No LTI 1.3 migration is part of this legacy-server work; the purpose is to make
-existing LTI 1.1 behavior observable and supportable.
+Remaining Stage-2 integration work:
+
+- replace the old inline route classifier with `lib/grade-sync-status.js`;
+- populate queue state from Redis rather than incrementing placeholder counts only when the current request happens to enqueue something;
+- replace the old browser `Grade syncing` presentation with `public/javascripts/grade-sync-presentation.js`;
+- preserve graceful behavior when queue-state lookup itself is unavailable;
+- add route-level integration regression before deployment.
+
+## Stage 3 — grade-sync diagnostics
+
+Status: **classification core complete; response/UI integration in progress**.
+
+`lib/lti-bridge-diagnostics.js` classifies privacy-safe retained bridge metadata into:
+
+- exact assignment/context/resource-link match;
+- same Canvas context, different assignment/resource link;
+- same Xronos page, different Canvas context;
+- missing bridge launch metadata;
+- no matching bridge recorded.
+
+Diagnostic wording intentionally avoids claiming that a student never launched from Canvas merely because Xronos lacks a matching bridge record.
+
+Next Stage-3 integration should combine:
+
+- launch/bridge-match classification;
+- passback capability/open/queued/accepted state;
+- due/lock timestamps and passback-window source;
+- current candidate/last accepted bridge state where useful;
+- a reason when queue state cannot be checked.
+
+No full LTI POST bodies, OAuth secrets, cookies, authorization headers, or unrelated PII should be retained or exposed.
+
+The immediate implementation target is a privacy-safe diagnostic snapshot returned alongside the gradebook response so the browser/support UI can consume the same evidence without creating another persistence layer.
+
+## Stage 4 — recovery
+
+Status: **not started beyond support tooling**.
+
+The verified Test Student reset utility is operational support tooling, not the student-facing Stage-4 recovery UI.
+
+Student-facing recovery should be added only after Stage 2/3 expose enough evidence to distinguish a stale/missing bridge, closed passback window, transient status failure, and healthy connection. Recovery actions should record what was attempted so support can interpret repeated failures without asking the student to reconstruct browser behavior from memory.

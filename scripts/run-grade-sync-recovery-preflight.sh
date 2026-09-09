@@ -114,6 +114,18 @@ grep -Fq \
   "view-canvas-relaunch-guidance" \
   "$TMP_ROOT/public/javascripts/gradebook.js"
 
+grep -Fq \
+  "function xronosRememberGradeSyncRecovery(recovery)" \
+  "$TMP_ROOT/public/javascripts/gradebook.js"
+
+grep -Fq \
+  "gradeSyncSupportReport.MAX_RECOVERY_EVENTS" \
+  "$TMP_ROOT/public/javascripts/gradebook.js"
+
+grep -Fq \
+  "recoveries: xronosGradeSyncRecoveries" \
+  "$TMP_ROOT/public/javascripts/gradebook.js"
+
 if grep -Fq "queueBridge(" "$TMP_ROOT/public/javascripts/gradebook.js"; then
   echo >&2 "Unexpected grade queue mutation appeared in browser recovery code."
   exit 1
@@ -122,13 +134,35 @@ fi
 echo "Generated recovery contracts present."
 
 echo
-echo "5. VERIFY REAL CHECKOUT WAS NOT MODIFIED"
+echo "5. VERIFY SUPPORT CORRELATION CONTRACTS"
+echo "------------------------------------------------------------"
+
+grep -Fq \
+  "schemaVersion: 2" \
+  public/javascripts/grade-sync-support-report.js
+
+grep -Fq \
+  "MAX_RECOVERY_EVENTS = 5" \
+  public/javascripts/grade-sync-support-report.js
+
+grep -Fq \
+  "xronos-grade-sync-recovery-history" \
+  scripts/grade-sync-recovery-report.js
+
+grep -Fq \
+  "gradeSyncRecoveryEvents" \
+  routes/grade-sync-recovery.js
+
+echo "Support correlation contracts present."
+
+echo
+echo "6. VERIFY REAL CHECKOUT WAS NOT MODIFIED"
 echo "------------------------------------------------------------"
 
 after_app="$(sha256sum app.js | awk '{print $1}')"
 after_gradebook="$(sha256sum public/javascripts/gradebook.js | awk '{print $1}')"
 
-printf 'app.js:     %s -> %s\n' "$before_app" "$after_app"
+printf 'app.js:       %s -> %s\n' "$before_app" "$after_app"
 printf 'gradebook.js: %s -> %s\n' "$before_gradebook" "$after_gradebook"
 
 test "$before_app" = "$after_app"

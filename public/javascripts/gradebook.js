@@ -271,11 +271,10 @@ function xronosShowGradeSyncHelp(indicator, checking) {
                             result.gradeSyncDiagnostics || null;
                         xronosUpdateGradeSyncStatus(result.gradeSync || null);
 
-                        recoveryStatus.text(
-                            'Grade sync rechecked: ' +
-                            gradeSyncPresentation.presentation(result.gradeSync).label +
-                            '.'
-                        );
+                        // The modal was built from the pre-recheck state.
+                        // Close it after a successful recheck so reopening
+                        // help rebuilds the content from the fresh status.
+                        modal.modal('hide');
                     }
                 );
             });

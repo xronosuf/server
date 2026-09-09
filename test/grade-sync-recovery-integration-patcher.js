@@ -36,7 +36,7 @@ describe('grade sync recovery integration patcher', function() {
         assert.strictEqual(patcher.patchApp(patched), patched);
     });
 
-    it('adds bounded browser recovery controls and is idempotent', function() {
+    it('adds bounded browser recovery controls and correlation context idempotently', function() {
         var source = fs.readFileSync(
             path.join(root, 'public/javascripts/gradebook.js'),
             'utf8'
@@ -60,6 +60,27 @@ describe('grade sync recovery integration patcher', function() {
         assert.strictEqual(
             patcher.countOccurrences(
                 patched,
+                'function xronosRememberGradeSyncRecovery(recovery) {'
+            ),
+            1
+        );
+        assert.strictEqual(
+            patcher.countOccurrences(
+                patched,
+                'var xronosGradeSyncRecoveries = [];'
+            ),
+            1
+        );
+        assert.strictEqual(
+            patcher.countOccurrences(
+                patched,
+                'recoveries: xronosGradeSyncRecoveries,'
+            ),
+            1
+        );
+        assert.strictEqual(
+            patcher.countOccurrences(
+                patched,
                 "if (recovery.kind !== 'none') {"
             ),
             1
@@ -71,6 +92,12 @@ describe('grade sync recovery integration patcher', function() {
         );
         assert.ok(
             patched.indexOf("'view-canvas-relaunch-guidance'") !== -1
+        );
+        assert.ok(
+            patched.indexOf('xronosRememberGradeSyncRecovery(result.recovery)') !== -1
+        );
+        assert.ok(
+            patched.indexOf('gradeSyncSupportReport.MAX_RECOVERY_EVENTS') !== -1
         );
         assert.ok(
             patched.indexOf("type: 'POST'") !== -1

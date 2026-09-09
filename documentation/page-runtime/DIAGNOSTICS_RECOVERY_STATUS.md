@@ -111,7 +111,7 @@ user id. A follow-up dry run reported zero disposable records.
 
 ## Stage 2 — grade-sync indicator
 
-Status: **source integration complete; build/deployment validation pending**.
+Status: **deployed on test; live LTI/browser validation pending**.
 
 The student-facing question is deliberately narrow:
 
@@ -148,13 +148,22 @@ after patch application, and was committed as:
 
 `90ce6aac5bc402e56926d9a18d475f84c3ae8563`
 
-Remaining Stage-2 validation is operational rather than architectural:
-regenerate the browser bundle, build/deploy a new test image, and confirm the
-student pill against an actual LTI launch.
+A new test image was then built and deployed at:
+
+`f8a18ea45b9c36862861270ec8c34013988ec8fb`
+
+Deployment validation confirmed the application marker, internal/public HTTP
+responses, exactly one running gradebook-capable application container, and the
+new Stage 2/3 source inside the container. The retained rollback container is:
+
+`devximserver-pre-grade-sync`
+
+The final Stage-2 validation is now a fresh Canvas Test Student launch and
+browser check of the assignment-specific pill.
 
 ## Stage 3 — grade-sync diagnostics
 
-Status: **response/source integration complete; deployed LTI validation pending**.
+Status: **deployed on test; live LTI diagnostic-response validation pending**.
 
 Implemented components:
 
@@ -184,9 +193,14 @@ another database query to every progress update.
 Diagnostic wording intentionally avoids claiming that a student never launched
 from Canvas merely because Xronos lacks a matching bridge record.
 
-The next Stage-3 step is to verify an actual deployed LTI launch produces the
-expected exact current-launch reference and privacy-safe diagnostic response.
-No additional persistence layer is required for that validation.
+The deployed test image is the same Stage 2/3 image:
+
+`f8a18ea45b9c36862861270ec8c34013988ec8fb`
+
+The next Stage-3 step is to verify a fresh deployed LTI launch records the exact
+current-session bridge reference and that the subsequent gradebook response
+contains the expected privacy-safe `gradeSyncDiagnostics` object. No additional
+persistence layer is required for that validation.
 
 ## Grade-sync regression runner
 
@@ -195,7 +209,8 @@ It covers the status classifier, student presentation, LTI bridge diagnostics,
 Redis runtime evidence, diagnostic report, launch-session reference, browser
 integration contract, and guarded route/login integration.
 
-Current verified targeted result after operational integration:
+Current verified targeted result after operational integration and immediately
+before the Stage 2/3 test deployment:
 
 - Stage 2/3 regression: 41 passing;
 - late-grade regression: 33 passing.

@@ -108,6 +108,18 @@ function recoveryRequestHelper() {
         "    });",
         "}",
         "",
+        "function xronosRememberGradeSyncRecovery(recovery) {",
+        "    if (!recovery || typeof recovery !== 'object') {",
+        "        return;",
+        "    }",
+        "",
+        "    xronosGradeSyncRecoveries.unshift(recovery);",
+        "    xronosGradeSyncRecoveries = xronosGradeSyncRecoveries.slice(",
+        "        0,",
+        "        gradeSyncSupportReport.MAX_RECOVERY_EVENTS",
+        "    );",
+        "}",
+        "",
         ""
     ].join('\n');
 }
@@ -148,6 +160,7 @@ function recoveryModalBlock() {
         "                            return;",
         "                        }",
         "",
+        "                        xronosRememberGradeSyncRecovery(result.recovery);",
         "                        xronosLatestGradeSyncDiagnostics =",
         "                            result.gradeSyncDiagnostics || null;",
         "                        xronosUpdateGradeSyncStatus(result.gradeSync || null);",
@@ -178,6 +191,7 @@ function recoveryModalBlock() {
         "                        recoveryButton.prop('disabled', false);",
         "",
         "                        if (result && result.ok) {",
+        "                            xronosRememberGradeSyncRecovery(result.recovery);",
         "                            xronosLatestGradeSyncDiagnostics =",
         "                                result.gradeSyncDiagnostics || null;",
         "                            xronosUpdateGradeSyncStatus(result.gradeSync || null);",
@@ -205,7 +219,10 @@ function patchGradebook(source) {
     var importNeedle =
         "var gradeSyncRecoveryPolicy = require('./grade-sync-recovery-policy');";
     var helperNeedle = 'function xronosRequestGradeSyncRecovery(action, callback) {';
+    var rememberNeedle = 'function xronosRememberGradeSyncRecovery(recovery) {';
     var recoveryNeedle = "if (recovery.kind !== 'none') {";
+    var historyNeedle = 'var xronosGradeSyncRecoveries = [];';
+    var reportHistoryNeedle = 'recoveries: xronosGradeSyncRecoveries,';
 
     if (source.indexOf(importNeedle) === -1) {
         source = replaceOnce(
@@ -214,6 +231,16 @@ function patchGradebook(source) {
             "var gradeSyncSupportReport = require('./grade-sync-support-report');\n" +
             importNeedle + "\n",
             'grade sync recovery policy import'
+        );
+    }
+
+    if (source.indexOf(historyNeedle) === -1) {
+        source = replaceOnce(
+            source,
+            'var xronosLatestGradeSyncDiagnostics = null;\n',
+            'var xronosLatestGradeSyncDiagnostics = null;\n' +
+            historyNeedle + '\n',
+            'grade sync recovery history state'
         );
     }
 
@@ -273,14 +300,35 @@ function patchGradebook(source) {
         );
     }
 
+    if (source.indexOf(reportHistoryNeedle) === -1) {
+        source = replaceOnce(
+            source,
+            '            gradeSyncDiagnostics: xronosLatestGradeSyncDiagnostics,\n' +
+            '            environment: xronosCurrentBrowserEnvironment()',
+            '            gradeSyncDiagnostics: xronosLatestGradeSyncDiagnostics,\n' +
+            '            recoveries: xronosGradeSyncRecoveries,\n' +
+            '            environment: xronosCurrentBrowserEnvironment()',
+            'grade sync recovery support-report context'
+        );
+    }
+
     if (countOccurrences(source, importNeedle) !== 1) {
         throw new Error('Expected exactly one grade sync recovery policy import.');
     }
     if (countOccurrences(source, helperNeedle) !== 1) {
         throw new Error('Expected exactly one grade sync recovery request helper.');
     }
+    if (countOccurrences(source, rememberNeedle) !== 1) {
+        throw new Error('Expected exactly one grade sync recovery history helper.');
+    }
     if (countOccurrences(source, recoveryNeedle) !== 1) {
         throw new Error('Expected exactly one grade sync recovery modal block.');
+    }
+    if (countOccurrences(source, historyNeedle) !== 1) {
+        throw new Error('Expected exactly one grade sync recovery history state.');
+    }
+    if (countOccurrences(source, reportHistoryNeedle) !== 1) {
+        throw new Error('Expected exactly one grade sync recovery report context.');
     }
 
     return source;

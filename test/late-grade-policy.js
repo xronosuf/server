@@ -24,7 +24,9 @@ function observation(raw, effective, intervals, bridgeId) {
 }
 
 function assertClose(actual, expected, tolerance) {
-    tolerance = tolerance === undefined ? 1e-12 : tolerance;
+    tolerance = tolerance === undefined
+        ? policy.EVIDENCE_TOLERANCE
+        : tolerance;
 
     assert.ok(
         Math.abs(actual - expected) < tolerance,

@@ -19,6 +19,7 @@ TEST_FILES=(
   test/grade-sync-integration-patcher.js
   test/lti-launch-session-integration-patcher.js
   test/grade-sync-recovery-integration-patcher.js
+  test/grade-sync-recovery-modal-refresh-patcher.js
 )
 
 SOURCE_FILES=(
@@ -36,6 +37,7 @@ SOURCE_FILES=(
   scripts/modernization/apply-grade-sync-integration.js
   scripts/modernization/apply-lti-launch-session-fix.js
   scripts/modernization/apply-grade-sync-recovery-integration.js
+  scripts/modernization/apply-grade-sync-recovery-modal-refresh.js
 )
 
 run_syntax_checks() {
@@ -112,6 +114,7 @@ cp /workspace/scripts/grade-sync-recovery-report.js "$TEST_ROOT/scripts/"
 cp /workspace/scripts/modernization/apply-grade-sync-integration.js "$TEST_ROOT/scripts/modernization/"
 cp /workspace/scripts/modernization/apply-lti-launch-session-fix.js "$TEST_ROOT/scripts/modernization/"
 cp /workspace/scripts/modernization/apply-grade-sync-recovery-integration.js "$TEST_ROOT/scripts/modernization/"
+cp /workspace/scripts/modernization/apply-grade-sync-recovery-modal-refresh.js "$TEST_ROOT/scripts/modernization/"
 cp /workspace/routes/gradebook.js "$TEST_ROOT/routes/"
 cp /workspace/login/index.js "$TEST_ROOT/login/"
 cp /workspace/views/page.pug "$TEST_ROOT/views/"
@@ -130,6 +133,7 @@ cp /workspace/test/grade-sync-browser-contract.js "$TEST_ROOT/test/"
 cp /workspace/test/grade-sync-integration-patcher.js "$TEST_ROOT/test/"
 cp /workspace/test/lti-launch-session-integration-patcher.js "$TEST_ROOT/test/"
 cp /workspace/test/grade-sync-recovery-integration-patcher.js "$TEST_ROOT/test/"
+cp /workspace/test/grade-sync-recovery-modal-refresh-patcher.js "$TEST_ROOT/test/"
 
 cd "$TEST_ROOT"
 
@@ -148,7 +152,8 @@ NODE_PATH=/usr/var/server/node_modules \
   test/grade-sync-browser-contract.js \
   test/grade-sync-integration-patcher.js \
   test/lti-launch-session-integration-patcher.js \
-  test/grade-sync-recovery-integration-patcher.js
+  test/grade-sync-recovery-integration-patcher.js \
+  test/grade-sync-recovery-modal-refresh-patcher.js
 '
 }
 

@@ -10,7 +10,8 @@ function integratedLogin(source) {
         source.indexOf(
             'var ltiLaunchReference = require("../lib/lti-launch-reference");'
         ) !== -1 &&
-        source.indexOf('ltiLaunchReference.record(req, bridge);') !== -1
+        source.indexOf('ltiLaunchReference.stage(req, bridge);') !== -1 &&
+        source.indexOf('ltiLaunchReference.record(req, bridge);') === -1
     );
 }
 
@@ -27,23 +28,18 @@ function integratedGradebook(source) {
 }
 
 describe('grade sync integration patcher', function() {
-    it('can patch the current login source or verify it is already integrated', function() {
+    it('can patch the current login source or verify the staged integration state', function() {
         var source = fs.readFileSync(
             path.join(root, 'login/index.js'),
             'utf8'
         );
-
-        if (integratedLogin(source)) {
-            assert.strictEqual(integratedLogin(source), true);
-            return;
-        }
-
         var patched = patcher.patchLogin(source);
 
         assert.strictEqual(integratedLogin(patched), true);
-        assert.throws(function() {
-            patcher.patchLogin(patched);
-        });
+        assert.strictEqual(
+            patcher.patchLogin(patched),
+            patched
+        );
     });
 
     it('can patch the current gradebook source or verify it is already integrated', function() {

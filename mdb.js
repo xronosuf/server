@@ -117,6 +117,33 @@ exports.initialize = function initialize(callback) {
     )
   );
 
+  var LateGradePolicyObservationSchema = new mongoose.Schema(
+    {
+      toolConsumerInstanceGuid: { type: String, index: true },
+      contextId: { type: String, index: true },
+      bridge: { type: ObjectId, index: true, ref: "LtiBridge" },
+      rawScore: Number,
+      effectiveScore: Number,
+      lateIntervals: Number,
+      observedAt: { type: Date, index: true },
+      source: { type: String, index: true },
+    },
+    {
+      minimize: false,
+    }
+  );
+
+  LateGradePolicyObservationSchema.index({
+    toolConsumerInstanceGuid: 1,
+    contextId: 1,
+    observedAt: -1,
+  });
+
+  exports.LateGradePolicyObservation = mongoose.model(
+    "LateGradePolicyObservation",
+    LateGradePolicyObservationSchema
+  );
+
   exports.State = mongoose.model(
     "State",
     new mongoose.Schema(

@@ -13,8 +13,12 @@ describe('LTI launch session integration patcher', function() {
         );
         var patched = patcher.patchLogin(source);
 
-        assert.ok(
-            patched.indexOf('ltiLaunchReference.stage(req, bridge);') !== -1
+        assert.strictEqual(
+            patcher.countOccurrences(
+                patched,
+                'ltiLaunchReference.stage(req, bridge);'
+            ),
+            1
         );
         assert.strictEqual(
             patcher.patchLogin(patched),
@@ -22,24 +26,12 @@ describe('LTI launch session integration patcher', function() {
         );
     });
 
-    it('patches only the two LTI post-auth routes and is idempotent', function() {
+    it('applies only the three exact app integration edits and is idempotent', function() {
         var source = fs.readFileSync(
             path.join(root, 'app.js'),
             'utf8'
         );
         var patched = patcher.patchApp(source);
-        var lms = patcher.routeBlock(
-            patched,
-            "        app.post('/lms',",
-            "        app.post('/:repository/:path(*)/lti',",
-            '/lms'
-        );
-        var assignment = patcher.routeBlock(
-            patched,
-            "        app.post('/:repository/:path(*)/lti',",
-            "    }\n    \n    app.get('/logout'",
-            'assignment LTI'
-        );
 
         assert.strictEqual(
             patcher.countOccurrences(
@@ -57,24 +49,31 @@ describe('LTI launch session integration patcher', function() {
         );
 
         assert.ok(
-            lms.text.indexOf('ltiLaunchReference.commit(req);') !== -1
-        );
-        assert.ok(
-            lms.text.indexOf(
-                "successRedirect: config.toValidPath('/just-logged-in')"
-            ) === -1
-        );
-        assert.ok(lms.text.indexOf('req.session.save') !== -1);
-
-        assert.ok(
-            assignment.text.indexOf('ltiLaunchReference.commit(req);') !== -1
-        );
-        assert.ok(
-            assignment.text.indexOf(
-                "var destination = '/' + req.params.repository;"
+            patched.indexOf(
+                "        app.post('/lms',\n" +
+                "                 passport.authenticate('lms', {"
             ) !== -1
         );
-        assert.ok(assignment.text.indexOf('req.session.save') !== -1);
+        assert.ok(
+            patched.indexOf(
+                "config.toValidPath('/just-logged-in')"
+            ) !== -1
+        );
+        assert.ok(
+            patched.indexOf(
+                "        app.post('/:repository/:path(*)/lti',"
+            ) !== -1
+        );
+        assert.ok(
+            patched.indexOf(
+                "                 function(req, res, next) {\n" +
+                "                     ltiLaunchReference.commit(req);\n" +
+                "                     var destination = '/' + req.params.repository;"
+            ) !== -1
+        );
+        assert.ok(
+            patched.indexOf('req.session.save(function(err) {') !== -1
+        );
 
         assert.strictEqual(
             patcher.patchApp(patched),

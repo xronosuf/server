@@ -19,10 +19,11 @@ describe('page repair browser helper', function() {
         );
     });
 
-    it('cleans legacy caches before navigating to the recovery URL', async function() {
+    it('cleans legacy caches, records the attempt, then navigates', async function() {
         var assigned = null;
         var registrationsUnregistered = 0;
         var cacheDeleted = 0;
+        var stored = {};
         var windowObject = {
             location: {
                 pathname: '/course/xourse/activity',
@@ -62,15 +63,63 @@ describe('page repair browser helper', function() {
                     values[3] = 4;
                     return values;
                 }
+            },
+            sessionStorage: {
+                setItem: function(key, value) {
+                    stored[key] = value;
+                },
+                getItem: function(key) {
+                    return stored[key] || null;
+                }
             }
         };
 
         var result = await pageRepair.repairCurrentPage({window: windowObject});
+        var remembered = pageRepair.lastRepair(windowObject);
 
         assert.strictEqual(registrationsUnregistered, 1);
         assert.strictEqual(cacheDeleted, 1);
         assert.ok(/^xr-/.test(result.token));
         assert.strictEqual(assigned, result.url);
         assert.ok(assigned.indexOf('?xronosRepair=') !== -1);
+        assert.strictEqual(remembered.token, result.token);
+        assert.strictEqual(remembered.path, '/course/xourse/activity');
+        assert.ok(/T/.test(remembered.requestedAt));
+    });
+
+    it('does not fail recovery when session storage is unavailable', async function() {
+        var assigned = null;
+        var windowObject = {
+            location: {
+                pathname: '/activity',
+                hash: '',
+                assign: function(url) {
+                    assigned = url;
+                }
+            },
+            navigator: {},
+            caches: null,
+            crypto: {
+                getRandomValues: function(values) {
+                    values[0] = 5;
+                    values[1] = 6;
+                    values[2] = 7;
+                    values[3] = 8;
+                    return values;
+                }
+            },
+            sessionStorage: {
+                setItem: function() {
+                    throw new Error('blocked');
+                },
+                getItem: function() {
+                    throw new Error('blocked');
+                }
+            }
+        };
+
+        await pageRepair.repairCurrentPage({window: windowObject});
+        assert.ok(assigned.indexOf('?xronosRepair=') !== -1);
+        assert.strictEqual(pageRepair.lastRepair(windowObject), null);
     });
 });

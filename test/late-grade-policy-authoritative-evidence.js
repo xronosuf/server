@@ -41,6 +41,8 @@ describe('authoritative Canvas late-policy evidence', function() {
         assert.strictEqual(derived.exact, true);
         assert.strictEqual(derived.reason, 'exact-context-deduction');
         assertClose(derived.deductionPerInterval, 0.10);
+        assert.strictEqual(derived.gradeFloorExact, false);
+        assert.strictEqual(derived.gradeFloor, null);
     });
 
     it('blocks the reproduced 3.50 to 3.36 lowering case', function() {
@@ -72,6 +74,7 @@ describe('authoritative Canvas late-policy evidence', function() {
             'context-policy-predicts-lower-grade'
         );
         assertClose(decision.predictedFloorlessScore, 0.336);
+        assertClose(decision.predictedEffectiveScore, 0.336);
         assertClose(decision.deductionPerIntervalUsed, 0.10);
     });
 
@@ -135,5 +138,91 @@ describe('authoritative Canvas late-policy evidence', function() {
             'context-policy-predicts-lower-grade'
         );
         assertClose(decision.predictedFloorlessScore, 0.336);
+    });
+
+    it('does not mistake the lowest ordinary post-write grade for a floor', function() {
+        var contextPolicy = policy.deriveContextPolicy([
+            postWrite(0.869, 0.669, 2),
+            postWrite(0.879, 0.279, 6),
+            postWrite(0.898, 0.298, 6),
+            postWrite(0.936, 0.336, 6)
+        ]);
+
+        assert.strictEqual(contextPolicy.usable, true);
+        assert.strictEqual(contextPolicy.exact, true);
+        assert.strictEqual(
+            contextPolicy.reason,
+            'exact-context-deduction'
+        );
+        assertClose(contextPolicy.deductionPerInterval, 0.10);
+        assert.strictEqual(contextPolicy.gradeFloorExact, false);
+        assert.strictEqual(contextPolicy.gradeFloor, null);
+        assert.strictEqual(contextPolicy.floorEvidenceCount, 0);
+    });
+
+    it('infers a grade floor only when an authoritative post-write result exceeds the exact floorless prediction', function() {
+        var contextPolicy = policy.deriveContextPolicy([
+            postWrite(0.869, 0.669, 2),
+            postWrite(0.550, 0.250, 4)
+        ]);
+
+        assert.strictEqual(contextPolicy.usable, true);
+        assert.strictEqual(contextPolicy.exact, true);
+        assert.strictEqual(
+            contextPolicy.reason,
+            'exact-context-deduction-and-floor'
+        );
+        assertClose(contextPolicy.deductionPerInterval, 0.10);
+        assert.strictEqual(contextPolicy.gradeFloorExact, true);
+        assertClose(contextPolicy.gradeFloor, 0.25);
+        assert.strictEqual(contextPolicy.floorEvidenceCount, 1);
+    });
+
+    it('uses an exact learned floor to prove a floor-bound late update non-lowering', function() {
+        var contextPolicy = policy.deriveContextPolicy([
+            postWrite(0.869, 0.669, 2),
+            postWrite(0.550, 0.250, 4)
+        ]);
+
+        var decision = policy.latePassbackDecision({
+            canvasHasResult: true,
+            canvasScore: 0.250,
+            candidateRawScore: 0.570,
+            currentLateIntervals: 4,
+            contextPolicy: contextPolicy
+        });
+
+        assert.strictEqual(decision.allow, true);
+        assert.strictEqual(
+            decision.reason,
+            'safe-from-exact-context-floor'
+        );
+        assertClose(decision.predictedFloorlessScore, 0.170);
+        assertClose(decision.predictedEffectiveScore, 0.250);
+        assertClose(decision.gradeFloorUsed, 0.250);
+    });
+
+    it('still blocks when the learned floor is below the current Canvas grade', function() {
+        var contextPolicy = policy.deriveContextPolicy([
+            postWrite(0.869, 0.669, 2),
+            postWrite(0.550, 0.250, 4)
+        ]);
+
+        var decision = policy.latePassbackDecision({
+            canvasHasResult: true,
+            canvasScore: 0.300,
+            candidateRawScore: 0.570,
+            currentLateIntervals: 4,
+            contextPolicy: contextPolicy
+        });
+
+        assert.strictEqual(decision.allow, false);
+        assert.strictEqual(
+            decision.reason,
+            'context-policy-predicts-lower-grade'
+        );
+        assertClose(decision.predictedFloorlessScore, 0.170);
+        assertClose(decision.predictedEffectiveScore, 0.250);
+        assertClose(decision.gradeFloorUsed, 0.250);
     });
 });

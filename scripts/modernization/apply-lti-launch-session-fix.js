@@ -20,6 +20,22 @@ function replaceOnce(source, before, after, label) {
     return source.slice(0, first) + after + source.slice(first + before.length);
 }
 
+function replaceBetweenOnce(source, startMarker, endMarker, replacement, label) {
+    var start = source.indexOf(startMarker);
+    var secondStart = start === -1 ? -1 : source.indexOf(startMarker, start + 1);
+    var end = start === -1 ? -1 : source.indexOf(endMarker, start + startMarker.length);
+
+    if (start === -1 || end === -1) {
+        throw new Error('Could not find expected ' + label + ' block.');
+    }
+
+    if (secondStart !== -1) {
+        throw new Error('Expected exactly one ' + label + ' start marker.');
+    }
+
+    return source.slice(0, start) + replacement + source.slice(end);
+}
+
 function patchLogin(source) {
     if (source.indexOf('ltiLaunchReference.stage(req, bridge);') !== -1) {
         return source;
@@ -53,19 +69,22 @@ function patchApp(source) {
             "        }), function(req, res) {\n" +
             "            ltiLaunchReference.commit(req);") === -1
     ) {
-        source = replaceOnce(
-            source,
-            "        app.post('/lms', passport.authenticate('lms', {\n" +
-            "            successRedirect: config.toValidPath('/just-logged-in'),\n" +
-            "                            failureRedirect: '/',\n" +
-            "                            failureFlash: true}));",
+        var lmsStart = "        app.post('/lms', passport.authenticate('lms', {\n";
+        var lmsEnd = "        app.post('/:repository/:path(*)/lti',\n";
+        var lmsReplacement =
             "        app.post('/lms', passport.authenticate('lms', {\n" +
             "            failureRedirect: '/',\n" +
             "            failureFlash: true\n" +
             "        }), function(req, res) {\n" +
             "            ltiLaunchReference.commit(req);\n" +
             "            res.redirect(config.toValidPath('/just-logged-in'));\n" +
-            "        });",
+            "        });\n";
+
+        source = replaceBetweenOnce(
+            source,
+            lmsStart,
+            lmsEnd,
+            lmsReplacement,
             'legacy /lms authenticate route'
         );
     }
@@ -107,6 +126,7 @@ function patchFile(relativePath, patcher) {
 
 exports.patchApp = patchApp;
 exports.patchLogin = patchLogin;
+exports.replaceBetweenOnce = replaceBetweenOnce;
 exports.replaceOnce = replaceOnce;
 
 if (require.main === module) {

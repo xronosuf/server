@@ -23,6 +23,15 @@ function observation(raw, effective, intervals, bridgeId) {
     };
 }
 
+function assertClose(actual, expected, tolerance) {
+    tolerance = tolerance === undefined ? 1e-12 : tolerance;
+
+    assert.ok(
+        Math.abs(actual - expected) < tolerance,
+        'expected ' + actual + ' to be within ' + tolerance + ' of ' + expected
+    );
+}
+
 describe('late grade passback policy', function() {
     it('keeps Canvas-until assignments open after the due date', function() {
         var now = Date.parse('2026-09-09T15:49:44.000Z');
@@ -104,7 +113,7 @@ describe('late grade passback policy', function() {
     });
 
     it('normalizes the actual Canvas raw-point basis', function() {
-        assert.strictEqual(
+        assertClose(
             policy.normalizedRawScore(8.21, 10),
             0.821
         );
@@ -116,9 +125,7 @@ describe('late grade passback policy', function() {
         );
 
         assert.ok(normalized);
-        assert.ok(
-            Math.abs(normalized.deductionLowerBound - 0.1) < 1e-12
-        );
+        assertClose(normalized.deductionLowerBound, 0.1);
     });
 
     it('treats one effective-score level as a lower bound, not an exact context rate', function() {
@@ -129,9 +136,7 @@ describe('late grade passback policy', function() {
         assert.strictEqual(derived.usable, true);
         assert.strictEqual(derived.exact, false);
         assert.strictEqual(derived.reason, 'deduction-lower-bound-only');
-        assert.ok(
-            Math.abs(derived.deductionLowerBound - 0.1) < 1e-12
-        );
+        assertClose(derived.deductionLowerBound, 0.1);
     });
 
     it('infers an exact context deduction once effective scores differ', function() {
@@ -143,9 +148,7 @@ describe('late grade passback policy', function() {
         assert.strictEqual(derived.usable, true);
         assert.strictEqual(derived.exact, true);
         assert.strictEqual(derived.reason, 'exact-context-deduction');
-        assert.ok(
-            Math.abs(derived.deductionPerInterval - 0.1) < 1e-12
-        );
+        assertClose(derived.deductionPerInterval, 0.1);
     });
 
     it('can infer an exact context deduction across different assignments', function() {
@@ -155,9 +158,7 @@ describe('late grade passback policy', function() {
         ]);
 
         assert.strictEqual(derived.exact, true);
-        assert.ok(
-            Math.abs(derived.deductionPerInterval - 0.1) < 1e-12
-        );
+        assertClose(derived.deductionPerInterval, 0.1);
     });
 
     it('rejects inconsistent context evidence', function() {
@@ -197,8 +198,8 @@ describe('late grade passback policy', function() {
 
         assert.strictEqual(decision.allow, true);
         assert.strictEqual(decision.reason, 'safe-from-local-late-evidence');
-        assert.ok(Math.abs(decision.predictedFloorlessScore - 0.70) < 1e-12);
-        assert.ok(Math.abs(decision.deductionPerIntervalUsed - 0.1) < 1e-12);
+        assertClose(decision.predictedFloorlessScore, 0.70);
+        assertClose(decision.deductionPerIntervalUsed, 0.1);
     });
 
     it('blocks a local late update when another day of penalty could lower Canvas', function() {
@@ -215,7 +216,7 @@ describe('late grade passback policy', function() {
             decision.reason,
             'local-evidence-cannot-prove-nonlowering'
         );
-        assert.ok(Math.abs(decision.predictedFloorlessScore - 0.60) < 1e-12);
+        assertClose(decision.predictedFloorlessScore, 0.60);
     });
 
     it('uses an exact context policy for a different assignment', function() {
@@ -233,7 +234,7 @@ describe('late grade passback policy', function() {
 
         assert.strictEqual(decision.allow, true);
         assert.strictEqual(decision.reason, 'safe-from-exact-context-policy');
-        assert.ok(Math.abs(decision.predictedFloorlessScore - 0.60) < 1e-12);
+        assertClose(decision.predictedFloorlessScore, 0.60);
     });
 
     it('blocks a different assignment when context evidence is only a lower bound', function() {

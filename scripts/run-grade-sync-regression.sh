@@ -10,6 +10,7 @@ TEST_FILES=(
   test/lti-bridge-diagnostics.js
   test/grade-sync-runtime.js
   test/grade-sync-diagnostic-report.js
+  test/lti-launch-reference.js
   test/grade-sync-browser-contract.js
 )
 
@@ -18,6 +19,7 @@ SOURCE_FILES=(
   lib/lti-bridge-diagnostics.js
   lib/grade-sync-runtime.js
   lib/grade-sync-diagnostic-report.js
+  lib/lti-launch-reference.js
   public/javascripts/grade-sync-presentation.js
   public/javascripts/gradebook.js
 )
@@ -73,6 +75,7 @@ cp /workspace/lib/grade-sync-status.js "$TEST_ROOT/lib/"
 cp /workspace/lib/lti-bridge-diagnostics.js "$TEST_ROOT/lib/"
 cp /workspace/lib/grade-sync-runtime.js "$TEST_ROOT/lib/"
 cp /workspace/lib/grade-sync-diagnostic-report.js "$TEST_ROOT/lib/"
+cp /workspace/lib/lti-launch-reference.js "$TEST_ROOT/lib/"
 cp /workspace/lib/late-grade-policy.js "$TEST_ROOT/lib/"
 cp /workspace/public/javascripts/grade-sync-presentation.js "$TEST_ROOT/public/javascripts/"
 cp /workspace/public/javascripts/gradebook.js "$TEST_ROOT/public/javascripts/"
@@ -81,6 +84,7 @@ cp /workspace/test/grade-sync-presentation.js "$TEST_ROOT/test/"
 cp /workspace/test/lti-bridge-diagnostics.js "$TEST_ROOT/test/"
 cp /workspace/test/grade-sync-runtime.js "$TEST_ROOT/test/"
 cp /workspace/test/grade-sync-diagnostic-report.js "$TEST_ROOT/test/"
+cp /workspace/test/lti-launch-reference.js "$TEST_ROOT/test/"
 cp /workspace/test/grade-sync-browser-contract.js "$TEST_ROOT/test/"
 
 cd "$TEST_ROOT"
@@ -92,6 +96,7 @@ NODE_PATH=/usr/var/server/node_modules \
   test/lti-bridge-diagnostics.js \
   test/grade-sync-runtime.js \
   test/grade-sync-diagnostic-report.js \
+  test/lti-launch-reference.js \
   test/grade-sync-browser-contract.js
 '
 }

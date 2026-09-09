@@ -9,6 +9,7 @@ TEST_FILES=(
   test/page-repair-server.js
   test/page-repair-integration-patcher.js
   test/page-repair-support-report-contract.js
+  test/page-repair-cache-policy-fix.js
 )
 
 SOURCE_FILES=(
@@ -16,6 +17,7 @@ SOURCE_FILES=(
   public/javascripts/legacy-cache-cleanup.js
   public/javascripts/page-repair.js
   scripts/modernization/apply-page-repair-integration.js
+  scripts/modernization/apply-page-repair-cache-policy-fix.js
 )
 
 for file in "${SOURCE_FILES[@]}" "${TEST_FILES[@]}"; do
@@ -52,10 +54,12 @@ cp /workspace/public/javascripts/mathjax.js "$TEST_ROOT/public/javascripts/"
 cp /workspace/public/javascripts/page-runtime-support-report.js "$TEST_ROOT/public/javascripts/"
 cp /workspace/public/javascripts/page-runtime-support-ui.js "$TEST_ROOT/public/javascripts/"
 cp /workspace/scripts/modernization/apply-page-repair-integration.js "$TEST_ROOT/scripts/modernization/"
+cp /workspace/scripts/modernization/apply-page-repair-cache-policy-fix.js "$TEST_ROOT/scripts/modernization/"
 cp /workspace/test/page-repair.js "$TEST_ROOT/test/"
 cp /workspace/test/page-repair-server.js "$TEST_ROOT/test/"
 cp /workspace/test/page-repair-integration-patcher.js "$TEST_ROOT/test/"
 cp /workspace/test/page-repair-support-report-contract.js "$TEST_ROOT/test/"
+cp /workspace/test/page-repair-cache-policy-fix.js "$TEST_ROOT/test/"
 cp /workspace/app.js "$TEST_ROOT/"
 cp /workspace/views/layouts/main.pug "$TEST_ROOT/views/layouts/"
 cp /workspace/views/layouts/grid.pug "$TEST_ROOT/views/layouts/"
@@ -65,7 +69,8 @@ NODE_PATH=/usr/var/server/node_modules \
   test/page-repair.js \
   test/page-repair-server.js \
   test/page-repair-integration-patcher.js \
-  test/page-repair-support-report-contract.js
+  test/page-repair-support-report-contract.js \
+  test/page-repair-cache-policy-fix.js
 '
 else
   echo >&2 "Mocha is not installed locally and podman is unavailable."

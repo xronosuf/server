@@ -21,13 +21,40 @@ function replaceOnce(source, before, after, label) {
 }
 
 function patchLogin(source) {
-    source = replaceOnce(
-        source,
-        'var gradebook = require("../routes/gradebook");\n',
-        'var gradebook = require("../routes/gradebook");\n' +
-        'var ltiLaunchReference = require("../lib/lti-launch-reference");\n',
-        'login launch-reference import'
-    );
+    var importLine =
+        'var ltiLaunchReference = require("../lib/lti-launch-reference");';
+    var stageLine = '            ltiLaunchReference.stage(req, bridge);';
+    var legacyRecordLine = '            ltiLaunchReference.record(req, bridge);';
+
+    if (
+        source.indexOf(importLine) !== -1 &&
+        source.indexOf(stageLine) !== -1
+    ) {
+        return source;
+    }
+
+    if (source.indexOf(importLine) === -1) {
+        source = replaceOnce(
+            source,
+            'var gradebook = require("../routes/gradebook");\n',
+            'var gradebook = require("../routes/gradebook");\n' +
+            importLine + '\n',
+            'login launch-reference import'
+        );
+    }
+
+    if (source.indexOf(stageLine) !== -1) {
+        return source;
+    }
+
+    if (source.indexOf(legacyRecordLine) !== -1) {
+        return replaceOnce(
+            source,
+            legacyRecordLine,
+            stageLine,
+            'legacy saved-bridge launch-reference recording'
+        );
+    }
 
     source = replaceOnce(
         source,
@@ -38,9 +65,9 @@ function patchLogin(source) {
         '        bridge\n' +
         '          .save()\n' +
         '          .then(function () {\n' +
-        '            ltiLaunchReference.record(req, bridge);\n' +
+        stageLine + '\n' +
         '            initializeZeroGradePassback(bridge, function (err) {',
-        'saved-bridge launch-reference recording'
+        'saved-bridge launch-reference staging'
     );
 
     return source;

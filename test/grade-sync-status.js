@@ -36,13 +36,41 @@ describe('grade sync status classifier', function() {
         assert.strictEqual(status.reason, 'missing-passback-fields');
     });
 
-    it('reports a closed passback window', function() {
+    it('keeps a past-due bridge active through Canvas untilDate', function() {
         var status = gradeSyncStatus.build([
-            bridge({dueDate: new Date(now - 1000)})
+            bridge({
+                dueDate: new Date(now - 1000),
+                untilDate: new Date(now + 24 * 60 * 60 * 1000)
+            })
+        ], [], now);
+
+        assert.strictEqual(status.state, 'ready');
+        assert.strictEqual(status.reason, 'passback-ready');
+        assert.strictEqual(status.hasActiveGradePassback, true);
+    });
+
+    it('reports a closed passback window after Canvas untilDate', function() {
+        var status = gradeSyncStatus.build([
+            bridge({
+                dueDate: new Date(now - 2 * 24 * 60 * 60 * 1000),
+                untilDate: new Date(now - 1000)
+            })
         ], [], now);
 
         assert.strictEqual(status.state, 'not-syncing');
         assert.strictEqual(status.reason, 'grade-passback-closed');
+    });
+
+    it('keeps a bridge without untilDate active during the fallback horizon', function() {
+        var status = gradeSyncStatus.build([
+            bridge({
+                dueDate: new Date(now - 10 * 24 * 60 * 60 * 1000),
+                untilDate: undefined
+            })
+        ], [], now);
+
+        assert.strictEqual(status.state, 'ready');
+        assert.strictEqual(status.reason, 'passback-ready');
     });
 
     it('does not call a merely passback-capable bridge synced', function() {

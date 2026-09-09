@@ -54,11 +54,49 @@ describe('LTI launch session reference', function() {
         );
     });
 
+    it('stages before login and commits only after the authenticated session exists', function() {
+        var req = {};
+        var staged = launchReference.stage(
+            req,
+            bridge(),
+            '2026-09-09T18:30:00.000Z'
+        );
+
+        assert.strictEqual(staged.bridgeId, 'bridge-1');
+        assert.strictEqual(launchReference.read(req), null);
+
+        req.session = {};
+
+        assert.deepStrictEqual(
+            launchReference.commit(req),
+            staged
+        );
+        assert.deepStrictEqual(
+            launchReference.read(req),
+            staged
+        );
+        assert.strictEqual(
+            req[launchReference.REQUEST_KEY],
+            undefined
+        );
+    });
+
+    it('does not stage or commit secret bridge fields', function() {
+        var req = {};
+        launchReference.stage(req, bridge());
+        req.session = {};
+        launchReference.commit(req);
+
+        var serialized = JSON.stringify(req.session);
+        assert.strictEqual(serialized.indexOf('do-not-store'), -1);
+    });
+
     it('does nothing when no session exists', function() {
         assert.strictEqual(
             launchReference.record({}, bridge()),
             null
         );
         assert.strictEqual(launchReference.read({}), null);
+        assert.strictEqual(launchReference.commit({}), null);
     });
 });

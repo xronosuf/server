@@ -4,6 +4,7 @@ var report = require('../public/javascripts/grade-sync-support-report');
 describe('grade sync support report', function() {
     it('builds a bounded privacy-safe report from sanitized diagnostics', function() {
         var bridges = [];
+        var recoveries = [];
         var i;
 
         for (i = 0; i < 12; i += 1) {
@@ -27,6 +28,18 @@ describe('grade sync support report', function() {
                 },
                 lisResultSourcedid: 'SECRET',
                 oauthConsumerKey: 'SECRET'
+            });
+        }
+
+        for (i = 0; i < 7; i += 1) {
+            recoveries.push({
+                eventId: 'recovery-event-' + i,
+                action: i % 2 === 0
+                    ? 'recheck-status'
+                    : 'view-canvas-relaunch-guidance',
+                recorded: true,
+                observedAt: '2026-09-09T20:29:5' + i + '.000Z',
+                secret: 'SECRET'
             });
         }
 
@@ -71,13 +84,7 @@ describe('grade sync support report', function() {
                 lisResultSourcedid: 'SECRET',
                 outcomeUrl: 'SECRET'
             },
-            recovery: {
-                eventId: 'recovery-event-1',
-                action: 'recheck-status',
-                recorded: true,
-                observedAt: '2026-09-09T20:29:59.000Z',
-                secret: 'SECRET'
-            },
+            recoveries: recoveries,
             environment: {
                 userAgent: 'browser',
                 platform: 'platform',
@@ -95,11 +102,13 @@ describe('grade sync support report', function() {
         assert.strictEqual(built.gradeSyncDiagnostics.launchMatch.primary, 'exact');
         assert.strictEqual(built.gradeSyncDiagnostics.bridges.length, 10);
         assert.strictEqual(built.gradeSyncDiagnostics.bridgesTruncated, true);
-        assert.deepStrictEqual(built.recovery, {
-            eventId: 'recovery-event-1',
+        assert.strictEqual(built.recoveries.length, 5);
+        assert.strictEqual(built.recoveriesTruncated, true);
+        assert.deepStrictEqual(built.recoveries[0], {
+            eventId: 'recovery-event-0',
             action: 'recheck-status',
             recorded: true,
-            observedAt: '2026-09-09T20:29:59.000Z'
+            observedAt: '2026-09-09T20:29:50.000Z'
         });
         assert.strictEqual(formatted.indexOf('SECRET'), -1);
         assert.strictEqual(formatted.indexOf('lisResultSourcedid'), -1);
@@ -114,12 +123,13 @@ describe('grade sync support report', function() {
             path: '/testsuite/test-suite-xourse',
             gradeSync: {state: 'error'},
             gradeSyncDiagnostics: null,
-            recovery: null,
+            recoveries: null,
             environment: {}
         });
 
         assert.strictEqual(built.gradeSync.state, 'error');
         assert.strictEqual(built.gradeSyncDiagnostics, null);
-        assert.strictEqual(built.recovery, null);
+        assert.deepStrictEqual(built.recoveries, []);
+        assert.strictEqual(built.recoveriesTruncated, false);
     });
 });

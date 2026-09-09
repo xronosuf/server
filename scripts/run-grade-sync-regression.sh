@@ -10,6 +10,7 @@ TEST_FILES=(
   test/lti-bridge-diagnostics.js
   test/grade-sync-runtime.js
   test/grade-sync-diagnostic-report.js
+  test/grade-sync-support-report.js
   test/lti-launch-reference.js
   test/grade-sync-browser-contract.js
   test/grade-sync-integration-patcher.js
@@ -23,6 +24,7 @@ SOURCE_FILES=(
   lib/grade-sync-diagnostic-report.js
   lib/lti-launch-reference.js
   public/javascripts/grade-sync-presentation.js
+  public/javascripts/grade-sync-support-report.js
   public/javascripts/gradebook.js
   scripts/modernization/apply-grade-sync-integration.js
   scripts/modernization/apply-lti-launch-session-fix.js
@@ -82,6 +84,7 @@ cp /workspace/lib/grade-sync-diagnostic-report.js "$TEST_ROOT/lib/"
 cp /workspace/lib/lti-launch-reference.js "$TEST_ROOT/lib/"
 cp /workspace/lib/late-grade-policy.js "$TEST_ROOT/lib/"
 cp /workspace/public/javascripts/grade-sync-presentation.js "$TEST_ROOT/public/javascripts/"
+cp /workspace/public/javascripts/grade-sync-support-report.js "$TEST_ROOT/public/javascripts/"
 cp /workspace/public/javascripts/gradebook.js "$TEST_ROOT/public/javascripts/"
 cp /workspace/scripts/modernization/apply-grade-sync-integration.js "$TEST_ROOT/scripts/modernization/"
 cp /workspace/scripts/modernization/apply-lti-launch-session-fix.js "$TEST_ROOT/scripts/modernization/"
@@ -93,6 +96,7 @@ cp /workspace/test/grade-sync-presentation.js "$TEST_ROOT/test/"
 cp /workspace/test/lti-bridge-diagnostics.js "$TEST_ROOT/test/"
 cp /workspace/test/grade-sync-runtime.js "$TEST_ROOT/test/"
 cp /workspace/test/grade-sync-diagnostic-report.js "$TEST_ROOT/test/"
+cp /workspace/test/grade-sync-support-report.js "$TEST_ROOT/test/"
 cp /workspace/test/lti-launch-reference.js "$TEST_ROOT/test/"
 cp /workspace/test/grade-sync-browser-contract.js "$TEST_ROOT/test/"
 cp /workspace/test/grade-sync-integration-patcher.js "$TEST_ROOT/test/"
@@ -107,6 +111,7 @@ NODE_PATH=/usr/var/server/node_modules \
   test/lti-bridge-diagnostics.js \
   test/grade-sync-runtime.js \
   test/grade-sync-diagnostic-report.js \
+  test/grade-sync-support-report.js \
   test/lti-launch-reference.js \
   test/grade-sync-browser-contract.js \
   test/grade-sync-integration-patcher.js \

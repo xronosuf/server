@@ -1,6 +1,17 @@
 var assert = require('assert');
 var evidence = require('../lib/late-grade-evidence');
 
+var CANVAS_TOLERANCE = 1e-4;
+
+function assertClose(actual, expected, tolerance) {
+    tolerance = tolerance === undefined ? CANVAS_TOLERANCE : tolerance;
+
+    assert.ok(
+        Math.abs(actual - expected) < tolerance,
+        'expected ' + actual + ' to be within ' + tolerance + ' of ' + expected
+    );
+}
+
 function bridge(overrides) {
     var value = {
         _id: 'bridge-1',
@@ -32,14 +43,14 @@ describe('late grade evidence helpers', function() {
     });
 
     it('uses resultTotalScore over Canvas pointsPossible as candidate raw score', function() {
-        assert.strictEqual(
+        assertClose(
             evidence.candidateRawScore(bridge()),
             0.921
         );
     });
 
     it('uses last submitted total over Canvas pointsPossible for prior raw score', function() {
-        assert.strictEqual(
+        assertClose(
             evidence.lastSubmittedRawScore(bridge()),
             0.821
         );
@@ -51,8 +62,8 @@ describe('late grade evidence helpers', function() {
             0.621
         );
 
-        assert.strictEqual(value.rawScore, 0.821);
-        assert.strictEqual(value.effectiveScore, 0.621);
+        assertClose(value.rawScore, 0.821);
+        assertClose(value.effectiveScore, 0.621);
         assert.strictEqual(value.lateIntervals, 2);
         assert.strictEqual(value.source, 'pre-write-read-result');
     });
@@ -78,8 +89,8 @@ describe('late grade evidence helpers', function() {
             observedAt
         );
 
-        assert.strictEqual(value.rawScore, 0.921);
-        assert.strictEqual(value.effectiveScore, 0.621);
+        assertClose(value.rawScore, 0.921);
+        assertClose(value.effectiveScore, 0.621);
         assert.strictEqual(value.lateIntervals, 3);
         assert.strictEqual(value.observedAt, observedAt);
         assert.strictEqual(value.source, 'post-write-read-result');

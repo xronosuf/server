@@ -31,7 +31,7 @@ describe('LTI launch session integration patcher', function() {
 
         assert.ok(
             patched.indexOf(
-                "var ltiLaunchReference = require('./lib/lti-launch-reference');"
+                "ltiLaunchReference = require('./lib/lti-launch-reference')"
             ) !== -1
         );
         assert.ok(

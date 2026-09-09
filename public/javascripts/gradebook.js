@@ -3,9 +3,11 @@ var _ = require('underscore');
 var debugLog = require('./debug-log');
 var gradeSyncPresentation = require('./grade-sync-presentation');
 var gradeSyncSupportReport = require('./grade-sync-support-report');
+var gradeSyncRecoveryPolicy = require('./grade-sync-recovery-policy');
 
 var xronosLatestGradeSync = null;
 var xronosLatestGradeSyncDiagnostics = null;
+var xronosGradeSyncRecoveries = [];
 
 function xronosCurrentBrowserEnvironment() {
     var timezone = null;
@@ -118,6 +120,43 @@ function xronosCopyTextToClipboard(text, callback) {
     xronosCopyTextToClipboardFallback(text, callback);
 }
 
+function xronosRequestGradeSyncRecovery(action, callback) {
+    var xourseUrl = $('main').attr('data-xourse-url');
+
+    if (!xourseUrl) {
+        callback(new Error('Missing xourse URL for grade sync recovery.'));
+        return;
+    }
+
+    $.ajax({
+        url: window.toValidPath('/' + xourseUrl + '/grade-sync-recovery'),
+        type: 'POST',
+        data: JSON.stringify({action: action}),
+        contentType: 'application/json',
+        success: function(result) {
+            callback(null, result);
+        },
+        error: function(jqXHR, err, exception) {
+            callback(new Error(
+                'Grade sync recovery request failed: ' +
+                (exception || err || (jqXHR && jqXHR.status) || 'unknown')
+            ));
+        }
+    });
+}
+
+function xronosRememberGradeSyncRecovery(recovery) {
+    if (!recovery || typeof recovery !== 'object') {
+        return;
+    }
+
+    xronosGradeSyncRecoveries.unshift(recovery);
+    xronosGradeSyncRecoveries = xronosGradeSyncRecoveries.slice(
+        0,
+        gradeSyncSupportReport.MAX_RECOVERY_EVENTS
+    );
+}
+
 function xronosShowGradeSyncHelp(indicator, checking) {
     var existing = $('#xronos-grade-sync-help-modal');
     var rendered;
@@ -130,6 +169,9 @@ function xronosShowGradeSyncHelp(indicator, checking) {
     var reportButton;
     var reportStatus;
     var reportPreview;
+    var recovery;
+    var recoveryButton;
+    var recoveryStatus;
     var state = xronosLatestGradeSync;
 
     if (existing.length > 0) {
@@ -137,6 +179,10 @@ function xronosShowGradeSyncHelp(indicator, checking) {
     }
 
     rendered = gradeSyncPresentation.presentation(state);
+    recovery = gradeSyncRecoveryPolicy.recovery(
+        state,
+        xronosLatestGradeSyncDiagnostics
+    );
 
     modal = $('<div/>', {
         id: 'xronos-grade-sync-help-modal',
@@ -186,6 +232,91 @@ function xronosShowGradeSyncHelp(indicator, checking) {
         )
     );
 
+    if (recovery.kind !== 'none') {
+        body.append(
+            $('<h5/>').text(recovery.title),
+            $('<p/>').text(recovery.message)
+        );
+
+        recoveryStatus = $('<p/>', {
+            'class': 'help-block',
+            role: 'status',
+            'aria-live': 'polite'
+        });
+
+        if (recovery.kind === 'recheck-status') {
+            recoveryButton = $('<button/>', {
+                type: 'button',
+                'class': 'btn btn-default btn-sm'
+            }).text('Recheck grade sync');
+
+            recoveryButton.on('click', function(event) {
+                event.preventDefault();
+                recoveryButton.prop('disabled', true).text('Checking...');
+
+                xronosRequestGradeSyncRecovery(
+                    'recheck-status',
+                    function(err, result) {
+                        recoveryButton.prop('disabled', false).text('Recheck grade sync');
+
+                        if (err || !result || !result.ok) {
+                            recoveryStatus.text(
+                                'Xronos could not recheck the grade-sync connection. You can still generate a diagnostic report below.'
+                            );
+                            return;
+                        }
+
+                        xronosRememberGradeSyncRecovery(result.recovery);
+                        xronosLatestGradeSyncDiagnostics =
+                            result.gradeSyncDiagnostics || null;
+                        xronosUpdateGradeSyncStatus(result.gradeSync || null);
+
+                        recoveryStatus.text(
+                            'Grade sync rechecked: ' +
+                            gradeSyncPresentation.presentation(result.gradeSync).label +
+                            '.'
+                        );
+                    }
+                );
+            });
+
+            body.append($('<p/>').append(recoveryButton));
+        } else if (recovery.kind === 'relaunch-from-canvas') {
+            recoveryButton = $('<button/>', {
+                type: 'button',
+                'class': 'btn btn-default btn-sm'
+            }).text('Show Canvas reconnect steps');
+
+            recoveryButton.on('click', function(event) {
+                event.preventDefault();
+                recoveryButton.prop('disabled', true);
+
+                xronosRequestGradeSyncRecovery(
+                    'view-canvas-relaunch-guidance',
+                    function(err, result) {
+                        recoveryButton.prop('disabled', false);
+
+                        if (result && result.ok) {
+                            xronosRememberGradeSyncRecovery(result.recovery);
+                            xronosLatestGradeSyncDiagnostics =
+                                result.gradeSyncDiagnostics || null;
+                            xronosUpdateGradeSyncStatus(result.gradeSync || null);
+                        }
+
+                        recoveryStatus.text(
+                            'Return to Canvas, open this exact assignment from its Canvas link, and use the Xronos page opened by that launch. Refreshing only this existing Xronos page does not create a new Canvas assignment launch.' +
+                            (err ? ' If the problem continues, generate the diagnostic report below.' : '')
+                        );
+                    }
+                );
+            });
+
+            body.append($('<p/>').append(recoveryButton));
+        }
+
+        body.append(recoveryStatus);
+    }
+
     body.append(
         $('<p/>').text(
             xronosSupportContactLead(window.xronosSupportEmail)
@@ -232,6 +363,7 @@ function xronosShowGradeSyncHelp(indicator, checking) {
             path: window.location.pathname,
             gradeSync: xronosLatestGradeSync,
             gradeSyncDiagnostics: xronosLatestGradeSyncDiagnostics,
+            recoveries: xronosGradeSyncRecoveries,
             environment: xronosCurrentBrowserEnvironment()
         });
 

@@ -6,6 +6,7 @@ var express = require('express')
   , certificate = require('./routes/certificate')
   , user = require('./routes/user')
   , gradebook = require('./routes/gradebook')
+  , gradeSyncRecovery = require('./routes/grade-sync-recovery')
   , progressAudit = require('./routes/progress-audit')
   , statistics = require('./routes/statistics')
   , xourses = require('./routes/xourses')
@@ -1288,6 +1289,9 @@ app.get('/sw.js', function(req, res) {
     app.put( '/:repository/:path(*)/gradebook',
      repositories.normalizeName,
      gradebook.record );
+    app.post( '/:repository/:path(*)/grade-sync-recovery',
+     repositories.normalizeName,
+     gradeSyncRecovery.recordAndRecheck );
 
     app.get( '/:repository/:path(*)/progress-audit/token',
      repositories.normalizeName,

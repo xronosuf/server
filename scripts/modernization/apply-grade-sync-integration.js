@@ -170,7 +170,17 @@ function patchFile(relativePath, patcher) {
     console.log('Patched ' + relativePath);
 }
 
-patchFile('login/index.js', patchLogin);
-patchFile('routes/gradebook.js', patchGradebook);
+function apply() {
+    patchFile('login/index.js', patchLogin);
+    patchFile('routes/gradebook.js', patchGradebook);
+    console.log('GRADE SYNC ROUTE INTEGRATION PATCH APPLIED');
+}
 
-console.log('GRADE SYNC ROUTE INTEGRATION PATCH APPLIED');
+if (require.main === module) {
+    apply();
+}
+
+exports.apply = apply;
+exports.patchGradebook = patchGradebook;
+exports.patchLogin = patchLogin;
+exports.replaceOnce = replaceOnce;

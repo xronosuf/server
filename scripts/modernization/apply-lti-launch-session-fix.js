@@ -20,20 +20,46 @@ function replaceOnce(source, before, after, label) {
     return source.slice(0, first) + after + source.slice(first + before.length);
 }
 
-function replaceBetweenOnce(source, startMarker, endMarker, replacement, label) {
-    var start = source.indexOf(startMarker);
-    var secondStart = start === -1 ? -1 : source.indexOf(startMarker, start + 1);
-    var end = start === -1 ? -1 : source.indexOf(endMarker, start + startMarker.length);
+function countOccurrences(source, needle) {
+    var count = 0;
+    var position = 0;
 
-    if (start === -1 || end === -1) {
-        throw new Error('Could not find expected ' + label + ' block.');
+    while (true) {
+        position = source.indexOf(needle, position);
+        if (position === -1) {
+            return count;
+        }
+        count += 1;
+        position += needle.length;
+    }
+}
+
+function routeBlock(source, startMarker, endMarker, label) {
+    var start = source.indexOf(startMarker);
+    var secondStart = start === -1
+        ? -1
+        : source.indexOf(startMarker, start + 1);
+    var end = start === -1
+        ? -1
+        : source.indexOf(endMarker, start + startMarker.length);
+
+    if (start === -1 || end === -1 || end <= start) {
+        throw new Error('Could not locate expected ' + label + ' route.');
     }
 
     if (secondStart !== -1) {
-        throw new Error('Expected exactly one ' + label + ' start marker.');
+        throw new Error('Expected exactly one ' + label + ' route.');
     }
 
-    return source.slice(0, start) + replacement + source.slice(end);
+    return {
+        start: start,
+        end: end,
+        text: source.slice(start, end)
+    };
+}
+
+function replaceRouteBlock(source, block, replacement) {
+    return source.slice(0, block.start) + replacement + source.slice(block.end);
 }
 
 function patchLogin(source) {
@@ -50,9 +76,17 @@ function patchLogin(source) {
 }
 
 function patchApp(source) {
-    if (
-        source.indexOf("var ltiLaunchReference = require('./lib/lti-launch-reference');") === -1
-    ) {
+    var importNeedle =
+        "ltiLaunchReference = require('./lib/lti-launch-reference')";
+    var lmsStart =
+        "        app.post('/lms', passport.authenticate('lms', {";
+    var assignmentStart =
+        "        app.post('/:repository/:path(*)/lti',";
+    var afterLtiRoutes = "    }\n    \n    app.get('/logout'";
+    var lms;
+    var assignment;
+
+    if (source.indexOf(importNeedle) === -1) {
         source = replaceOnce(
             source,
             "  , legacyHttpClient = require('./lib/legacy-http-client')\n",
@@ -62,48 +96,77 @@ function patchApp(source) {
         );
     }
 
-    if (
-        source.indexOf("app.post('/lms', passport.authenticate('lms', {\n" +
-            "            failureRedirect: '/',\n" +
-            "            failureFlash: true\n" +
-            "        }), function(req, res) {\n" +
-            "            ltiLaunchReference.commit(req);") === -1
-    ) {
-        var lmsStart = "        app.post('/lms', passport.authenticate('lms', {\n";
-        var lmsEnd = "        app.post('/:repository/:path(*)/lti',\n";
-        var lmsReplacement =
-            "        app.post('/lms', passport.authenticate('lms', {\n" +
-            "            failureRedirect: '/',\n" +
-            "            failureFlash: true\n" +
-            "        }), function(req, res) {\n" +
-            "            ltiLaunchReference.commit(req);\n" +
-            "            res.redirect(config.toValidPath('/just-logged-in'));\n" +
-            "        });\n";
+    if (countOccurrences(source, importNeedle) !== 1) {
+        throw new Error('Expected exactly one LTI launch-reference import.');
+    }
 
-        source = replaceBetweenOnce(
+    lms = routeBlock(
+        source,
+        lmsStart,
+        assignmentStart,
+        '/lms'
+    );
+
+    if (lms.text.indexOf('ltiLaunchReference.commit(req);') === -1) {
+        if (
+            lms.text.indexOf(
+                "successRedirect: config.toValidPath('/just-logged-in')"
+            ) === -1 ||
+            lms.text.indexOf("failureRedirect: '/'") === -1
+        ) {
+            throw new Error('Legacy /lms route shape is not recognized.');
+        }
+
+        source = replaceRouteBlock(
             source,
-            lmsStart,
-            lmsEnd,
-            lmsReplacement,
-            'legacy /lms authenticate route'
+            lms,
+            "        app.post('/lms',\n" +
+            "                 passport.authenticate('lms', {\n" +
+            "                     failureRedirect: '/',\n" +
+            "                     failureFlash: true\n" +
+            "                 }),\n" +
+            "                 function(req, res, next) {\n" +
+            "                     ltiLaunchReference.commit(req);\n\n" +
+            "                     if (req.session) {\n" +
+            "                         req.session.save(function(err) {\n" +
+            "                             if (err) {\n" +
+            "                                 return next(err);\n" +
+            "                             }\n" +
+            "                             res.redirect(\n" +
+            "                                 config.toValidPath('/just-logged-in')\n" +
+            "                             );\n" +
+            "                         });\n" +
+            "                     } else {\n" +
+            "                         res.redirect(\n" +
+            "                             config.toValidPath('/just-logged-in')\n" +
+            "                         );\n" +
+            "                     }\n" +
+            "                 });\n"
         );
     }
 
-    if (
-        source.indexOf("passport.authenticate('lms', { failureRedirect: '/' }),\n" +
-            "                 function(req, res, next) {\n" +
-            "                     ltiLaunchReference.commit(req);") === -1
-    ) {
+    assignment = routeBlock(
+        source,
+        assignmentStart,
+        afterLtiRoutes,
+        'assignment LTI'
+    );
+
+    if (assignment.text.indexOf('ltiLaunchReference.commit(req);') === -1) {
         source = replaceOnce(
             source,
-            "passport.authenticate('lms', { failureRedirect: '/' }),\n" +
             "                 function(req, res, next) {\n" +
             "                     var destination = '/' + req.params.repository;",
-            "passport.authenticate('lms', { failureRedirect: '/' }),\n" +
             "                 function(req, res, next) {\n" +
             "                     ltiLaunchReference.commit(req);\n" +
             "                     var destination = '/' + req.params.repository;",
-            'assignment LTI post-auth route'
+            'assignment LTI post-auth handler'
+        );
+    }
+
+    if (countOccurrences(source, 'ltiLaunchReference.commit(req);') !== 2) {
+        throw new Error(
+            'Expected exactly two post-auth launch-reference commits.'
         );
     }
 
@@ -124,10 +187,11 @@ function patchFile(relativePath, patcher) {
     console.log('Patched ' + relativePath);
 }
 
+exports.countOccurrences = countOccurrences;
 exports.patchApp = patchApp;
 exports.patchLogin = patchLogin;
-exports.replaceBetweenOnce = replaceBetweenOnce;
 exports.replaceOnce = replaceOnce;
+exports.routeBlock = routeBlock;
 
 if (require.main === module) {
     patchFile('login/index.js', patchLogin);

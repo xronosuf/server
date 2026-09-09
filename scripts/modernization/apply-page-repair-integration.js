@@ -73,7 +73,7 @@ function patchApp(source) {
 function patchLayout(source) {
     var anchor = '    meta(name="xronos-application-version", content=version)\n';
     var replacement = anchor +
-        '    meta(name="xronos-repair-token", content=xronosRepairToken || "")\n';
+        '    meta(name="xronos-repair-token", content=(typeof xronosRepairToken !== "undefined" ? xronosRepairToken : ""))\n';
 
     return replaceOnce(source, anchor, replacement, 'layout recovery metadata');
 }

@@ -85,8 +85,18 @@ TEST_ROOT=/tmp/xronos-grade-sync-regression
 rm -rf "$TEST_ROOT"
 mkdir -p "$TEST_ROOT/lib" "$TEST_ROOT/public/javascripts" "$TEST_ROOT/scripts/modernization" "$TEST_ROOT/routes" "$TEST_ROOT/login" "$TEST_ROOT/test" "$TEST_ROOT/views"
 
+# config.js has local metadata dependencies. Keep the disposable fixture
+# self-contained so requiring mdb/config exercises the real Stage 4 modules
+# without depending on files outside TEST_ROOT.
+cp /workspace/package.json "$TEST_ROOT/"
+cp /workspace/dbm.json "$TEST_ROOT/"
 cp /workspace/config.js "$TEST_ROOT/"
 cp /workspace/mdb.js "$TEST_ROOT/"
+
+for required in package.json dbm.json config.js mdb.js; do
+  test -f "$TEST_ROOT/$required"
+done
+
 cp /workspace/lib/grade-sync-status.js "$TEST_ROOT/lib/"
 cp /workspace/lib/lti-bridge-diagnostics.js "$TEST_ROOT/lib/"
 cp /workspace/lib/grade-sync-runtime.js "$TEST_ROOT/lib/"

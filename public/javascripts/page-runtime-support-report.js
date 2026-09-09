@@ -8,7 +8,7 @@
  * broad runtime object and then attempt to remove secrets afterward.
  */
 
-var REPORT_SCHEMA_VERSION = 1;
+var REPORT_SCHEMA_VERSION = 2;
 var MAX_RECENT_EVENTS = 30;
 var MAX_SHORT_TEXT = 160;
 var MAX_USER_AGENT = 320;
@@ -280,6 +280,19 @@ function recentEvents(events) {
 }
 
 
+function pageRepairMetadata(value) {
+    if (!value || typeof value !== 'object') {
+        return null;
+    }
+
+    return {
+        token: boundedText(value.token, MAX_SHORT_TEXT),
+        requestedAt: boundedText(value.requestedAt, MAX_SHORT_TEXT),
+        path: boundedText(value.path, 500)
+    };
+}
+
+
 function browserMetadata(environment) {
     environment =
         environment || {};
@@ -385,6 +398,11 @@ function build(input) {
         browser:
             browserMetadata(
                 input.environment
+            ),
+
+        pageRepair:
+            pageRepairMetadata(
+                input.pageRepair
             ),
 
         subsystems: {

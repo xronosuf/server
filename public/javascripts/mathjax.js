@@ -45,7 +45,8 @@ window.MathJax = {
     root: window.toValidPath(
         applicationVersionPath.versionedNodeModulesPath(
             applicationVersion,
-            'mathjax/'
+            'mathjax/',
+            applicationVersionPath.pageRepairToken(document)
         )
     )
 };

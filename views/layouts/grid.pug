@@ -4,6 +4,7 @@ html(lang="en")
   head
     meta(charset="utf-8")
     meta(name="xronos-application-version", content=version)
+    meta(name="xronos-repair-token", content=(typeof xronosRepairToken !== "undefined" ? xronosRepairToken : ""))
     meta(name="xronos-subpath", content=toValidPath(""))
     title
       if title

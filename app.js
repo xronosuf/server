@@ -1005,6 +1005,23 @@ app.get('/sw.js', function(req, res) {
         }
     );
 
+    var xronosPageRepair = require('./lib/page-repair');
+
+    // A one-shot Repair this page request deliberately reaches the
+    // dynamic page after static routing has had a chance to serve assets.
+    // The response clears only browser cache data, never cookies/storage,
+    // and gives rendered versioned assets a unique recovery URL.
+    app.use(function(req, res, next) {
+        if (req.method === 'GET') {
+            xronosPageRepair.applyRecoveryResponse(
+                req,
+                res,
+                app.locals.versionPath
+            );
+        }
+        next();
+    });
+
     // Static requests have already been handled above. Dynamic GET
     // responses should revalidate so an ordinary navigation cannot remain
     // on stale HTML from a previous frontend generation.

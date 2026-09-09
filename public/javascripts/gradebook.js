@@ -2,6 +2,292 @@ var $ = require('jquery');
 var _ = require('underscore');
 var debugLog = require('./debug-log');
 var gradeSyncPresentation = require('./grade-sync-presentation');
+var gradeSyncSupportReport = require('./grade-sync-support-report');
+
+var xronosLatestGradeSync = null;
+var xronosLatestGradeSyncDiagnostics = null;
+
+function xronosCurrentBrowserEnvironment() {
+    var timezone = null;
+
+    try {
+        if (
+            window.Intl &&
+            typeof window.Intl.DateTimeFormat === 'function'
+        ) {
+            timezone = window.Intl
+                .DateTimeFormat()
+                .resolvedOptions()
+                .timeZone || null;
+        }
+    } catch (err) {
+        timezone = null;
+    }
+
+    return {
+        userAgent:
+            window.navigator && window.navigator.userAgent
+                ? window.navigator.userAgent
+                : null,
+        platform:
+            window.navigator && window.navigator.platform
+                ? window.navigator.platform
+                : null,
+        language:
+            window.navigator && window.navigator.language
+                ? window.navigator.language
+                : null,
+        timezone: timezone,
+        online:
+            window.navigator &&
+            typeof window.navigator.onLine === 'boolean'
+                ? window.navigator.onLine
+                : null
+    };
+}
+
+function xronosSupportContactLead(supportEmail) {
+    var email = typeof supportEmail === 'string'
+        ? supportEmail.trim()
+        : '';
+
+    if (email) {
+        return 'If you need help with grade sync, contact ' + email + '.';
+    }
+
+    return 'If you need help with grade sync, contact your instructor or course support.';
+}
+
+function xronosSupportContactInstructions(supportEmail) {
+    var email = typeof supportEmail === 'string'
+        ? supportEmail.trim()
+        : '';
+
+    if (email) {
+        return 'Generate and copy the diagnostic report below, then email it to ' +
+            email + '.';
+    }
+
+    return 'Generate and copy the diagnostic report below, then paste it into ' +
+        'your normal email or webmail when contacting your instructor or ' +
+        'course support.';
+}
+
+function xronosCopyTextToClipboardFallback(text, callback) {
+    var fallback = $('<textarea/>', {
+        'aria-hidden': 'true'
+    }).css({
+        position: 'fixed',
+        left: '-9999px',
+        top: '0'
+    }).val(text);
+    var copied = false;
+
+    $('body').append(fallback);
+    fallback[0].focus();
+    fallback[0].select();
+
+    try {
+        copied = document.execCommand('copy');
+    } catch (err) {
+        copied = false;
+    }
+
+    fallback.remove();
+    callback(copied);
+}
+
+function xronosCopyTextToClipboard(text, callback) {
+    var navigatorObject = window.navigator || {};
+
+    if (
+        navigatorObject.clipboard &&
+        typeof navigatorObject.clipboard.writeText === 'function'
+    ) {
+        navigatorObject.clipboard.writeText(text).then(
+            function() {
+                callback(true);
+            },
+            function() {
+                xronosCopyTextToClipboardFallback(text, callback);
+            }
+        );
+        return;
+    }
+
+    xronosCopyTextToClipboardFallback(text, callback);
+}
+
+function xronosShowGradeSyncHelp(indicator, checking) {
+    var existing = $('#xronos-grade-sync-help-modal');
+    var rendered;
+    var modal;
+    var dialog;
+    var content;
+    var header;
+    var body;
+    var footer;
+    var reportButton;
+    var reportStatus;
+    var reportPreview;
+    var state = xronosLatestGradeSync;
+
+    if (existing.length > 0) {
+        existing.remove();
+    }
+
+    rendered = gradeSyncPresentation.presentation(state);
+
+    modal = $('<div/>', {
+        id: 'xronos-grade-sync-help-modal',
+        'class': 'modal fade',
+        tabindex: '-1',
+        role: 'dialog',
+        'aria-labelledby': 'xronos-grade-sync-help-title'
+    });
+
+    dialog = $('<div/>', {
+        'class': 'modal-dialog',
+        role: 'document'
+    });
+
+    content = $('<div/>', {
+        'class': 'modal-content'
+    });
+
+    header = $('<div/>', {
+        'class': 'modal-header'
+    }).append(
+        $('<button/>', {
+            type: 'button',
+            'class': 'close',
+            'data-dismiss': 'modal',
+            'aria-label': 'Close'
+        }).append(
+            $('<span/>', {
+                'aria-hidden': 'true'
+            }).html('&times;')
+        ),
+        $('<h4/>', {
+            id: 'xronos-grade-sync-help-title',
+            'class': 'modal-title'
+        }).text('Canvas grade sync')
+    );
+
+    body = $('<div/>', {
+        'class': 'modal-body'
+    });
+
+    body.append(
+        $('<p/>').text(
+            indicator.getAttribute('data-grade-sync-message') ||
+            rendered.message ||
+            checking.message
+        )
+    );
+
+    body.append(
+        $('<p/>').text(
+            xronosSupportContactLead(window.xronosSupportEmail)
+        )
+    );
+
+    body.append(
+        $('<p/>').text(
+            xronosSupportContactInstructions(window.xronosSupportEmail)
+        )
+    );
+
+    reportButton = $('<button/>', {
+        type: 'button',
+        'class': 'btn btn-primary'
+    }).text('Generate & Copy Grade Sync Report');
+
+    reportStatus = $('<p/>', {
+        'class': 'help-block',
+        role: 'status',
+        'aria-live': 'polite'
+    });
+
+    reportPreview = $('<textarea/>', {
+        'class': 'form-control',
+        rows: '14',
+        readonly: 'readonly',
+        'aria-label': 'Generated Xronos grade sync diagnostic report'
+    }).hide();
+
+    reportButton.on('click', function(event) {
+        var applicationVersion =
+            typeof window.xronosApplicationVersion === 'string'
+                ? window.xronosApplicationVersion
+                : null;
+        var report;
+        var formatted;
+
+        event.preventDefault();
+
+        report = gradeSyncSupportReport.build({
+            generatedAt: (new Date()).toISOString(),
+            applicationVersion: applicationVersion,
+            path: window.location.pathname,
+            gradeSync: xronosLatestGradeSync,
+            gradeSyncDiagnostics: xronosLatestGradeSyncDiagnostics,
+            environment: xronosCurrentBrowserEnvironment()
+        });
+
+        formatted = gradeSyncSupportReport.format(report);
+
+        reportPreview.val(formatted).show();
+
+        xronosCopyTextToClipboard(formatted, function(copied) {
+            var email = typeof window.xronosSupportEmail === 'string'
+                ? window.xronosSupportEmail.trim()
+                : '';
+
+            if (copied && email) {
+                reportStatus.text(
+                    'Grade sync diagnostic report copied. Paste it into an email to ' +
+                    email + '.'
+                );
+            } else if (copied) {
+                reportStatus.text(
+                    'Grade sync diagnostic report copied. Paste it into your email or webmail.'
+                );
+            } else {
+                reportStatus.text(
+                    'The report is ready below. Copy it manually and paste it into your email or webmail.'
+                );
+            }
+        });
+    });
+
+    body.append($('<p/>').append(reportButton));
+    body.append(reportStatus);
+    body.append(reportPreview);
+
+    footer = $('<div/>', {
+        'class': 'modal-footer'
+    }).append(
+        $('<button/>', {
+            type: 'button',
+            'class': 'btn btn-default',
+            'data-dismiss': 'modal'
+        }).text('Close')
+    );
+
+    content.append(header);
+    content.append(body);
+    content.append(footer);
+    dialog.append(content);
+    modal.append(dialog);
+    $('body').prepend(modal);
+
+    modal.on('hidden.bs.modal', function() {
+        modal.remove();
+    });
+
+    modal.modal('show');
+}
 
 var xronosEnsureGradeSyncIndicator = function() {
     var indicator;
@@ -44,10 +330,9 @@ var xronosEnsureGradeSyncIndicator = function() {
 
         if (help) {
             help.addEventListener('click', function(event) {
-                var message = indicator.getAttribute('data-grade-sync-message') || checking.message;
                 event.preventDefault();
                 event.stopPropagation();
-                window.alert(message);
+                xronosShowGradeSyncHelp(indicator, checking);
             });
         }
     }
@@ -65,6 +350,8 @@ var xronosUpdateGradeSyncStatus = function(gradeSync) {
     var indicator = xronosEnsureGradeSyncIndicator();
     var label;
     var rendered;
+
+    xronosLatestGradeSync = gradeSync || null;
 
     if (!indicator) {
         return;
@@ -205,6 +492,10 @@ exports.update = _.debounce( function() {
 	contentType: 'application/json',	
 	success: function( result ) {
 	    debugLog.log('Xronos server accepted gradebook update; Canvas passback may be queued.', payload);
+            xronosLatestGradeSyncDiagnostics =
+                result && result.gradeSyncDiagnostics
+                    ? result.gradeSyncDiagnostics
+                    : null;
 	    xronosUpdateGradeSyncStatus(result && result.gradeSync);
 	    xronosDispatchGradebookRecorded(payload, result);
 	    $('.progress-bar', ".progress.completion-meter").removeClass( 'bg-danger' );
@@ -217,6 +508,7 @@ exports.update = _.debounce( function() {
 		error: err,
 		exception: exception
 	    });
+            xronosLatestGradeSyncDiagnostics = null;
 	    xronosUpdateGradeSyncStatus({state: 'error'});
 	    $(".progress.completion-meter").attr('title', 'Could not submit grade.' );
 	    $('.progress-bar', ".progress.completion-meter").removeClass( 'bg-success' );

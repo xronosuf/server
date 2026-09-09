@@ -18,12 +18,13 @@ describe('YouTube progress contracts', function() {
         );
     });
 
-    it('uses a delegated progress event that survives YouTube DOM replacement', function() {
+    it('delegates video database events through the stable activity node', function() {
         var progress = source('public/javascripts/progress-bar.js');
-        var youtube = source('public/javascripts/youtube.js');
 
         assert(
-            progress.indexOf("'ximera:youtube-progress.xronos-progress'") !== -1
+            progress.indexOf(
+                "'ximera:database.xronos-video-progress'"
+            ) !== -1
         );
 
         assert(
@@ -31,7 +32,7 @@ describe('YouTube progress contracts', function() {
         );
 
         assert(
-            youtube.indexOf("container.trigger('ximera:youtube-progress')") !== -1
+            progress.indexOf('activity.on(') !== -1
         );
     });
 

@@ -81,7 +81,7 @@ set -eu
 
 TEST_ROOT=/tmp/xronos-grade-sync-regression
 rm -rf "$TEST_ROOT"
-mkdir -p "$TEST_ROOT/lib" "$TEST_ROOT/public/javascripts" "$TEST_ROOT/scripts/modernization" "$TEST_ROOT/routes" "$TEST_ROOT/login" "$TEST_ROOT/test"
+mkdir -p "$TEST_ROOT/lib" "$TEST_ROOT/public/javascripts" "$TEST_ROOT/scripts/modernization" "$TEST_ROOT/routes" "$TEST_ROOT/login" "$TEST_ROOT/test" "$TEST_ROOT/views"
 
 cp /workspace/config.js "$TEST_ROOT/"
 cp /workspace/mdb.js "$TEST_ROOT/"
@@ -101,6 +101,7 @@ cp /workspace/scripts/modernization/apply-lti-launch-session-fix.js "$TEST_ROOT/
 cp /workspace/scripts/modernization/apply-grade-sync-recovery-integration.js "$TEST_ROOT/scripts/modernization/"
 cp /workspace/routes/gradebook.js "$TEST_ROOT/routes/"
 cp /workspace/login/index.js "$TEST_ROOT/login/"
+cp /workspace/views/page.pug "$TEST_ROOT/views/"
 cp /workspace/app.js "$TEST_ROOT/"
 cp /workspace/test/grade-sync-status.js "$TEST_ROOT/test/"
 cp /workspace/test/grade-sync-presentation.js "$TEST_ROOT/test/"

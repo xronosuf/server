@@ -8,7 +8,8 @@ describe('student reset argument safety', function() {
             {
                 execute: false,
                 userId: null,
-                confirmNonTest: false
+                confirmNonTest: false,
+                purgePolicyEvidence: false
             }
         );
     });
@@ -17,6 +18,17 @@ describe('student reset argument safety', function() {
         var options = reset.parseArguments(['--execute']);
         assert.strictEqual(options.execute, true);
         assert.strictEqual(options.userId, null);
+        assert.strictEqual(options.purgePolicyEvidence, false);
+    });
+
+    it('allows explicit policy-evidence purge for controlled testing', function() {
+        var options = reset.parseArguments([
+            '--execute',
+            '--purge-policy-evidence'
+        ]);
+
+        assert.strictEqual(options.execute, true);
+        assert.strictEqual(options.purgePolicyEvidence, true);
     });
 
     it('allows previewing an explicit user without extra confirmation', function() {
@@ -28,6 +40,7 @@ describe('student reset argument safety', function() {
         assert.strictEqual(options.execute, false);
         assert.strictEqual(options.userId, '0123456789abcdef01234567');
         assert.strictEqual(options.confirmNonTest, false);
+        assert.strictEqual(options.purgePolicyEvidence, false);
     });
 
     it('rejects executing an explicit-user reset without confirmation', function() {

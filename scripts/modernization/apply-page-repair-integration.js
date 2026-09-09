@@ -67,7 +67,41 @@ function patchApp(source) {
         '    // Static requests have already been handled above. Dynamic GET'
     ].join('\n');
 
-    return replaceOnce(source, anchor, replacement, 'app.js page repair middleware');
+    source = replaceOnce(source, anchor, replacement, 'app.js page repair middleware');
+
+    var cacheBefore = [
+        "    app.use(function(req, res, next) {",
+        "        if (req.method === 'GET') {",
+        "            res.set(",
+        "                'Cache-Control',",
+        "                'private, no-cache'",
+        "            );",
+        "        }",
+        "        next();",
+        "    });"
+    ].join('\n');
+
+    var cacheAfter = [
+        "    app.use(function(req, res, next) {",
+        "        if (",
+        "            req.method === 'GET' &&",
+        "            !res.locals.xronosRepairToken",
+        "        ) {",
+        "            res.set(",
+        "                'Cache-Control',",
+        "                'private, no-cache'",
+        "            );",
+        "        }",
+        "        next();",
+        "    });"
+    ].join('\n');
+
+    return replaceOnce(
+        source,
+        cacheBefore,
+        cacheAfter,
+        'app.js repair cache-policy guard'
+    );
 }
 
 function patchLayout(source) {

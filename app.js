@@ -1026,7 +1026,10 @@ app.get('/sw.js', function(req, res) {
     // responses should revalidate so an ordinary navigation cannot remain
     // on stale HTML from a previous frontend generation.
     app.use(function(req, res, next) {
-        if (req.method === 'GET') {
+        if (
+            req.method === 'GET' &&
+            !res.locals.xronosRepairToken
+        ) {
             res.set(
                 'Cache-Control',
                 'private, no-cache'

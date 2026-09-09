@@ -13,6 +13,7 @@ TEST_FILES=(
   test/lti-launch-reference.js
   test/grade-sync-browser-contract.js
   test/grade-sync-integration-patcher.js
+  test/lti-launch-session-integration-patcher.js
 )
 
 SOURCE_FILES=(
@@ -24,6 +25,7 @@ SOURCE_FILES=(
   public/javascripts/grade-sync-presentation.js
   public/javascripts/gradebook.js
   scripts/modernization/apply-grade-sync-integration.js
+  scripts/modernization/apply-lti-launch-session-fix.js
 )
 
 run_syntax_checks() {
@@ -82,8 +84,10 @@ cp /workspace/lib/late-grade-policy.js "$TEST_ROOT/lib/"
 cp /workspace/public/javascripts/grade-sync-presentation.js "$TEST_ROOT/public/javascripts/"
 cp /workspace/public/javascripts/gradebook.js "$TEST_ROOT/public/javascripts/"
 cp /workspace/scripts/modernization/apply-grade-sync-integration.js "$TEST_ROOT/scripts/modernization/"
+cp /workspace/scripts/modernization/apply-lti-launch-session-fix.js "$TEST_ROOT/scripts/modernization/"
 cp /workspace/routes/gradebook.js "$TEST_ROOT/routes/"
 cp /workspace/login/index.js "$TEST_ROOT/login/"
+cp /workspace/app.js "$TEST_ROOT/"
 cp /workspace/test/grade-sync-status.js "$TEST_ROOT/test/"
 cp /workspace/test/grade-sync-presentation.js "$TEST_ROOT/test/"
 cp /workspace/test/lti-bridge-diagnostics.js "$TEST_ROOT/test/"
@@ -92,6 +96,7 @@ cp /workspace/test/grade-sync-diagnostic-report.js "$TEST_ROOT/test/"
 cp /workspace/test/lti-launch-reference.js "$TEST_ROOT/test/"
 cp /workspace/test/grade-sync-browser-contract.js "$TEST_ROOT/test/"
 cp /workspace/test/grade-sync-integration-patcher.js "$TEST_ROOT/test/"
+cp /workspace/test/lti-launch-session-integration-patcher.js "$TEST_ROOT/test/"
 
 cd "$TEST_ROOT"
 
@@ -104,7 +109,8 @@ NODE_PATH=/usr/var/server/node_modules \
   test/grade-sync-diagnostic-report.js \
   test/lti-launch-reference.js \
   test/grade-sync-browser-contract.js \
-  test/grade-sync-integration-patcher.js
+  test/grade-sync-integration-patcher.js \
+  test/lti-launch-session-integration-patcher.js
 '
 }
 

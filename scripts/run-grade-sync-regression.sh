@@ -13,6 +13,7 @@ TEST_FILES=(
   test/grade-sync-support-report.js
   test/grade-sync-recovery-policy.js
   test/grade-sync-recovery.js
+  test/grade-sync-recovery-report.js
   test/lti-launch-reference.js
   test/grade-sync-browser-contract.js
   test/grade-sync-integration-patcher.js
@@ -31,6 +32,7 @@ SOURCE_FILES=(
   public/javascripts/grade-sync-recovery-policy.js
   public/javascripts/gradebook.js
   routes/grade-sync-recovery.js
+  scripts/grade-sync-recovery-report.js
   scripts/modernization/apply-grade-sync-integration.js
   scripts/modernization/apply-lti-launch-session-fix.js
   scripts/modernization/apply-grade-sync-recovery-integration.js
@@ -96,6 +98,7 @@ cp /workspace/public/javascripts/grade-sync-support-report.js "$TEST_ROOT/public
 cp /workspace/public/javascripts/grade-sync-recovery-policy.js "$TEST_ROOT/public/javascripts/"
 cp /workspace/public/javascripts/gradebook.js "$TEST_ROOT/public/javascripts/"
 cp /workspace/routes/grade-sync-recovery.js "$TEST_ROOT/routes/"
+cp /workspace/scripts/grade-sync-recovery-report.js "$TEST_ROOT/scripts/"
 cp /workspace/scripts/modernization/apply-grade-sync-integration.js "$TEST_ROOT/scripts/modernization/"
 cp /workspace/scripts/modernization/apply-lti-launch-session-fix.js "$TEST_ROOT/scripts/modernization/"
 cp /workspace/scripts/modernization/apply-grade-sync-recovery-integration.js "$TEST_ROOT/scripts/modernization/"
@@ -111,6 +114,7 @@ cp /workspace/test/grade-sync-diagnostic-report.js "$TEST_ROOT/test/"
 cp /workspace/test/grade-sync-support-report.js "$TEST_ROOT/test/"
 cp /workspace/test/grade-sync-recovery-policy.js "$TEST_ROOT/test/"
 cp /workspace/test/grade-sync-recovery.js "$TEST_ROOT/test/"
+cp /workspace/test/grade-sync-recovery-report.js "$TEST_ROOT/test/"
 cp /workspace/test/lti-launch-reference.js "$TEST_ROOT/test/"
 cp /workspace/test/grade-sync-browser-contract.js "$TEST_ROOT/test/"
 cp /workspace/test/grade-sync-integration-patcher.js "$TEST_ROOT/test/"
@@ -129,6 +133,7 @@ NODE_PATH=/usr/var/server/node_modules \
   test/grade-sync-support-report.js \
   test/grade-sync-recovery-policy.js \
   test/grade-sync-recovery.js \
+  test/grade-sync-recovery-report.js \
   test/lti-launch-reference.js \
   test/grade-sync-browser-contract.js \
   test/grade-sync-integration-patcher.js \

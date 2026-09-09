@@ -3,18 +3,14 @@
 var messages = {
     checking:
         'Xronos is checking Canvas grade-sync status for this assignment.',
-    synced:
-        'Canvas accepted the most recently queued best grade for this assignment.',
-    pending:
-        'Xronos has a Canvas grade-sync connection and a grade update is waiting to be sent or retried.',
-    ready:
-        'Xronos has a Canvas grade-sync connection for this assignment, but there is not yet evidence that the current best grade has been accepted by Canvas.',
-    notSyncing:
-        'Xronos does not currently have an active Canvas grade-sync path for this page. Your work may still be saved in Xronos. If this is a graded assignment, open it from Canvas before continuing.',
+    connected:
+        'Xronos has an active Canvas grade-sync connection for this assignment. Your Xronos progress can be sent to this Canvas assignment.',
+    notConnected:
+        'Xronos does not currently have an active Canvas grade-sync connection for this assignment. Your work may still be saved in Xronos. If this is graded work, return to Canvas and open this assignment from its Canvas link.',
     closed:
-        'Xronos has Canvas grade-sync information for this assignment, but the recorded passback window is closed.',
-    error:
-        'Xronos could not verify Canvas grade-sync status. Your work may still be saved in Xronos; reopen the assignment from Canvas if this message persists.'
+        'Xronos has Canvas grade-sync information for this assignment, but the grade-passback window currently recorded by Xronos is closed. Reopening Xronos from Canvas will not by itself reopen the assignment.',
+    unavailable:
+        'Xronos could not verify Canvas grade-sync status. Your work may still be saved in Xronos. If this persists, return to Canvas and reopen this assignment from its Canvas link.'
 };
 
 function presentation(gradeSync) {
@@ -30,71 +26,54 @@ function presentation(gradeSync) {
         };
     }
 
-    if (state === 'synced' || reason === 'passback-accepted') {
-        return {
-            state: 'synced',
-            cssState: 'syncing',
-            label: 'Grade synced',
-            message: messages.synced
-        };
-    }
-
-    if (state === 'pending' || reason === 'passback-pending') {
-        return {
-            state: 'pending',
-            cssState: 'error',
-            label: 'Grade sync pending',
-            message: messages.pending
-        };
-    }
-
-    if (state === 'ready' || reason === 'passback-ready') {
-        return {
-            state: 'ready',
-            cssState: 'checking',
-            label: 'Grade sync connected',
-            message: messages.ready
-        };
-    }
-
     if (state === 'error') {
         return {
-            state: 'error',
+            state: 'unavailable',
             cssState: 'error',
-            label: 'Grade sync unknown',
-            message: messages.error
+            label: 'Grade sync unavailable',
+            message: messages.unavailable
         };
     }
 
     if (reason === 'grade-passback-closed') {
         return {
-            state: 'not-syncing',
-            cssState: 'not-syncing',
+            state: 'closed',
+            cssState: 'error',
             label: 'Grade sync closed',
             message: messages.closed
         };
     }
 
     /*
-     * Compatibility with the pre-Stage-2 server response.  The old server
-     * called a merely passback-capable bridge `syncing`; do not turn that
-     * weaker fact into the new `synced` claim.  Present it conservatively as
-     * connected/ready until the server provides accepted-passback evidence.
+     * The student-facing pill answers one question: whether this assignment
+     * currently has a usable Canvas grade-passback connection.  Detailed
+     * transport states such as ready, queued/pending, and accepted belong in
+     * Stage 3 diagnostics rather than in the student's primary status label.
      */
-    if (state === 'syncing' || gradeSync.hasActiveGradePassback) {
+    if (
+        state === 'synced' ||
+        state === 'pending' ||
+        state === 'ready' ||
+        state === 'syncing' ||
+        reason === 'passback-accepted' ||
+        reason === 'passback-pending' ||
+        reason === 'passback-ready' ||
+        reason === 'active-passback' ||
+        gradeSync.hasActiveGradePassback
+    ) {
         return {
-            state: 'ready',
-            cssState: 'checking',
+            state: 'connected',
+            cssState: 'syncing',
             label: 'Grade sync connected',
-            message: messages.ready
+            message: messages.connected
         };
     }
 
     return {
-        state: 'not-syncing',
+        state: 'not-connected',
         cssState: 'not-syncing',
-        label: 'Grade not syncing',
-        message: messages.notSyncing
+        label: 'Grade sync not connected',
+        message: messages.notConnected
     };
 }
 

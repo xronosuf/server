@@ -141,6 +141,19 @@ function copyGradeSync(gradeSync) {
     };
 }
 
+function copyRecovery(recovery) {
+    if (!recovery || typeof recovery !== 'object') {
+        return null;
+    }
+
+    return {
+        eventId: text(recovery.eventId),
+        action: text(recovery.action),
+        recorded: boolean(recovery.recorded),
+        observedAt: text(recovery.observedAt)
+    };
+}
+
 function copyEnvironment(environment) {
     environment = environment || {};
 
@@ -158,12 +171,13 @@ function build(options) {
 
     return {
         reportType: 'xronos-grade-sync-report',
-        schemaVersion: 1,
+        schemaVersion: 2,
         generatedAt: text(options.generatedAt),
         applicationVersion: text(options.applicationVersion),
         path: text(options.path),
         gradeSync: copyGradeSync(options.gradeSync),
         gradeSyncDiagnostics: copyDiagnostics(options.gradeSyncDiagnostics),
+        recovery: copyRecovery(options.recovery),
         environment: copyEnvironment(options.environment)
     };
 }

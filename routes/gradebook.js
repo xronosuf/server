@@ -4,6 +4,9 @@ var gradebookRetryPolicy = require('../lib/gradebook-retry-policy');
 var lateGradePolicy = require('../lib/late-grade-policy');
 var ltiOutcomesClient = require('../lib/lti-outcomes-client');
 var lateGradeEvidence = require('../lib/late-grade-evidence');
+var gradeSyncRuntime = require('../lib/grade-sync-runtime');
+var gradeSyncDiagnosticReport = require('../lib/grade-sync-diagnostic-report');
+var ltiLaunchReference = require('../lib/lti-launch-reference');
 var pug = require('pug');
 var path = require('path');
 var config = require('../config');
@@ -687,46 +690,6 @@ exports.record = function(req, res, next) {
     var requestPayload = gradebookRequestPayload(req);
     var payloadValidation = validateGradebookPayload(requestPayload);
 
-    var buildGradeSyncStatus = function(bridges) {
-        var status = {
-            bridgeCount: bridges.length,
-            gradePassbackBridgeCount: 0,
-            activeGradePassbackBridgeCount: 0,
-            queuedGradePassbackCount: 0,
-            hasGradePassback: false,
-            hasActiveGradePassback: false,
-            queuedGradePassback: false,
-            state: 'not-syncing',
-            reason: 'no-bridge'
-        };
-
-        bridges.forEach(function(bridge) {
-            if (bridgeHasGradePassback(bridge)) {
-                status.gradePassbackBridgeCount += 1;
-
-                if (bridgeIsOpen(bridge)) {
-                    status.activeGradePassbackBridgeCount += 1;
-                }
-            }
-        });
-
-        status.hasGradePassback = status.gradePassbackBridgeCount > 0;
-        status.hasActiveGradePassback = status.activeGradePassbackBridgeCount > 0;
-
-        if (status.hasActiveGradePassback) {
-            status.state = 'syncing';
-            status.reason = 'active-passback';
-        } else if (status.hasGradePassback) {
-            status.state = 'not-syncing';
-            status.reason = 'grade-passback-closed';
-        } else if (status.bridgeCount > 0) {
-            status.state = 'not-syncing';
-            status.reason = 'missing-passback-fields';
-        }
-
-        return status;
-    };
-
     if (!req.user) {
         next('No user logged in.');
     } else if (!payloadValidation.valid) {
@@ -763,9 +726,6 @@ exports.record = function(req, res, next) {
         })
             .exec()
             .then(function(bridges) {
-                var gradeSync =
-                    buildGradeSyncStatus(bridges);
-
                 async.each(bridges,
                     function(bridge, callback) {
                         var pointsPossible;
@@ -849,13 +809,6 @@ exports.record = function(req, res, next) {
                                 queueBridge(
                                     bridge,
                                     function(err) {
-                                        if (!err) {
-                                            gradeSync
-                                                .queuedGradePassbackCount += 1;
-                                            gradeSync
-                                                .queuedGradePassback = true;
-                                        }
-
                                         callback(err);
                                     }
                                 );
@@ -865,13 +818,43 @@ exports.record = function(req, res, next) {
                             });
                     },
                     function(err) {
-                        if (err)
+                        if (err) {
                             res.status(500).json(err);
-                        else
-                            res.json({
-                                ok: true,
-                                gradeSync: gradeSync
-                            });
+                            return;
+                        }
+
+                        gradeSyncRuntime.load(
+                            client,
+                            bridges,
+                            now,
+                            function(runtimeErr, runtime) {
+                                if (runtimeErr) {
+                                    next(runtimeErr);
+                                    return;
+                                }
+
+                                var page = {
+                                    repository: repositoryName,
+                                    path: req.params.path
+                                };
+                                var reference =
+                                    ltiLaunchReference.read(req);
+                                var diagnosticReport =
+                                    gradeSyncDiagnosticReport.build({
+                                        reference: reference,
+                                        allUserBridges: bridges,
+                                        page: page,
+                                        runtime: runtime
+                                    });
+
+                                res.json({
+                                    ok: true,
+                                    gradeSync: runtime.status,
+                                    gradeSyncDiagnostics:
+                                        diagnosticReport
+                                });
+                            }
+                        );
                     });
             })
             .catch(function(err) {

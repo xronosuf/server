@@ -7,6 +7,7 @@ var LtiStrategy = require("./passport-lti").Strategy,
   moment = require("moment"),
   path = require("path");
 var gradebook = require("../routes/gradebook");
+var ltiLaunchReference = require("../lib/lti-launch-reference");
 
 module.exports.githubStrategy = function (rootUrl) {
   return new OAuth2Strategy(
@@ -484,6 +485,7 @@ function addLmsAccount(req, identifier, profile, done) {
         bridge
           .save()
           .then(function () {
+            ltiLaunchReference.record(req, bridge);
             initializeZeroGradePassback(bridge, function (err) {
               if (err) {
                 /*

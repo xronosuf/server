@@ -11,6 +11,11 @@
  * The User document itself is preserved. This intentionally removes only the
  * disposable state surrounding that identity so a later LTI launch can reuse
  * the same Xronos user and recreate clean bridge state.
+ *
+ * Canvas late-policy observations are context-wide evidence, not ordinary
+ * per-student state. They are preserved by default even when their originating
+ * bridge belongs to the reset learner. Use --purge-policy-evidence only when
+ * intentionally erasing those experimental observations as well.
  */
 
 var mdb = require("../mdb");
@@ -30,11 +35,13 @@ function usage() {
         "  --dry-run                 Preview only; this is the default.",
         "  --user OBJECT_ID          Reset this Xronos User ObjectId instead of Test Student.",
         "  --confirm-non-test        Required with --execute when --user is supplied.",
+        "  --purge-policy-evidence   Also delete late-policy observations from removed bridges.",
         "  --help                    Show this help.",
         "",
         "Examples:",
         "  node scripts/reset-student-data.js",
         "  node scripts/reset-student-data.js --execute",
+        "  node scripts/reset-student-data.js --execute --purge-policy-evidence",
         "  node scripts/reset-student-data.js --user 0123456789abcdef01234567",
         "  node scripts/reset-student-data.js --user 0123456789abcdef01234567 --confirm-non-test --execute",
         ""
@@ -45,7 +52,8 @@ function parseArguments(argv) {
     var options = {
         execute: false,
         userId: null,
-        confirmNonTest: false
+        confirmNonTest: false,
+        purgePolicyEvidence: false
     };
 
     for (var index = 0; index < argv.length; index += 1) {
@@ -66,6 +74,8 @@ function parseArguments(argv) {
             }
         } else if (argument === "--confirm-non-test") {
             options.confirmNonTest = true;
+        } else if (argument === "--purge-policy-evidence") {
+            options.purgePolicyEvidence = true;
         } else if (argument === "--help" || argument === "-h") {
             usage();
             process.exit(0);
@@ -166,6 +176,7 @@ async function gatherPlan(user) {
         user: user,
         bridges: bridges,
         bridgeIds: bridgeIds,
+        observationQuery: observationQuery,
         counts: {
             states: counts[0],
             completions: counts[1],
@@ -196,7 +207,8 @@ function printPlan(plan, options) {
     console.log("  ProgressMilestone:         " + counts.progressMilestones);
     console.log("  AuditToken:                " + counts.auditTokens);
     console.log("  LtiBridge:                 " + counts.ltiBridges);
-    console.log("  LateGradePolicyObservation:" + " " + counts.latePolicyObservations);
+    console.log("  LateGradePolicyObservation:" + " " + counts.latePolicyObservations +
+        (options.purgePolicyEvidence ? " (WILL DELETE)" : " (PRESERVED)"));
     console.log("");
 
     if (plan.bridges.length) {
@@ -235,12 +247,9 @@ async function removeQueuedBridges(bridgeIds) {
     }
 }
 
-async function executePlan(plan) {
+async function executePlan(plan, options) {
     var userId = plan.user._id;
     var bridgeIds = plan.bridgeIds;
-    var observationQuery = bridgeIds.length
-        ? {bridge: {$in: bridgeIds}}
-        : {_id: {$in: []}};
 
     /*
      * Remove queued passback work first so a bridge cannot be processed while
@@ -250,8 +259,11 @@ async function executePlan(plan) {
     var dequeued = await removeQueuedBridges(bridgeIds);
 
     var results = {};
-    results.latePolicyObservations =
-        (await mdb.LateGradePolicyObservation.deleteMany(observationQuery).exec()).deletedCount || 0;
+    results.latePolicyObservations = 0;
+    if (options.purgePolicyEvidence) {
+        results.latePolicyObservations =
+            (await mdb.LateGradePolicyObservation.deleteMany(plan.observationQuery).exec()).deletedCount || 0;
+    }
     results.auditTokens =
         (await mdb.AuditToken.deleteMany({user: userId}).exec()).deletedCount || 0;
     results.progressMilestones =
@@ -267,7 +279,7 @@ async function executePlan(plan) {
     return results;
 }
 
-function printResults(results) {
+function printResults(results, options) {
     console.log("");
     console.log("Deleted / dequeued:");
     console.log("  State:                     " + results.states);
@@ -275,7 +287,8 @@ function printResults(results) {
     console.log("  ProgressMilestone:         " + results.progressMilestones);
     console.log("  AuditToken:                " + results.auditTokens);
     console.log("  LtiBridge:                 " + results.ltiBridges);
-    console.log("  LateGradePolicyObservation:" + " " + results.latePolicyObservations);
+    console.log("  LateGradePolicyObservation:" + " " + results.latePolicyObservations +
+        (options.purgePolicyEvidence ? " deleted" : " deleted (preserved by policy)"));
     console.log("  Redis gradebook members:   " + results.redisGradebookMembers);
 }
 
@@ -302,8 +315,8 @@ async function main() {
 
         console.log("");
         console.log("Executing reset...");
-        var results = await executePlan(plan);
-        printResults(results);
+        var results = await executePlan(plan, options);
+        printResults(results, options);
         console.log("");
         console.log("RESET COMPLETE; USER IDENTITY PRESERVED");
     } finally {

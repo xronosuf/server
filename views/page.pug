@@ -43,6 +43,7 @@ block maintitle
         window.xronosSagecellAuth = !{JSON.stringify(xronosSagecellAuth)};
     script.
       window.xronosSupportEmail = !{JSON.stringify(config.supportEmail || "")};
+      window.xronosApplicationVersion = !{JSON.stringify(config.version || "")};
     div.lds-ring(id="loadingSpinner")
           div
           div
@@ -73,7 +74,7 @@ block toc
           ul                                                                                       
               for card in activity.xourse.activityToc                                                         
                 +xourseCard(repositoryName, activity.xourse.path, card.href, card, card.href == activity.path)
-      else  
+      else 
           ul.empty
 
 block activity-title

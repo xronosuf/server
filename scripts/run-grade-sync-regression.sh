@@ -83,6 +83,8 @@ TEST_ROOT=/tmp/xronos-grade-sync-regression
 rm -rf "$TEST_ROOT"
 mkdir -p "$TEST_ROOT/lib" "$TEST_ROOT/public/javascripts" "$TEST_ROOT/scripts/modernization" "$TEST_ROOT/routes" "$TEST_ROOT/login" "$TEST_ROOT/test"
 
+cp /workspace/config.js "$TEST_ROOT/"
+cp /workspace/mdb.js "$TEST_ROOT/"
 cp /workspace/lib/grade-sync-status.js "$TEST_ROOT/lib/"
 cp /workspace/lib/lti-bridge-diagnostics.js "$TEST_ROOT/lib/"
 cp /workspace/lib/grade-sync-runtime.js "$TEST_ROOT/lib/"

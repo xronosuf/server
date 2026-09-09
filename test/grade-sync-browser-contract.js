@@ -22,4 +22,36 @@ describe('grade sync browser integration', function() {
         assert.strictEqual(source.indexOf("label.textContent = 'Grade not syncing'"), -1);
         assert.strictEqual(source.indexOf("label.textContent = 'Grade sync unknown'"), -1);
     });
+
+    it('opens a report modal instead of the legacy help alert', function() {
+        assert.ok(
+            source.indexOf("require('./grade-sync-support-report')") !== -1
+        );
+        assert.ok(
+            source.indexOf('xronosShowGradeSyncHelp(indicator, checking)') !== -1
+        );
+        assert.ok(
+            source.indexOf('Generate & Copy Grade Sync Report') !== -1
+        );
+        assert.strictEqual(source.indexOf('window.alert(message)'), -1);
+    });
+
+    it('uses the shared configured Xronos support email', function() {
+        assert.ok(source.indexOf('window.xronosSupportEmail') !== -1);
+        assert.ok(
+            source.indexOf('Generate and copy the diagnostic report below') !== -1
+        );
+    });
+
+    it('retains only the latest grade sync diagnostic response for reporting', function() {
+        assert.ok(
+            source.indexOf('xronosLatestGradeSyncDiagnostics') !== -1
+        );
+        assert.ok(
+            source.indexOf('result && result.gradeSyncDiagnostics') !== -1
+        );
+        assert.ok(
+            source.indexOf('xronosLatestGradeSyncDiagnostics = null;') !== -1
+        );
+    });
 });

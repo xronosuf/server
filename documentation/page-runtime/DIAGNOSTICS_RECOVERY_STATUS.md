@@ -111,7 +111,7 @@ user id. A follow-up dry run reported zero disposable records.
 
 ## Stage 2 — grade-sync indicator
 
-Status: **core implementation complete; server-route integration prepared but not yet applied/deployed**.
+Status: **source integration complete; build/deployment validation pending**.
 
 The student-facing question is deliberately narrow:
 
@@ -132,26 +132,29 @@ Implemented components:
 - `public/javascripts/grade-sync-presentation.js` collapses usable open states
   to the student-facing `Grade sync connected` pill while retaining detailed
   transport state for diagnostics;
-- `public/javascripts/gradebook.js` now uses the shared presentation policy and
-  no longer hard-codes the obsolete `Grade syncing` / `Grade not syncing`
-  labels;
+- `public/javascripts/gradebook.js` uses the shared presentation policy and no
+  longer hard-codes the obsolete `Grade syncing` / `Grade not syncing` labels;
 - `lib/grade-sync-runtime.js` reads actual membership in the Redis `gradebook`
-  sorted set and builds the status from real queue evidence instead of
-  request-local placeholder counters;
+  sorted set and builds status from real queue evidence instead of request-local
+  placeholder counters;
 - queue lookup failure is recorded as `queueStatusAvailable=false` without
-  falsely turning an otherwise usable bridge into a disconnected state.
+  falsely turning an otherwise usable bridge into a disconnected state;
+- `routes/gradebook.js` now uses the runtime helper after score processing and
+  returns the shared `gradeSync` status from the real Redis/Mongo snapshot.
 
-A guarded one-time integration patcher is prepared at:
+The operational route/login integration was applied with the guarded patcher,
+passed syntax checks, passed the Stage 2/3 regression suite both before and
+after patch application, and was committed as:
 
-`scripts/modernization/apply-grade-sync-integration.js`
+`90ce6aac5bc402e56926d9a18d475f84c3ae8563`
 
-It asserts the exact current route/login source before editing and is covered by
-regression tests. It replaces the old inline route classifier with the runtime
-evidence helper and returns the shared status from the gradebook response.
+Remaining Stage-2 validation is operational rather than architectural:
+regenerate the browser bundle, build/deploy a new test image, and confirm the
+student pill against an actual LTI launch.
 
 ## Stage 3 — grade-sync diagnostics
 
-Status: **diagnostic model and launch-reference mechanism complete; route integration prepared but not yet applied/deployed**.
+Status: **response/source integration complete; deployed LTI validation pending**.
 
 Implemented components:
 
@@ -168,24 +171,34 @@ Implemented components:
   bridge data;
 - `lib/lti-launch-reference.js` records only the saved bridge id,
   consumer/context/resource identifiers, Xronos repository/path, and timestamp
-  in the session. It does not retain the launch POST body or credentials.
+  in the session. It does not retain the launch POST body or credentials;
+- `login/index.js` now records the exact saved LTI bridge as the current-session
+  launch reference;
+- `routes/gradebook.js` returns `gradeSyncDiagnostics` alongside `gradeSync`.
 
-The guarded integration patcher records the saved LTI bridge as the current
-session launch reference and returns `gradeSyncDiagnostics` alongside
-`gradeSync` from the gradebook response. Because the existing gradebook query
-already returns all bridges for the same user + Xronos assignment path, this is
-enough to diagnose the duplicate-Canvas-assignment and different-context cases
-seen in testing without adding another database query to every progress update.
+Because the existing gradebook query already returns all bridges for the same
+user + Xronos assignment path, the diagnostic report can detect the duplicate-
+Canvas-assignment and different-context cases seen in testing without adding
+another database query to every progress update.
 
 Diagnostic wording intentionally avoids claiming that a student never launched
 from Canvas merely because Xronos lacks a matching bridge record.
+
+The next Stage-3 step is to verify an actual deployed LTI launch produces the
+expected exact current-launch reference and privacy-safe diagnostic response.
+No additional persistence layer is required for that validation.
 
 ## Grade-sync regression runner
 
 `scripts/run-grade-sync-regression.sh` is the reusable Stage 2/3 test entrypoint.
 It covers the status classifier, student presentation, LTI bridge diagnostics,
 Redis runtime evidence, diagnostic report, launch-session reference, browser
-integration contract, and the guarded route/login patcher.
+integration contract, and guarded route/login integration.
+
+Current verified targeted result after operational integration:
+
+- Stage 2/3 regression: 41 passing;
+- late-grade regression: 33 passing.
 
 ## Stage 4 — recovery
 

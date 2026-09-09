@@ -50,7 +50,7 @@ function recoveryEventModel() {
         path: {type: String, index: true},
         action: {type: String, index: true},
         observedAt: {type: Date, index: true},
-        expiresAt: {type: Date, index: true},
+        expiresAt: {type: Date},
         gradeSyncState: String,
         gradeSyncReason: String,
         launchPrimary: String,

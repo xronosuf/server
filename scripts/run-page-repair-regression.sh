@@ -8,6 +8,7 @@ TEST_FILES=(
   test/page-repair.js
   test/page-repair-server.js
   test/page-repair-integration-patcher.js
+  test/page-repair-support-report-contract.js
 )
 
 SOURCE_FILES=(
@@ -54,6 +55,7 @@ cp /workspace/scripts/modernization/apply-page-repair-integration.js "$TEST_ROOT
 cp /workspace/test/page-repair.js "$TEST_ROOT/test/"
 cp /workspace/test/page-repair-server.js "$TEST_ROOT/test/"
 cp /workspace/test/page-repair-integration-patcher.js "$TEST_ROOT/test/"
+cp /workspace/test/page-repair-support-report-contract.js "$TEST_ROOT/test/"
 cp /workspace/app.js "$TEST_ROOT/"
 cp /workspace/views/layouts/main.pug "$TEST_ROOT/views/layouts/"
 cp /workspace/views/layouts/grid.pug "$TEST_ROOT/views/layouts/"
@@ -62,7 +64,8 @@ NODE_PATH=/usr/var/server/node_modules \
   /usr/var/server/node_modules/.bin/mocha \
   test/page-repair.js \
   test/page-repair-server.js \
-  test/page-repair-integration-patcher.js
+  test/page-repair-integration-patcher.js \
+  test/page-repair-support-report-contract.js
 '
 else
   echo >&2 "Mocha is not installed locally and podman is unavailable."

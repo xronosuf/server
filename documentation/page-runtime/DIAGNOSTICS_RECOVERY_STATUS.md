@@ -1,123 +1,59 @@
 # Diagnostics / Recovery Work Status
 
-This document captures the current legacy-server stabilization program on the
-`diagnostics-recovery` branch. Further legacy work is justified only when it
-fixes a current operational defect, adds support/recovery needed to operate the
-server safely, or produces compatibility knowledge/tooling reusable by the
-replacement server.
+Date closed: 2026-09-09
+Branch: `diagnostics-recovery`
+Final live-validated application commit: `8e6bd61b48654bae03caa0edf69c1397cc3b04f5`
 
-## Four-stage program
+This document records the final status of the legacy Xronos stabilization program. The four-stage program is complete. Further legacy work should be undertaken only when it:
 
-1. Reduce problems that are currently "fixed" by a hard reload.
-2. Make the LTI / Canvas grade-sync indicator report real assignment-specific connection state.
-3. Add student/support grade-sync diagnostics for cases where Canvas grades do not update.
-4. Add student-driven recovery actions and record those actions for support.
-
-Root causes should be corrected before recovery controls are added, so recovery
-features do not hide defects.
-
-## Stage 1 — reload-sensitive runtime hardening
-
-Status: **closed for the defects identified in this audit**.
-
-Completed/validated work includes latest-publication navigation, cache-safe
-application generations, retirement of the legacy service worker/cache paths,
-bounded optional-interactive loading, removal of synchronous startup subpath
-discovery, stale WebSocket recycling, and retirement of the obsolete Update UI.
-A controlled SIGSTOP/SIGCONT test verified the stale-heartbeat recovery path
-without replacing the application process.
+1. fixes a current operational defect;
+2. adds diagnostics or recovery needed to support the legacy server safely; or
+3. produces compatibility knowledge/tooling reusable by the replacement server.
 
 No further Page Runtime Coordinator architecture is planned for its own sake.
 
-## Late Canvas passback policy — implemented and verified
+## Stage 1 — reload-sensitive runtime hardening
 
-Late passback became a prerequisite for trustworthy Stage 2/3 diagnostics and
-is implemented on the branch and deployed on the test VM.
+Status: **complete and live-validated**.
 
-Current policy:
+Completed work includes latest-publication navigation, generation-versioned public and node_modules assets, retirement of legacy service-worker/cache paths, stale WebSocket recycling, bounded optional-interactive loading, removal of synchronous startup subpath discovery, and retirement of the obsolete Update UI.
 
-- normal passback before `dueDate`;
-- late passback through Canvas `untilDate` when available;
-- documented 130-day fallback horizon when Canvas supplied no `untilDate`;
-- read current Canvas `readResult` immediately before a late write;
-- never knowingly lower the current effective Canvas grade;
-- defer near the next late interval boundary so safety prediction and write use the same interval;
-- read Canvas immediately after an accepted late write and store the raw/effective observation.
+The final A -> B browser acceptance used:
 
-Controlled Canvas testing established that `readResult` is the effective
-post-penalty score and that Canvas can retroactively recalculate an existing
-submission when the due date changes.
+- A: `22ef78e29f3fbf637291bc4d34e4b482d00df950`
+- B: `8e6bd61b48654bae03caa0edf69c1397cc3b04f5`
 
-### Authoritative evidence rules
+Observed behavior:
 
-Only an immediate post-write `readResult` is allowed to teach Canvas
-late-policy mechanics. Pre-write reads remain current-state truth, but cannot be
-interpreted causally as the transformation of an earlier Xronos passback.
+- a page loaded while A was live reported A in its application-version meta tag and loaded A-version public/MathJax resources;
+- after B was deployed, the untouched open tab remained internally on A with 29 A-version resources still associated with that page;
+- a plain browser reload moved the page to B;
+- the reloaded page used B-version public assets and the B-version MathJax tree;
+- filtering the new navigation for A-version public/node_modules resources returned an empty list.
 
-Exact context-wide deduction evidence outranks weaker bridge-local lower-bound
-evidence. This rule was added after a controlled test reproduced a lowering
-defect: a manually-entered Canvas grade of 3.50/10 caused local evidence to
-infer an optimistic deduction rate and Xronos incorrectly submitted a result
-that Canvas reduced to 3.36/10. The corrected implementation blocks that exact
-reproduction in regression tests.
+This is the intended contract: already-open pages remain stable, while a normal reload/navigation receives the current publication and its corresponding resources.
 
-Grade floors are learned only from authoritative post-write observations that
-exceed an already-known exact floorless prediction. A merely low observed grade
-is not considered floor evidence.
+## Late Canvas passback policy
 
-The regression runner is `scripts/run-late-grade-regression.sh`; the targeted
-suite has 33 passing tests after floor inference was added. The real controlled
-observation history was also checked read-only: four authoritative post-write
-observations derive an exact 10% deduction per late interval and no grade floor;
-ambiguous pre-write observations are excluded.
+Status: **implemented and verified**.
 
-Validated/deployed test application commit:
+The late-passback work remains a prerequisite for trustworthy grade-sync status and diagnostics. The policy uses Canvas `untilDate` when available, applies the documented fallback horizon otherwise, reads the current Canvas result before late writes, never knowingly lowers the current effective Canvas grade, and learns late-policy evidence only from authoritative immediate post-write reads.
 
-`fd3f10741e5a13b46cf9a5456f3643a2a6574dcf`
+The targeted late-grade regression suite remains at **33 passing**.
 
-Rollback container retained on the test VM:
+Manual Canvas testing established that later LTI passback can replace a manually entered grade. Legacy Xronos does not attempt heuristic manual-grade provenance detection through the LTI 1.1 interface; the non-lowering invariant remains the safety rule.
 
-`devximserver-pre-late-floor`
+## Test Student reset utility
 
-### Manual-grade behavior
+Status: **implemented and verified**.
 
-A controlled test showed that a later automatic LTI passback can replace a
-manually entered Canvas grade. Reliable manual-grade provenance is not available
-from the current LTI 1.1 `readResult` interface, so legacy Xronos will not add
-heuristic manual-grade suppression at this time. The non-lowering invariant
-still applies.
+`scripts/reset-student-data.js` remains the supported guarded reset utility for repeated Test Student work and rare support resets. It is dry-run by default and preserves the user identity while removing disposable learner/bridge state when executed.
 
-## Student reset utility — implemented and verified
+## Stage 2 — Canvas grade-sync indicator
 
-`scripts/reset-student-data.js` provides a guarded reset path for repeated Test
-Student work and rare support resets.
+Status: **complete and live-validated**.
 
-Safety behavior:
-
-- dry-run by default;
-- default target is the unique Xronos user named exactly `Test Student`;
-- `--execute` required for mutation;
-- explicit `--user OBJECT_ID` targeting supported;
-- executing an explicit-user reset also requires `--confirm-non-test`;
-- `User` identity is preserved;
-- State, Completion, ProgressMilestone, AuditToken, LtiBridge, and queued Redis gradebook members are removed;
-- context-wide late-policy evidence is preserved by default and removed only with `--purge-policy-evidence`.
-
-The full Test Student scrub was exercised on the separate test VM. It removed
-72 State records, 63 Completion records, 19 ProgressMilestones, 10 LTI bridges,
-8 explicitly-selected controlled late-policy observations, and one queued Redis
-gradebook member while preserving the same Test Student User ObjectId and LTI
-user id. A follow-up dry run reported zero disposable records.
-
-## Stage 2 — grade-sync indicator
-
-Status: **implemented, deployed on test, and live Canvas/browser validated**.
-
-The student-facing question is deliberately narrow:
-
-> Is this Xronos assignment currently connected in the way required for progress to reach this Canvas assignment?
-
-Student-facing vocabulary:
+Student-facing states are:
 
 - `Grade sync connected`
 - `Grade sync not connected`
@@ -125,112 +61,65 @@ Student-facing vocabulary:
 - `Checking grade sync`
 - `Grade sync unavailable`
 
-Implemented components:
-
-- `lib/grade-sync-status.js` classifies no bridge, missing passback fields,
-  closed window, passback-ready, queued/pending, and Canvas-accepted states;
-- `public/javascripts/grade-sync-presentation.js` collapses usable open states
-  to the student-facing `Grade sync connected` pill while retaining detailed
-  transport state for diagnostics;
-- `public/javascripts/gradebook.js` uses the shared presentation policy and no
-  longer hard-codes the obsolete `Grade syncing` / `Grade not syncing` labels;
-- `lib/grade-sync-runtime.js` reads actual membership in the Redis `gradebook`
-  sorted set and builds status from real queue evidence instead of request-local
-  placeholder counters;
-- queue lookup failure is recorded as `queueStatusAvailable=false` without
-  falsely turning an otherwise usable bridge into a disconnected state;
-- `routes/gradebook.js` uses the runtime helper after score processing and
-  returns the shared `gradeSync` status from the real Redis/Mongo snapshot.
-
-The operational route/login integration was applied with guarded patching and
-validated by the targeted regression suite. A later session-preservation fix
-was committed as:
-
-`3377834c878710509e105df7ce42aa8cc43bfe83`
-
-The corresponding test image is deployed as:
-
-`localhost/xronos-server:3377834`
-
-Deployment validation confirmed the application marker, internal/public HTTP
-responses, exactly one running gradebook-capable application container, and the
-expected staged-login source shape inside the container. The immediately prior
-Stage 2/3 image is retained as rollback:
-
-`devximserver-pre-lti-session`
-
-Live Canvas Test Student validation confirmed that the student pill reports
-`Grade sync connected` for the current assignment while the detailed runtime
-state may legitimately be `pending` during queued passback.
+The indicator is based on real assignment-specific Mongo/Redis passback evidence rather than request-local placeholders. Usable open transport states collapse to the student-facing connected state while detailed evidence remains available to diagnostics.
 
 ## Stage 3 — grade-sync diagnostics
 
-Status: **core diagnostics implemented, deployed on test, and live Canvas validated**.
+Status: **complete and live-validated**.
 
-Implemented components:
+Diagnostics distinguish exact assignment/context/resource matches, same-context different-assignment cases, same-page different-context cases, missing launch metadata, unavailable current-launch reference, queue failures, and no matching bridge without exposing LTI secrets or full launch payloads.
 
-- `lib/lti-bridge-diagnostics.js` classifies exact assignment/context/resource
-  match, same-context/different-resource, same-page/different-context, missing
-  metadata, and no matching bridge;
-- `lib/grade-sync-runtime.js` emits a sanitized per-bridge passback snapshot
-  containing capability/open/queued/accepted/window information without
-  sourcedids, OAuth keys, outcome URLs, secrets, cookies, or full LTI payloads;
-- `lib/grade-sync-diagnostic-report.js` combines bridge-match evidence with the
-  runtime passback snapshot into a versioned privacy-safe report;
-- missing current-session launch identity is reported explicitly as
-  `current-launch-reference-unavailable` rather than guessed from historical
-  bridge data;
-- `lib/lti-launch-reference.js` stages only the saved bridge id,
-  consumer/context/resource identifiers, Xronos repository/path, and timestamp
-  before Passport login completes, then commits that privacy-safe reference to
-  the regenerated authenticated session in the post-auth LTI route;
-- `routes/gradebook.js` returns `gradeSyncDiagnostics` alongside `gradeSync`.
+Support reports include the deployed application version, bounded browser/environment context, sanitized grade-sync diagnostics, and bounded recovery-event history.
 
-Because the existing gradebook query already returns all bridges for the same
-user + Xronos assignment path, the diagnostic report can detect the duplicate-
-Canvas-assignment and different-context cases seen in testing without adding
-another database query to every progress update.
+## Stage 4 — student recovery
 
-Diagnostic wording intentionally avoids claiming that a student never launched
-from Canvas merely because Xronos lacks a matching bridge record.
+Status: **complete and live-validated**.
 
-Live Canvas Test Student validation on the deployed `3377834` image confirmed:
+Stage 4 contains two separate recovery families.
 
-- `launchReferenceRecorded: true`;
-- `launchMatch.primary: "exact"`;
-- exactly one matching page/context/resource bridge;
-- privacy-safe diagnostic output with no sourcedid, OAuth secret/key, outcome
-  URL, cookie, or full launch payload exposure;
-- correct open passback-window reporting and queued/pending runtime state.
+### Grade-sync recovery
 
-The completion UI was also rechecked during this validation. A previously seen
-one-time 0%-until-refresh symptom did not reproduce: a 60%-complete activity
-loaded showing 60%, changed immediately to 80% after another answer, and several
-additional pages also restored and updated their completion labels immediately.
-No completion-UI code change is planned unless that earlier transient behavior
-can be reproduced.
+Live browser validation covered all intended policy branches:
 
-## Grade-sync regression runner
+- healthy connection: no unnecessary recovery action;
+- transient/unavailable verification: `Recheck grade sync` reads current state without resubmitting a grade and refreshes the UI;
+- missing/stale/wrong launch: `Reopen this assignment from Canvas` and `Show Canvas reconnect steps` correctly explain that a fresh launch of the exact Canvas assignment is required;
+- closed passback window: `Grade sync closed` explicitly explains that reopening from Canvas does not reopen the window and offers support/reporting rather than a false self-recovery action.
 
-`scripts/run-grade-sync-regression.sh` is the reusable Stage 2/3 test entrypoint.
-It covers the status classifier, student presentation, LTI bridge diagnostics,
-Redis runtime evidence, diagnostic report, launch-session reference, browser
-integration contract, and guarded route/login integration.
+The grade-sync/recovery targeted regression suite remains at **65 passing**.
 
-Current verified targeted result for the deployed live-validated source:
+### General page/browser recovery
 
-- Stage 2/3 regression: 45 passing;
-- late-grade regression: 33 passing.
+`Repair this page` is implemented as first-line troubleshooting for reload-safe runtime failures. It intentionally does not claim to perform a browser hard refresh.
 
-## Stage 4 — recovery
+The recovery path:
 
-Status: **not started beyond support tooling**.
+- cleans legacy Xronos service-worker/Cache Storage state;
+- performs a one-shot same-page repair navigation;
+- applies cache-only `Clear-Site-Data` and no-store response headers;
+- propagates a repair token through primary public resources;
+- uses a path-based repair namespace for dynamically loaded MathJax resources;
+- returns to ordinary versioned resource URLs after the repaired navigation.
 
-The verified Test Student reset utility is operational support tooling, not the
-student-facing Stage-4 recovery UI.
+Live browser validation confirmed that the document, CSS, bundled JS, MathExpressions, branding resources, and dynamically loaded MathJax tree all used the same repair generation and returned HTTP 200. After a deliberately blocked Sage failure was unblocked, `Repair this page` restored the page to normal in approximately 3–5 seconds.
 
-Student-facing recovery should be added only after Stage 2/3 expose enough
-evidence to distinguish a stale/missing bridge, closed passback window,
-transient status failure, and healthy connection. Recovery actions should record
-what was attempted so support can interpret repeated failures without asking the
-student to reconstruct browser behavior from memory.
+The MathJax repair-namespace correction is commit:
+
+`8e6bd61b48654bae03caa0edf69c1397cc3b04f5`
+
+The page-repair regression suite is **18 passing** at closeout.
+
+## Final regression/acceptance state
+
+At closeout:
+
+- page-repair regression: **18 passing**;
+- grade-sync/recovery regression: **65 passing**;
+- late-grade regression: **33 passing**;
+- Stage 1 A -> B browser freshness acceptance: passed;
+- Stage 2 live Canvas/browser acceptance: passed;
+- Stage 3 diagnostic/support-report acceptance: passed;
+- Stage 4 grade-sync recovery policy acceptance: passed;
+- Stage 4 general page-repair acceptance: passed.
+
+See `FOUR_STAGE_STABILIZATION_CLOSEOUT.md` and `STAGE4_LIVE_RECOVERY_VALIDATION.md` for the final closeout and live-validation summaries.

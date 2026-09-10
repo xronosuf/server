@@ -10,6 +10,7 @@ TEST_FILES=(
   test/page-repair-integration-patcher.js
   test/page-repair-support-report-contract.js
   test/page-repair-cache-policy-fix.js
+  test/page-repair-mathjax-namespace-fix.js
 )
 
 SOURCE_FILES=(
@@ -18,6 +19,7 @@ SOURCE_FILES=(
   public/javascripts/page-repair.js
   scripts/modernization/apply-page-repair-integration.js
   scripts/modernization/apply-page-repair-cache-policy-fix.js
+  scripts/modernization/apply-page-repair-mathjax-namespace-fix.js
 )
 
 for file in "${SOURCE_FILES[@]}" "${TEST_FILES[@]}"; do
@@ -47,6 +49,7 @@ TEST_ROOT=/tmp/xronos-page-repair-regression
 rm -rf "$TEST_ROOT"
 mkdir -p "$TEST_ROOT/lib" "$TEST_ROOT/public/javascripts" "$TEST_ROOT/scripts/modernization" "$TEST_ROOT/test" "$TEST_ROOT/views/layouts"
 cp /workspace/lib/page-repair.js "$TEST_ROOT/lib/"
+cp /workspace/lib/static-asset-routes.js "$TEST_ROOT/lib/"
 cp /workspace/public/javascripts/legacy-cache-cleanup.js "$TEST_ROOT/public/javascripts/"
 cp /workspace/public/javascripts/page-repair.js "$TEST_ROOT/public/javascripts/"
 cp /workspace/public/javascripts/application-version-path.js "$TEST_ROOT/public/javascripts/"
@@ -55,11 +58,13 @@ cp /workspace/public/javascripts/page-runtime-support-report.js "$TEST_ROOT/publ
 cp /workspace/public/javascripts/page-runtime-support-ui.js "$TEST_ROOT/public/javascripts/"
 cp /workspace/scripts/modernization/apply-page-repair-integration.js "$TEST_ROOT/scripts/modernization/"
 cp /workspace/scripts/modernization/apply-page-repair-cache-policy-fix.js "$TEST_ROOT/scripts/modernization/"
+cp /workspace/scripts/modernization/apply-page-repair-mathjax-namespace-fix.js "$TEST_ROOT/scripts/modernization/"
 cp /workspace/test/page-repair.js "$TEST_ROOT/test/"
 cp /workspace/test/page-repair-server.js "$TEST_ROOT/test/"
 cp /workspace/test/page-repair-integration-patcher.js "$TEST_ROOT/test/"
 cp /workspace/test/page-repair-support-report-contract.js "$TEST_ROOT/test/"
 cp /workspace/test/page-repair-cache-policy-fix.js "$TEST_ROOT/test/"
+cp /workspace/test/page-repair-mathjax-namespace-fix.js "$TEST_ROOT/test/"
 cp /workspace/app.js "$TEST_ROOT/"
 cp /workspace/views/layouts/main.pug "$TEST_ROOT/views/layouts/"
 cp /workspace/views/layouts/grid.pug "$TEST_ROOT/views/layouts/"
@@ -70,7 +75,8 @@ NODE_PATH=/usr/var/server/node_modules \
   test/page-repair-server.js \
   test/page-repair-integration-patcher.js \
   test/page-repair-support-report-contract.js \
-  test/page-repair-cache-policy-fix.js
+  test/page-repair-cache-policy-fix.js \
+  test/page-repair-mathjax-namespace-fix.js
 '
 else
   echo >&2 "Mocha is not installed locally and podman is unavailable."

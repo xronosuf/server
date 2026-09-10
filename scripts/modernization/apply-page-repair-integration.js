@@ -154,11 +154,13 @@ function patchApplicationVersionPath(source) {
         '',
         'function versionedNodeModulesPath(version, path, repairToken) {',
         "    var suffix = String(path || '').replace(/^\\/+/, '');",
+        "    var prefix = '/node_modules/v' + version + '/';",
         '',
-        '    return appendRepairToken(',
-        "        '/node_modules/v' + version + '/' + suffix,",
-        '        repairToken',
-        '    );',
+        '    if (repairToken) {',
+        "        prefix += 'repair/' + encodeURIComponent(repairToken) + '/';",
+        '    }',
+        '',
+        '    return prefix + suffix;',
         '}'
     ].join('\n');
 

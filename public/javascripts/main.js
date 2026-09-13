@@ -13,30 +13,64 @@ pageRuntime.event("bundle-evaluation-started", {
     hasActivity: document.querySelector("main.activity") !== null
 });
 
-var ximera_subpath = localStorage.getItem("ximera-subpath");
-var http = new XMLHttpRequest();
-http.onreadystatechange = function() {
-	var res = http.getResponseHeader('X-Ximera-SubPath');
-	if (res != null) {
-		ximera_subpath = res;
-		localStorage.setItem( "ximera-subpath", ximera_subpath );
-	}
-};
-pageRuntime.operation("subpath-discovery", "started", {
-    cached: ximera_subpath !== null
-});
+var subpathMeta =
+    document.querySelector(
+        'meta[name="xronos-subpath"]'
+    );
 
-http.open('HEAD', document.location, false);
-http.send();
+var ximera_subpath =
+    subpathMeta
+        ? subpathMeta.getAttribute("content")
+        : localStorage.getItem("ximera-subpath");
 
-pageRuntime.operation("subpath-discovery", "completed", {
-    subpathAvailable:
-        ximera_subpath !== null &&
-        ximera_subpath !== undefined
-});
+pageRuntime.operation(
+    "subpath-discovery",
+    "started",
+    {
+        source:
+            subpathMeta
+                ? "page-metadata"
+                : "local-storage-fallback",
+        cached:
+            localStorage.getItem(
+                "ximera-subpath"
+            ) !== null
+    }
+);
+
+if (
+    ximera_subpath === null ||
+    ximera_subpath === undefined
+) {
+    /*
+     * The normal server layouts always render xronos-subpath.
+     * Keep an empty-path fallback so a malformed/nonstandard page
+     * does not block the rest of browser startup.
+     */
+    ximera_subpath = "";
+}
+
+if (subpathMeta) {
+    localStorage.setItem(
+        "ximera-subpath",
+        ximera_subpath
+    );
+}
+
+pageRuntime.operation(
+    "subpath-discovery",
+    "completed",
+    {
+        source:
+            subpathMeta
+                ? "page-metadata"
+                : "local-storage-fallback",
+        subpathAvailable: true
+    }
+);
 
 window.toValidPath = function (uri) {
-	return ximera_subpath + uri
+    return ximera_subpath + uri;
 }
 
 require('./version');

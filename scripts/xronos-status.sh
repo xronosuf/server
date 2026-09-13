@@ -10,6 +10,7 @@ PUBLIC_URL="${XRONOS_PUBLIC_URL:-https://dev.xronos.clas.ufl.edu}"
 APP_PORT="${XRONOS_APP_HOST_PORT:-2022}"
 
 cd "$REPO"
+REPO_HEAD="$(git rev-parse HEAD 2>/dev/null || true)"
 
 status_of() {
   local name="$1"
@@ -38,18 +39,63 @@ started_of() {
   fi
 }
 
+app_declared_version() {
+  if podman container exists "$APP"; then
+    podman inspect "$APP" --format '{{range .Config.Env}}{{println .}}{{end}}' \
+      | sed -n 's/^XRONOS_APPLICATION_VERSION=//p' \
+      | head -1
+  fi
+}
+
+looks_like_git_sha() {
+  [[ "$1" =~ ^[0-9a-fA-F]{40}$ ]]
+}
+
 printf '============================================================\n'
 printf 'XRONOS STACK STATUS\n'
 printf '============================================================\n\n'
 printf 'Repository: %s\n' "$REPO"
 printf 'Branch:     %s\n' "$(git branch --show-current 2>/dev/null || true)"
-printf 'Commit:     %s\n' "$(git rev-parse HEAD 2>/dev/null || true)"
+printf 'Commit:     %s\n' "$REPO_HEAD"
 printf 'Public URL: %s\n' "$PUBLIC_URL"
 printf '\n%-28s %-10s %-52s %s\n' 'CONTAINER' 'STATUS' 'IMAGE' 'STARTED'
 printf '%-28s %-10s %-52s %s\n' '----------------------------' '----------' '----------------------------------------------------' '------------------------------'
 for c in "$APP" "$MONGO" "$REDIS" "$SAGE"; do
   printf '%-28s %-10s %-52s %s\n' "$c" "$(status_of "$c")" "$(image_of "$c")" "$(started_of "$c")"
 done
+
+printf '\nApplication version contract:\n'
+if podman container exists "$APP"; then
+  declared_version="$(app_declared_version)"
+  printf '  repository HEAD:             %s\n' "${REPO_HEAD:-unknown}"
+  printf '  container marker:            %s\n' "${declared_version:-missing}"
+
+  if [ "$(status_of "$APP")" = running ]; then
+    http_version="$(curl -sS --max-time 3 "http://127.0.0.1:${APP_PORT}/version" 2>/dev/null || true)"
+    printf '  /version response:           %s\n' "${http_version:-unreachable}"
+  else
+    http_version=""
+    printf '  /version response:           app not running\n'
+  fi
+
+  if [ -z "$declared_version" ]; then
+    printf '  contract:                    ERROR — application marker missing\n'
+  elif looks_like_git_sha "$declared_version"; then
+    if [ "$declared_version" = "$REPO_HEAD" ] && { [ -z "$http_version" ] || [ "$http_version" = "$declared_version" ]; }; then
+      printf '  contract:                    MATCH — Git marker agrees with repository HEAD\n'
+    else
+      printf '  contract:                    MISMATCH — stale or inconsistent Git marker\n'
+    fi
+  else
+    if [ -n "$http_version" ] && [ "$http_version" != "$declared_version" ]; then
+      printf '  contract:                    MISMATCH — custom marker disagrees with /version\n'
+    else
+      printf '  contract:                    CUSTOM — marker is not a Git SHA; source identity not proven\n'
+    fi
+  fi
+else
+  printf '  contract:                    app container missing\n'
+fi
 
 printf '\nNetworks:\n'
 for n in "${XRONOS_APP_NETWORK:-xronos-modernization-net}" "${XRONOS_SAGE_NETWORK:-xronos-net}"; do

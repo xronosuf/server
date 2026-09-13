@@ -1,19 +1,431 @@
 var $ = require('jquery');
 var _ = require('underscore');
 var debugLog = require('./debug-log');
+var gradeSyncPresentation = require('./grade-sync-presentation');
+var gradeSyncSupportReport = require('./grade-sync-support-report');
+var gradeSyncRecoveryPolicy = require('./grade-sync-recovery-policy');
 
-var xronosGradeSyncMessages = {
-    syncing: 'Xronos currently sees a Canvas grade-sync connection for this assignment.',
-    notSyncing: 'Xronos does not currently see a Canvas grade-sync connection for this page. Your work may be saved in Xronos, but it may not be sent to the Canvas gradebook. If this is a graded assignment, please open it from Canvas before continuing.',
-    checking: 'Xronos is checking whether this assignment has an active Canvas grade-sync connection.',
-    error: 'Xronos could not verify Canvas grade-sync status. Your work may be saved in Xronos, but you should reopen the assignment from Canvas if this message persists.'
-};
+var xronosLatestGradeSync = null;
+var xronosLatestGradeSyncDiagnostics = null;
+var xronosGradeSyncRecoveries = [];
+
+function xronosCurrentBrowserEnvironment() {
+    var timezone = null;
+
+    try {
+        if (
+            window.Intl &&
+            typeof window.Intl.DateTimeFormat === 'function'
+        ) {
+            timezone = window.Intl
+                .DateTimeFormat()
+                .resolvedOptions()
+                .timeZone || null;
+        }
+    } catch (err) {
+        timezone = null;
+    }
+
+    return {
+        userAgent:
+            window.navigator && window.navigator.userAgent
+                ? window.navigator.userAgent
+                : null,
+        platform:
+            window.navigator && window.navigator.platform
+                ? window.navigator.platform
+                : null,
+        language:
+            window.navigator && window.navigator.language
+                ? window.navigator.language
+                : null,
+        timezone: timezone,
+        online:
+            window.navigator &&
+            typeof window.navigator.onLine === 'boolean'
+                ? window.navigator.onLine
+                : null
+    };
+}
+
+function xronosSupportContactLead(supportEmail) {
+    var email = typeof supportEmail === 'string'
+        ? supportEmail.trim()
+        : '';
+
+    if (email) {
+        return 'If you need help with grade sync, contact ' + email + '.';
+    }
+
+    return 'If you need help with grade sync, contact your instructor or course support.';
+}
+
+function xronosSupportContactInstructions(supportEmail) {
+    var email = typeof supportEmail === 'string'
+        ? supportEmail.trim()
+        : '';
+
+    if (email) {
+        return 'Generate and copy the diagnostic report below, then email it to ' +
+            email + '.';
+    }
+
+    return 'Generate and copy the diagnostic report below, then paste it into ' +
+        'your normal email or webmail when contacting your instructor or ' +
+        'course support.';
+}
+
+function xronosCopyTextToClipboardFallback(text, callback) {
+    var fallback = $('<textarea/>', {
+        'aria-hidden': 'true'
+    }).css({
+        position: 'fixed',
+        left: '-9999px',
+        top: '0'
+    }).val(text);
+    var copied = false;
+
+    $('body').append(fallback);
+    fallback[0].focus();
+    fallback[0].select();
+
+    try {
+        copied = document.execCommand('copy');
+    } catch (err) {
+        copied = false;
+    }
+
+    fallback.remove();
+    callback(copied);
+}
+
+function xronosCopyTextToClipboard(text, callback) {
+    var navigatorObject = window.navigator || {};
+
+    if (
+        navigatorObject.clipboard &&
+        typeof navigatorObject.clipboard.writeText === 'function'
+    ) {
+        navigatorObject.clipboard.writeText(text).then(
+            function() {
+                callback(true);
+            },
+            function() {
+                xronosCopyTextToClipboardFallback(text, callback);
+            }
+        );
+        return;
+    }
+
+    xronosCopyTextToClipboardFallback(text, callback);
+}
+
+function xronosRequestGradeSyncRecovery(action, callback) {
+    var xourseUrl = $('main').attr('data-xourse-url');
+
+    if (!xourseUrl) {
+        callback(new Error('Missing xourse URL for grade sync recovery.'));
+        return;
+    }
+
+    $.ajax({
+        url: window.toValidPath('/' + xourseUrl + '/grade-sync-recovery'),
+        type: 'POST',
+        data: JSON.stringify({action: action}),
+        contentType: 'application/json',
+        success: function(result) {
+            callback(null, result);
+        },
+        error: function(jqXHR, err, exception) {
+            callback(new Error(
+                'Grade sync recovery request failed: ' +
+                (exception || err || (jqXHR && jqXHR.status) || 'unknown')
+            ));
+        }
+    });
+}
+
+function xronosRememberGradeSyncRecovery(recovery) {
+    if (!recovery || typeof recovery !== 'object') {
+        return;
+    }
+
+    xronosGradeSyncRecoveries.unshift(recovery);
+    xronosGradeSyncRecoveries = xronosGradeSyncRecoveries.slice(
+        0,
+        gradeSyncSupportReport.MAX_RECOVERY_EVENTS
+    );
+}
+
+function xronosShowGradeSyncHelp(indicator, checking) {
+    var existing = $('#xronos-grade-sync-help-modal');
+    var rendered;
+    var modal;
+    var dialog;
+    var content;
+    var header;
+    var body;
+    var footer;
+    var reportButton;
+    var reportStatus;
+    var reportPreview;
+    var recovery;
+    var recoveryButton;
+    var recoveryStatus;
+    var state = xronosLatestGradeSync;
+
+    if (existing.length > 0) {
+        existing.remove();
+    }
+
+    rendered = gradeSyncPresentation.presentation(state);
+    recovery = gradeSyncRecoveryPolicy.recovery(
+        state,
+        xronosLatestGradeSyncDiagnostics
+    );
+
+    modal = $('<div/>', {
+        id: 'xronos-grade-sync-help-modal',
+        'class': 'modal fade',
+        tabindex: '-1',
+        role: 'dialog',
+        'aria-labelledby': 'xronos-grade-sync-help-title'
+    });
+
+    dialog = $('<div/>', {
+        'class': 'modal-dialog',
+        role: 'document'
+    });
+
+    content = $('<div/>', {
+        'class': 'modal-content'
+    });
+
+    header = $('<div/>', {
+        'class': 'modal-header'
+    }).append(
+        $('<button/>', {
+            type: 'button',
+            'class': 'close',
+            'data-dismiss': 'modal',
+            'aria-label': 'Close'
+        }).append(
+            $('<span/>', {
+                'aria-hidden': 'true'
+            }).html('&times;')
+        ),
+        $('<h4/>', {
+            id: 'xronos-grade-sync-help-title',
+            'class': 'modal-title'
+        }).text('Canvas grade sync')
+    );
+
+    body = $('<div/>', {
+        'class': 'modal-body'
+    });
+
+    body.append(
+        $('<p/>').text(
+            indicator.getAttribute('data-grade-sync-message') ||
+            rendered.message ||
+            checking.message
+        )
+    );
+
+    if (recovery.kind !== 'none') {
+        body.append(
+            $('<h5/>').text(recovery.title),
+            $('<p/>').text(recovery.message)
+        );
+
+        recoveryStatus = $('<p/>', {
+            'class': 'help-block',
+            role: 'status',
+            'aria-live': 'polite'
+        });
+
+        if (recovery.kind === 'recheck-status') {
+            recoveryButton = $('<button/>', {
+                type: 'button',
+                'class': 'btn btn-default btn-sm'
+            }).text('Recheck grade sync');
+
+            recoveryButton.on('click', function(event) {
+                event.preventDefault();
+                recoveryButton.prop('disabled', true).text('Checking...');
+
+                xronosRequestGradeSyncRecovery(
+                    'recheck-status',
+                    function(err, result) {
+                        recoveryButton.prop('disabled', false).text('Recheck grade sync');
+
+                        if (err || !result || !result.ok) {
+                            recoveryStatus.text(
+                                'Xronos could not recheck the grade-sync connection. You can still generate a diagnostic report below.'
+                            );
+                            return;
+                        }
+
+                        xronosRememberGradeSyncRecovery(result.recovery);
+                        xronosLatestGradeSyncDiagnostics =
+                            result.gradeSyncDiagnostics || null;
+                        xronosUpdateGradeSyncStatus(result.gradeSync || null);
+
+                        // The modal was built from the pre-recheck state.
+                        // Close it after a successful recheck so reopening
+                        // help rebuilds the content from the fresh status.
+                        modal.modal('hide');
+                    }
+                );
+            });
+
+            body.append($('<p/>').append(recoveryButton));
+        } else if (recovery.kind === 'relaunch-from-canvas') {
+            recoveryButton = $('<button/>', {
+                type: 'button',
+                'class': 'btn btn-default btn-sm'
+            }).text('Show Canvas reconnect steps');
+
+            recoveryButton.on('click', function(event) {
+                event.preventDefault();
+                recoveryButton.prop('disabled', true);
+
+                xronosRequestGradeSyncRecovery(
+                    'view-canvas-relaunch-guidance',
+                    function(err, result) {
+                        recoveryButton.prop('disabled', false);
+
+                        if (result && result.ok) {
+                            xronosRememberGradeSyncRecovery(result.recovery);
+                            xronosLatestGradeSyncDiagnostics =
+                                result.gradeSyncDiagnostics || null;
+                            xronosUpdateGradeSyncStatus(result.gradeSync || null);
+                        }
+
+                        recoveryStatus.text(
+                            'Return to Canvas, open this exact assignment from its Canvas link, and use the Xronos page opened by that launch. Refreshing only this existing Xronos page does not create a new Canvas assignment launch.' +
+                            (err ? ' If the problem continues, generate the diagnostic report below.' : '')
+                        );
+                    }
+                );
+            });
+
+            body.append($('<p/>').append(recoveryButton));
+        }
+
+        body.append(recoveryStatus);
+    }
+
+    body.append(
+        $('<p/>').text(
+            xronosSupportContactLead(window.xronosSupportEmail)
+        )
+    );
+
+    body.append(
+        $('<p/>').text(
+            xronosSupportContactInstructions(window.xronosSupportEmail)
+        )
+    );
+
+    reportButton = $('<button/>', {
+        type: 'button',
+        'class': 'btn btn-primary'
+    }).text('Generate & Copy Grade Sync Report');
+
+    reportStatus = $('<p/>', {
+        'class': 'help-block',
+        role: 'status',
+        'aria-live': 'polite'
+    });
+
+    reportPreview = $('<textarea/>', {
+        'class': 'form-control',
+        rows: '14',
+        readonly: 'readonly',
+        'aria-label': 'Generated Xronos grade sync diagnostic report'
+    }).hide();
+
+    reportButton.on('click', function(event) {
+        var applicationVersion =
+            typeof window.xronosApplicationVersion === 'string'
+                ? window.xronosApplicationVersion
+                : null;
+        var report;
+        var formatted;
+
+        event.preventDefault();
+
+        report = gradeSyncSupportReport.build({
+            generatedAt: (new Date()).toISOString(),
+            applicationVersion: applicationVersion,
+            path: window.location.pathname,
+            gradeSync: xronosLatestGradeSync,
+            gradeSyncDiagnostics: xronosLatestGradeSyncDiagnostics,
+            recoveries: xronosGradeSyncRecoveries,
+            environment: xronosCurrentBrowserEnvironment()
+        });
+
+        formatted = gradeSyncSupportReport.format(report);
+
+        reportPreview.val(formatted).show();
+
+        xronosCopyTextToClipboard(formatted, function(copied) {
+            var email = typeof window.xronosSupportEmail === 'string'
+                ? window.xronosSupportEmail.trim()
+                : '';
+
+            if (copied && email) {
+                reportStatus.text(
+                    'Grade sync diagnostic report copied. Paste it into an email to ' +
+                    email + '.'
+                );
+            } else if (copied) {
+                reportStatus.text(
+                    'Grade sync diagnostic report copied. Paste it into your email or webmail.'
+                );
+            } else {
+                reportStatus.text(
+                    'The report is ready below. Copy it manually and paste it into your email or webmail.'
+                );
+            }
+        });
+    });
+
+    body.append($('<p/>').append(reportButton));
+    body.append(reportStatus);
+    body.append(reportPreview);
+
+    footer = $('<div/>', {
+        'class': 'modal-footer'
+    }).append(
+        $('<button/>', {
+            type: 'button',
+            'class': 'btn btn-default',
+            'data-dismiss': 'modal'
+        }).text('Close')
+    );
+
+    content.append(header);
+    content.append(body);
+    content.append(footer);
+    dialog.append(content);
+    modal.append(dialog);
+    $('body').prepend(modal);
+
+    modal.on('hidden.bs.modal', function() {
+        modal.remove();
+    });
+
+    modal.modal('show');
+}
 
 var xronosEnsureGradeSyncIndicator = function() {
     var indicator;
     var target;
     var label;
     var help;
+    var checking = gradeSyncPresentation.presentation(null);
 
     if (typeof document === 'undefined') {
         return null;
@@ -30,7 +442,7 @@ var xronosEnsureGradeSyncIndicator = function() {
 
         indicator.innerHTML =
             '<span class="xronos-grade-sync-dot" aria-hidden="true"></span>' +
-            '<span class="xronos-grade-sync-label">Checking grade sync</span>' +
+            '<span class="xronos-grade-sync-label">' + checking.label + '</span>' +
             '<button type="button" class="xronos-grade-sync-help" aria-label="More information about Canvas grade sync">?</button>';
 
         target = document.getElementById('show-me-another-button');
@@ -49,10 +461,9 @@ var xronosEnsureGradeSyncIndicator = function() {
 
         if (help) {
             help.addEventListener('click', function(event) {
-                var message = indicator.getAttribute('data-grade-sync-message') || xronosGradeSyncMessages.checking;
                 event.preventDefault();
                 event.stopPropagation();
-                window.alert(message);
+                xronosShowGradeSyncHelp(indicator, checking);
             });
         }
     }
@@ -60,7 +471,7 @@ var xronosEnsureGradeSyncIndicator = function() {
     label = indicator.querySelector('.xronos-grade-sync-label');
 
     if (label && !label.textContent) {
-        label.textContent = 'Checking grade sync';
+        label.textContent = checking.label;
     }
 
     return indicator;
@@ -69,13 +480,15 @@ var xronosEnsureGradeSyncIndicator = function() {
 var xronosUpdateGradeSyncStatus = function(gradeSync) {
     var indicator = xronosEnsureGradeSyncIndicator();
     var label;
-    var message;
-    var state;
+    var rendered;
+
+    xronosLatestGradeSync = gradeSync || null;
 
     if (!indicator) {
         return;
     }
 
+    rendered = gradeSyncPresentation.presentation(gradeSync);
     label = indicator.querySelector('.xronos-grade-sync-label');
 
     indicator.classList.remove(
@@ -85,31 +498,17 @@ var xronosUpdateGradeSyncStatus = function(gradeSync) {
         'xronos-grade-sync-error'
     );
 
-    if (!gradeSync) {
-        state = 'checking';
-        message = xronosGradeSyncMessages.checking;
-        indicator.classList.add('xronos-grade-sync-checking');
-        if (label) label.textContent = 'Checking grade sync';
-    } else if (gradeSync.state === 'syncing' || gradeSync.hasActiveGradePassback) {
-        state = 'syncing';
-        message = xronosGradeSyncMessages.syncing;
-        indicator.classList.add('xronos-grade-sync-syncing');
-        if (label) label.textContent = 'Grade syncing';
-    } else if (gradeSync.state === 'error') {
-        state = 'error';
-        message = xronosGradeSyncMessages.error;
-        indicator.classList.add('xronos-grade-sync-error');
-        if (label) label.textContent = 'Grade sync unknown';
-    } else {
-        state = 'not-syncing';
-        message = xronosGradeSyncMessages.notSyncing;
-        indicator.classList.add('xronos-grade-sync-not-syncing');
-        if (label) label.textContent = 'Grade not syncing';
+    indicator.classList.add(
+        'xronos-grade-sync-' + rendered.cssState
+    );
+
+    if (label) {
+        label.textContent = rendered.label;
     }
 
-    indicator.setAttribute('data-grade-sync-state', state);
-    indicator.setAttribute('data-grade-sync-message', message);
-    indicator.setAttribute('title', message);
+    indicator.setAttribute('data-grade-sync-state', rendered.state);
+    indicator.setAttribute('data-grade-sync-message', rendered.message);
+    indicator.setAttribute('title', rendered.message);
 };
 
 
@@ -224,6 +623,10 @@ exports.update = _.debounce( function() {
 	contentType: 'application/json',	
 	success: function( result ) {
 	    debugLog.log('Xronos server accepted gradebook update; Canvas passback may be queued.', payload);
+            xronosLatestGradeSyncDiagnostics =
+                result && result.gradeSyncDiagnostics
+                    ? result.gradeSyncDiagnostics
+                    : null;
 	    xronosUpdateGradeSyncStatus(result && result.gradeSync);
 	    xronosDispatchGradebookRecorded(payload, result);
 	    $('.progress-bar', ".progress.completion-meter").removeClass( 'bg-danger' );
@@ -236,6 +639,7 @@ exports.update = _.debounce( function() {
 		error: err,
 		exception: exception
 	    });
+            xronosLatestGradeSyncDiagnostics = null;
 	    xronosUpdateGradeSyncStatus({state: 'error'});
 	    $(".progress.completion-meter").attr('title', 'Could not submit grade.' );
 	    $('.progress-bar', ".progress.completion-meter").removeClass( 'bg-success' );

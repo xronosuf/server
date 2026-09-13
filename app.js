@@ -6,6 +6,7 @@ var express = require('express')
   , certificate = require('./routes/certificate')
   , user = require('./routes/user')
   , gradebook = require('./routes/gradebook')
+  , gradeSyncRecovery = require('./routes/grade-sync-recovery')
   , progressAudit = require('./routes/progress-audit')
   , statistics = require('./routes/statistics')
   , xourses = require('./routes/xourses')
@@ -44,6 +45,7 @@ var express = require('express')
   , WebSocketServer = require("ws").Server
   , basicAuth = require('express-basic-auth')
   , legacyHttpClient = require('./lib/legacy-http-client')
+  , ltiLaunchReference = require('./lib/lti-launch-reference')
   , crypto = require('crypto')
   , sageReliabilityPolicy = require('./sage-reliability-policy')
   ;
@@ -970,7 +972,16 @@ sagecellProxyFinish(waitingKey, cacheKey, code.length, "local", statusCode, cont
 });
 
 app.get('/sw.js', function(req, res) {
-	res.sendFile('public/javascripts/sw.min.js', { root: __dirname });
+        // This endpoint is now a retirement worker for historical
+        // root-scoped Xronos service-worker registrations.
+        res.set(
+            'Cache-Control',
+            'private, no-cache, no-store, must-revalidate'
+        );
+	res.sendFile(
+            'public/javascripts/sw.min.js',
+            { root: __dirname }
+        );
     });    
     
     versionator = versionator.createBasic('v' + app.version);
@@ -986,11 +997,46 @@ app.get('/sw.js', function(req, res) {
 
     app.locals.toValidPath = config.toValidPath
 
-    app.use('/public', versionator.middleware);
-    app.use('/public', express.static(path.join(__dirname, 'public'), {maxAge: '1y'}));;
-    app.use('/lib/guppy', express.static(path.join(__dirname, 'node_modules/guppy-dev/lib'), {maxAge: '1y'}));
-    app.use('/node_modules', versionator.middleware);    
-    app.use('/node_modules', express.static(path.join(__dirname, 'node_modules'), {maxAge: '1y'}));
+    require('./lib/static-asset-routes').install(
+        app,
+        {
+            root: __dirname,
+            applicationVersion: app.version
+        }
+    );
+
+    var xronosPageRepair = require('./lib/page-repair');
+
+    // A one-shot Repair this page request deliberately reaches the
+    // dynamic page after static routing has had a chance to serve assets.
+    // The response clears only browser cache data, never cookies/storage,
+    // and gives rendered versioned assets a unique recovery URL.
+    app.use(function(req, res, next) {
+        if (req.method === 'GET') {
+            xronosPageRepair.applyRecoveryResponse(
+                req,
+                res,
+                app.locals.versionPath
+            );
+        }
+        next();
+    });
+
+    // Static requests have already been handled above. Dynamic GET
+    // responses should revalidate so an ordinary navigation cannot remain
+    // on stale HTML from a previous frontend generation.
+    app.use(function(req, res, next) {
+        if (
+            req.method === 'GET' &&
+            !res.locals.xronosRepairToken
+        ) {
+            res.set(
+                'Cache-Control',
+                'private, no-cache'
+            );
+        }
+        next();
+    });
 
 
     app.use(passport.initialize());
@@ -1093,13 +1139,33 @@ app.get('/sw.js', function(req, res) {
 
     // LTI login
     if (config.ltiAuth) {
-        app.post('/lms', passport.authenticate('lms', {
-            successRedirect: config.toValidPath('/just-logged-in'),
-							failureRedirect: '/',
-							failureFlash: true}));
+        app.post('/lms',
+                 passport.authenticate('lms', {
+                     failureRedirect: '/',
+                     failureFlash: true
+                 }),
+                 function(req, res, next) {
+                     ltiLaunchReference.commit(req);
+
+                     if (req.session) {
+                         req.session.save(function(err) {
+                             if (err) {
+                                 return next(err);
+                             }
+                             res.redirect(
+                                 config.toValidPath('/just-logged-in')
+                             );
+                         });
+                     } else {
+                         res.redirect(
+                             config.toValidPath('/just-logged-in')
+                         );
+                     }
+                 });
         app.post('/:repository/:path(*)/lti',
                  passport.authenticate('lms', { failureRedirect: '/' }),
                  function(req, res, next) {
+                     ltiLaunchReference.commit(req);
                      var destination = '/' + req.params.repository;
 
                      if (req.params.path) {
@@ -1243,6 +1309,9 @@ app.get('/sw.js', function(req, res) {
     app.put( '/:repository/:path(*)/gradebook',
      repositories.normalizeName,
      gradebook.record );
+    app.post( '/:repository/:path(*)/grade-sync-recovery',
+     repositories.normalizeName,
+     gradeSyncRecovery.recordAndRecheck );
 
     app.get( '/:repository/:path(*)/progress-audit/token',
      repositories.normalizeName,

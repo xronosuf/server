@@ -2,6 +2,8 @@
 
 var supportReport =
     require("./page-runtime-support-report");
+var pageRepair =
+    require("./page-repair");
 
 /*
  * Student-facing presentation for page-runtime support policy.
@@ -24,7 +26,8 @@ function presentationForIssue(issue) {
         recovery:
             "Reload the page. If the problem continues, report it.",
         showSageRetry: false,
-        showHardReloadHelp: false
+        showHardReloadHelp: false,
+        showPageRepair: true
     };
 
     switch (issue.recoveryAction) {
@@ -37,6 +40,7 @@ function presentationForIssue(issue) {
         presentation.recovery =
             "Keep this page open while Xronos reconnects. " +
             "Do not reload while you may have unsaved work.";
+        presentation.showPageRepair = false;
         break;
 
     case "keep-open-until-save-safe":
@@ -48,6 +52,7 @@ function presentationForIssue(issue) {
         presentation.recovery =
             "Keep this page open until saving recovers. " +
             "Do not reload while your work may still be unsaved.";
+        presentation.showPageRepair = false;
         break;
 
     case "retry-then-hard-reload":
@@ -57,13 +62,13 @@ function presentationForIssue(issue) {
             "One or more Sage computations could not be completed.";
         presentation.recovery =
             "Try the computations again. If they still fail, " +
-            "hard reload the page.";
+            "use Repair this page.";
         presentation.showSageRetry = true;
-        presentation.showHardReloadHelp = true;
+        presentation.showHardReloadHelp = false;
         break;
 
     case "hard-reload":
-        presentation.showHardReloadHelp = true;
+        presentation.showHardReloadHelp = false;
 
         if (issue.code === "XR-MATHJAX-INITIAL-101") {
             presentation.title =
@@ -88,7 +93,7 @@ function presentationForIssue(issue) {
         }
 
         presentation.recovery =
-            "Hard reload the page. This is different from an ordinary Refresh.";
+            "Use Repair this page to reload this activity with fresh Xronos resources.";
         break;
     }
 
@@ -476,6 +481,8 @@ function showReportModal(
                         issue || null,
                     path:
                         window.location.pathname,
+                    pageRepair:
+                        pageRepair.lastRepair(window),
                     environment:
                         currentBrowserEnvironment()
                 });
@@ -703,6 +710,37 @@ function install(pageRuntime, $) {
             );
 
             controls.append(retry);
+        }
+
+        if (presentation.showPageRepair) {
+            var repair =
+                $("<button/>", {
+                    type:
+                        "button",
+                    "class":
+                        "btn btn-primary btn-sm"
+                }).text(
+                    "Repair this page"
+                );
+
+            repair.on(
+                "click",
+                function(event) {
+                    event.preventDefault();
+                    repair
+                        .prop("disabled", true)
+                        .text("Preparing clean reload...");
+
+                    pageRepair.repairCurrentPage()
+                        .catch(function() {
+                            repair
+                                .prop("disabled", false)
+                                .text("Repair this page");
+                        });
+                }
+            );
+
+            controls.append(repair);
         }
 
         var report =

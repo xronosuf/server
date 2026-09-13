@@ -1,923 +1,461 @@
-# Shared Xronos Follow-Up To-Do List
+# Shared Xronos Future Work
 
 ## Purpose
 
-This is the single collection point for discoveries made during the page
-runtime inventory.
+Machine-facing durable backlog for future Xronos work. Keep unresolved goals,
+constraints, acceptance criteria, and context useful for future maintenance or
+new-server migration. Completed implementation history belongs in status,
+handoff, architecture docs, and git history.
 
-Phase 1 of the Page Runtime Coordinator is complete. This file is now the
-durable collection point for work deliberately deferred beyond that Phase 1
-boundary and for unrelated follow-up discovered during the project.
+The current server is now primarily in stabilization/maintenance mode while the
+new server architecture advances. Do not invest in major architectural work on
+legacy subsystems unless it fixes a real current defect, adds missing error
+handling/diagnostics, or produces compatibility/migration knowledge useful to
+the new server.
 
-Items here are not commitments to include all work in one future project.
+## Reliability, recovery, and diagnostics
 
-The separate repository dead-code cleanup is complete at
-`873e86c50d477f5de2e685759a19d4f99ef98d30`; see
-`../CLEANUP_CLOSEOUT.md`. Do not interpret retained TODO items as evidence that
-the cleanup is incomplete. Package modernization, active branding work,
-free-response redesign, routing fixes, and other deferred architecture work are
-separate future projects.
+### Current-server runtime maintenance policy
 
-## Runtime coordinator and diagnostics
+The Page Runtime Coordinator is effectively feature-complete. Do not pursue new
+coordinator architecture/features. Only modify it when needed to:
+- fix a reproduced current bug;
+- add missing error handling or diagnostics for an active subsystem;
+- support recovery/support reporting for active failures;
+- provide narrowly scoped evidence needed by another active project.
 
-Completed/current foundation:
+Keep future coordinator-related work limited to:
+- record automatic reload/navigation causes in runtime/support diagnostics;
+- detect unresolved visible loading indicators where an active component has no
+  adequate terminal error/diagnostic;
+- enrich support-report schema only when a concrete support need justifies new
+  stable/privacy-safe fields such as application version, operation identity, or
+  resynchronization detail;
+- replace implicit callback completion only where an actual reliability defect
+  or missing diagnostic requires it.
 
-- dependency-aware coordinator core exists;
-- external lifecycle leaves and operation IDs exist;
-- bounded event history exists;
-- state/content/interaction/page readiness exists;
-- multiple document-ready and MathJax startup control seams are coordinator-owned;
-- initial MathJax generation binding and coordinator timeout are implemented;
-- initial MathJax processing-failure policy is browser-validated;
-- canonical initial Sage operation identity is implemented;
-- initial visible Sage terminal settlement and stale explicit-attempt protection
-  are browser-validated;
-- initial math-answer identity, degradation, later repair, same-operation
-  coordinator recovery, and transitive readiness recovery are browser-validated;
-- initial-state `found`/`empty`/`failed`/`invalid-request` semantics and
-  reconnect `state-resynchronization` are implemented and browser-validated;
-- state WebSocket application heartbeat, pong liveness diagnostics, timer
-  cleanup, and reconnect-backoff reset are implemented and browser-validated;
-- the stable support taxonomy and recovery-action policy are implemented;
-- the unified student recovery banner and **Report this problem** modal are
-  implemented;
-- the privacy-bounded support-report schema v1 and automatic copy workflow are
-  implemented and browser-validated;
-- each page runtime has a non-secret `supportTraceId` that is included in the
-  report and correlates state/Sage requests with Xronos server logs;
-- `XRONOS_SUPPORT_EMAIL` provides the server-configured support contact shown in
-  the report modal, with generic instructor/course-support wording when unset.
+### Deferred integrated support-path acceptance
 
-Remaining/deferred coordinator work:
+- Exercise at least one `XR-ANSWER-INITIAL-101` or `XR-ACTIVITY-INITIAL-101`
+  failure end-to-end through the finished recovery banner and copyable support
+  report.
+- Reopen implementation only if that integrated browser test exposes a defect.
 
-- reconcile remaining legacy initial-state watchdog ownership only after the
-  explicit protocol has accumulated enough evidence;
-- add occurrence IDs only if they provide support value beyond the existing
-  page `supportTraceId`, runtime session ID, operation IDs, and bounded events;
-- record automatic reload/navigation causes;
-- detect unresolved visible loading indicators across non-Sage components;
-- consider support-report schema v2 enrichment with application/bundle version,
-  explicit operation/occurrence identity, resynchronization detail, canonical
-  Sage state, and derived readiness where those fields can be safely and
-  stably defined;
-- continue replacing implicit callback completion with explicit terminal
-  outcomes where doing so materially improves reliability or supportability;
-- reconcile duplicated legacy comparison/watchdog ownership one dependency at a
-  time after evidence supports removal;
-- broader support tooling or a dedicated support portal, if later needed,
-  remains separate from the completed in-page report workflow.
+### Post-initial MathJax rerender errors
 
-### Deferred final answer/activity support-path acceptance
+- Observe MathJax failures after initial page-ready, including completed answers
+  whose rewritten TeX later produces visible `<merror>` such as `Missing close
+  brace`.
+- Retain privacy-safe context sufficient to identify the affected expression.
+- Surface an appropriate degraded/support diagnostic for later rerender failure;
+  initial MathJax success must not imply later rerender success.
+- Do not expose arbitrary authored TeX or internal stack traces to students.
 
-- The final support policy/report code has direct unit coverage, and earlier
-  browser work validated initial-answer degradation and later recovery.
-- The audit could not establish that an `XR-ANSWER-INITIAL-101` or
-  `XR-ACTIVITY-INITIAL-101` failure was subsequently exercised end-to-end
-  through the finished unified support banner plus generated/copyable report.
-- This is not currently considered a Phase 1 blocker because the component
-  behavior and final support presentation/report pieces are independently
-  tested, but the exact integrated browser acceptance state is ambiguous.
-- During a future browser reliability pass, deliberately exercise at least one
-  of these broader coordinator failures through the completed support UI and
-  record the result. Reopen implementation only if that test exposes a defect.
+## Saved state / WebSocket
 
-## HTTP routing and static assets
-
-### Missing `/public/...` assets incorrectly become HTTP 500
-
-A cleanup verification on 2026-08-24 exposed a pre-existing routing defect for
-missing static assets.
-
-Existing files under `/public` are served normally by the Express static
-middleware. However, when a requested `/public/...` file does not exist, the
-request does not proceed directly to the normal application 404 handler.
-Instead it falls through into repository routing and is interpreted as though
-`public` were a repository name.
-
-Observed examples included nonexistent CSS, image, font, and deleted legacy
-STIX font URLs. All returned HTTP 500. The resulting server error was:
-
-    Error: ENOENT: no such file or directory, stat '/usr/var/server/repositories/public.git'
-
-For comparison, a nonexistent route outside `/public`, such as an arbitrary
-top-level path, correctly returned HTTP 404.
-
-This was verified to be independent of the STIX cleanup: the same 500 occurred
-for arbitrary never-existing `/public/...` paths.
-
-Future work:
-
-- identify which repository-routing middleware is accepting unmatched
-  `/public/...` requests after `express.static(...)` declines them;
-- ensure `/public` remains reserved for static assets and cannot fall through
-  as a repository name;
-- make a missing static asset return an ordinary 404 rather than 500;
-- confirm equivalent behavior for other reserved static prefixes such as
-  `/node_modules` or `/lib/guppy` where appropriate;
-- ensure the fix does not interfere with legitimate repository/activity routes;
-- add regression coverage for:
-  - existing static asset -> 200;
-  - missing `/public/...` asset -> 404;
-  - missing ordinary route -> 404;
-  - legitimate repository route -> unchanged;
-- consider whether repeated missing-asset 500s currently create unnecessary
-  error-log noise or support alerts.
-
-This is not currently known to break normal page loads when all referenced
-assets exist, but it can turn an otherwise harmless stale or missing asset URL
-into a server error and should be repaired.
-
-## Saved state and WebSocket
-
-Completed/current:
-
-- explicit server outcomes now distinguish:
-  - state found
-  - state not found
-  - state retrieval failed
-  - invalid request
-- state-query errors no longer become successful empty state
-- reconnect state is represented separately as `state-resynchronization`
-- a passive 15-second initial-state readiness deadline remains
-- an 18-second application heartbeat with immediate pong is active
-- stale pong (>45 seconds) is reported through transport liveness diagnostics
-- heartbeat timers are cleaned up across socket replacement
-- successful open resets reconnect backoff to 1 second
-
-Remaining:
-
-- add structured `unauthorized` outcome after WebSocket ownership authorization
-  is implemented
-- decide whether bounded initial-state retry is desirable now that failures are
-  explicit
-- decide whether stale-pong degradation should eventually recycle a confirmed
-  half-open socket
-- add acknowledged fresh nonpersistent fallback only if explicit failure policy
-  requires it
-- add a persistent nonpersistent-session warning.
-- Add a dismissible recovery and reload prompt.
-- Prevent late saved-state responses from overwriting fallback work.
-- Add structured acknowledgements for patch and completion operations.
+- Add structured `unauthorized` outcome after WebSocket ownership authorization.
+- Decide whether bounded initial-state retry is useful now that failures are
+  explicit.
+- Decide whether stale-pong degradation should recycle a confirmed half-open
+  socket.
+- Add acknowledged fresh nonpersistent fallback only if explicit failure policy
+  requires it; provide a persistent warning when operating nonpersistently.
+- Prevent late saved-state responses from overwriting fallback/newer work.
+- Add structured acknowledgements for patch/completion operations where needed
+  to diagnose failed persistence.
 - Stop silently returning from invalid socket operation states.
-- Report server differential patch failures.
-- Investigate and repair swallowed state-patch exceptions.
-- Distinguish socket-connected from state-synchronized.
-- Do not show a positive saved-state status merely because the socket opened.
-- Investigate repeated `podman restart devximserver` shutdown behavior where
-  SIGTERM does not stop the container within 10 seconds and Podman falls back to
-  SIGKILL.
-- Keep the transient state-document disappearance contradiction deferred unless
-  it reproduces in a way that blocks protocol correctness.
+- Report server differential patch failures and investigate swallowed patch
+  exceptions.
+- Add offending persistent-data paths to `XR-STATE-DIFF-101` where privacy-safe.
+- Ensure UI semantics distinguish socket-connected from state-synchronized and
+  never imply saved-state health solely because the socket opened.
+- Keep transient state-document disappearance deferred unless it reproduces as a
+  correctness blocker.
+- Verify whether any remaining `podman restart devximserver` shutdown timeout /
+  SIGKILL issue still exists after PID-1 supervisor work; remove this item if
+  current stop/restart behavior is consistently clean.
 
 ## Security
 
-### HIGH - Authorize WebSocket state ownership
+### HIGH — Authorize WebSocket state ownership
 
-- Determine when a browser may request a learner ID different from its own.
-- Bind normal student state access to authenticated or guest identity.
-- Preserve legitimate authorized masquerade workflows.
+- Define when a browser may request a learner ID different from its own.
+- Bind ordinary student state access to authenticated/guest identity.
+- Preserve legitimate authorized instructor masquerade.
 - Require explicit verified instructor authorization for learner state access.
-- Reject unauthorized `watch` requests with a structured error.
-- Audit completion and differential operations under the same identity model.
-- Ensure activity-room and user-room membership follows authorized identity.
+- Reject unauthorized `watch`, completion, differential, room-membership, and
+  related operations consistently.
 
-## Answer and validator behavior
+## Answer / validator behavior
 
-- Logical initial-answer readiness is now implemented and browser-validated.
-  - Readiness tracks stable logical answers rather than current DOM nodes.
-  - Missing MathJax models are not counted as connected.
-  - Attachment exceptions are contained and diagnosed.
-  - Successful attachment is retained across MathJax DOM replacement and
-    completed-answer rendering.
-  - Ordinary rebinding does not emit repeated initial-readiness events.
-  - A later MathJax pass can recover `initial-math-answers`,
-    `interaction-ready`, and page readiness from degraded to ready while
-    retaining the original failure event.
-  - The coordinator accepts same-operation `degraded -> succeeded/not-required`
-    recovery for `allow-late-success` external leaves and recomputes affected
-    derived readiness.
-  - Browser validation preserved authored `data-id`, generated persistence ID,
-    and problem ID across the controlled repair.
-- Investigate the separate `testSuite/02-answers-saved-progress` attachment
-  degradation observed during state testing: five expected answer models
-  resolved, but zero attached and five attachment failures were reported.
-  Treat this as separate from state synchronization until reproduced and
-  localized.
-- Add bounded detail for repeated pre-success attachment failures without
-  creating unbounded per-answer history.
-- Decide whether initial-answer readiness needs its own deadline only if
-  answer attachment can remain unresolved after the initial MathJax pass has
-  already ended and no later pass is naturally expected.
+Initial answer readiness/late MathJax repair and basic grouped-validator failure
+containment are already implemented. Remaining work:
+
+- Reproduce/localize `testSuite/02-answers-saved-progress` attachment failures
+  where expected models existed but attachments failed.
+- Add bounded detail for repeated pre-success attachment failures.
+- Add an initial-answer-specific deadline only if evidence shows attachment can
+  remain unresolved after MathJax otherwise settles.
 - Add an answer-submission transaction lifecycle.
-- Preserve typed responses on validator failure.
-- Distinguish button click from Enter-key behavior.
-- Detect true page reload versus DOM replacement.
-- Add validator exception diagnostics.
-- Handle rejected asynchronous validators without generic alerts.
-- Prevent stale validation results from overwriting newer attempts.
-- Catch malformed validator results such as `null` or `undefined`.
-- A grouped-validator Boolean-result guard now prevents functions and other
-  non-Boolean results from entering persistent state; browser-validate the
-  diagnostic and compatibility behavior before treating it as complete.
-- Differential synchronization now contains unsupported-state errors and emits
-  `XR-STATE-DIFF-101`; add offending persistent-data paths to the diagnostic.
-- Prevent full activity reset after a localized answer failure.
+- Preserve typed responses on validator/runtime failure.
+- Prevent stale async validation results from overwriting newer attempts.
+- Handle rejected async validators without generic alerts.
+- Improve validator exception diagnostics/containment.
+- Prevent localized answer failure from resetting the whole activity.
 
-### Grouped validator environment
+### Grouped validator project
 
-Browser inventory is complete for the current stabilization scope.
-
-Confirmed working behavior:
-
-- Multi-answer grouped validators initialize and attach their logical answers.
-- Correct grouped submission persists across reload.
-- Typed responses remain visible and persist after ordinary incorrect results.
-- A normal Boolean `false` marks the group and contained answers incorrect
-  without emitting a runtime diagnostic.
-- Partial grouped submission preserves entered responses and leaves untouched
-  fields empty.
-- Missing answer globals and other synchronous validator exceptions are
-  contained as incorrect results and emit `XR-VALIDATOR-RESULT-101`.
-- Malformed non-Boolean validator results are prevented from entering
-  persistent state, avoiding later differential-synchronization failure.
-- Grouped-validator failures remain localized and do not degrade page
-  readiness.
-
-Deferred grouped-validator defects and design work:
-
-- Individual answer-box `?` buttons are supposed to be suppressed inside a
-  validator environment, but remain visible.
-- Pressing Enter in a contained answer triggers the individual answer form,
-  evaluates the enclosing validator, and then performs an unprevented native
-  GET form submission that reloads the page with a trailing `?`.
-- Define the intended Enter-key behavior for grouped validators and prevent
-  native form navigation.
-- Partial submission currently marks untouched contained answers incorrect.
+- Suppress individual answer-box `?` buttons inside validator environments if
+  that remains the intended contract.
+- Fix Enter behavior: currently an individual form can evaluate the enclosing
+  validator and then perform an unprevented native GET/navigation with trailing
+  `?`; define keyboard semantics and prevent native navigation.
+- Decide how untouched contained answers should be marked on partial submit.
 - Decide whether individual correctness should remain hidden.
-- Submit grouped answers as one atomic operation instead of several immediate
-  persistence transactions.
-- Prevent stale asynchronous validation results from overwriting newer
-  attempts.
-- Handle rejected asynchronous validators without generic alerts.
-- Reproduce and repair any remaining MathJax-related blink or DOM-replacement
-  behavior only as part of the later focused grouped-validator project.
+- Submit grouped answers atomically rather than as several immediate persistence
+  transactions.
+- Keep permanent coverage for button visibility, Enter, enclosing submit,
+  response preservation, containment, and stale async results.
+- Reproduce remaining MathJax blink/DOM-replacement behavior only within this
+  focused project.
 
+## Generated MathJax preamble / publisher noise
 
-### Generated MathJax preamble pollution / compiler noise
+XimeraLaTeX/published pages can emit large generated MathJax preambles with
+unsupported package-internal commands such as
+`\newcommand {\?\c__siunitx_minus_tl }...`, causing localized TeX parse errors.
+Current compatibility policy: localized parse errors are diagnostic but do not
+automatically make an otherwise functional page fatal; true processing failure,
+timeout, or observable answer/render failure remains degraded.
 
-Field discovery on 2026-08-10 immediately after the Page Runtime Coordinator
-Phase 1 production deployment exposed a longstanding browser-side MathJax
-preamble problem that had previously been mostly silent.
-
-The production page
-
-`/mac1140universalproperties/universalObjectsAndProperties/functions/Practice/fxNotation-Practice1`
-
-raised `XR-MATHJAX-INITIAL-101` after a hard reload. The runtime report showed
-one initial MathJax error, but the authoritative MathJax Process itself
-completed, all 9 expected math answers resolved and attached, all 18 initial
-Sage placeholders settled and rerendered, activity initialization succeeded,
-and the state WebSocket remained healthy.
-
-Browser inspection identified the actual MathJax event as:
-
-`TeX Jax - parse error: Illegal control sequence name for \newcommand`
-
-The failing input was not an authored equation. It was a generated
-`script[type="math/tex"]` element with parent class `preamble`
-(`MathJax-Element-1` in the reproduced page), approximately 9 KB long, containing
-a large dump of macro definitions apparently derived from loaded LaTeX packages
-or XimeraLaTeX's compilation/export pipeline.
-
-The generated preamble included many package-internal definitions that were not
-written by the activity author. In particular, it contained definitions such as:
-
-```tex
-\newcommand {\?\c__siunitx_minus_tl }[0]{...}
-\newcommand {\?\c__siunitx_mu_tl }[0]{...}
-```
-
-MathJax rejected the generated command name as illegal. Despite that parse
-error, no `.MathJax_Error` elements were present in the rendered page and the
-student-visible mathematical/answer/Sage lifecycle completed successfully in
-the reproduced case.
-
-This is separate from longstanding console messages such as:
-
-`Instructor error in \answer: ParseError: Invalid location of ')'`
-
-Those arise from the Ximera answer-expression parser rather than the MathJax
-`TeX Jax - parse error` hook.
-
-Current compatibility policy:
-
-- a localized `TeX Jax - parse error` remains diagnostic but should not by
-  itself make the authoritative initial MathJax Process page-fatal or disable
-  every math-dependent interaction;
-- true MathJax `Math Processing Error`, initial Process timeout, and separately
-  observed answer/render failures remain real degraded/failure conditions;
-- this tolerance is for legacy compatibility and does not mean the generated
-  preamble is known to be correct or harmless in every possible page.
-
-Future investigation should locate the source of the generated preamble in the
-XimeraLaTeX -> published artifact -> Xronos/MathJax pipeline and determine:
-
-1. why full-LaTeX/package-internal definitions are serialized into the browser
-   MathJax preamble;
-2. which package or conversion step introduces malformed names such as
-   `\?\c__siunitx_minus_tl`;
-3. whether a parse error skips later generated definitions that a page could
-   legitimately depend on;
-4. whether the generated preamble can be filtered to only the definitions
-   actually needed by browser MathJax;
-5. whether invalid/unsupported definitions should be removed during publication
-   instead of tolerated at runtime;
-6. whether compiler/development diagnostics can flag rejected generated
-   preamble entries without student-facing noise.
-
-This production incident demonstrates both sides of the problem: the generated
-preamble is objectively producing a MathJax parse error, but treating that one
-localized error as a page-wide mathematical failure caused a false-positive
-support banner and disabled otherwise functional answer interaction.
+Future work:
+- locate which XimeraLaTeX/TeX4ht publication step serializes package internals
+  into the browser preamble;
+- determine whether one malformed definition can suppress later required ones;
+- prefer removing/filtering unsupported generated definitions during
+  publication rather than tolerating them indefinitely at runtime;
+- determine whether the browser preamble can contain only definitions actually
+  needed by the page;
+- add compiler/development diagnostics without student-facing noise.
 
 ## Free response / manual grading
 
-### Historical status and current compatibility policy
+Legacy free-response grading/storage is operationally opaque and nearly unused;
+submission must not penalize students merely because no usable instructor
+workflow exists. Do not remove the feature solely due to low usage, but do not
+preserve opaque internals as a design requirement.
 
-Free response was intended to let a student submit written content to Xronos
-and have that response retained so an instructor could review and grade it
-manually later.
+Future redesign should work backward from instructor grading:
+- inventory current persistence/historical records worth preserving;
+- define submission model linking student, LTI/course context,
+  repository/activity/interaction, text, timestamps, grading state, score, and
+  optional feedback;
+- provide authorized retrieval APIs and instructor list/filter/open/grade UI;
+- define resubmission, regrading, override, audit/history, progress, and Canvas
+  passback behavior;
+- add migration/compatibility handling and permanent tests.
 
-Historically, that workflow never became operationally usable. Although the
-browser can submit free-response content and historical code stores associated
-state/data, the relationship among the stored response, student identity,
-course/LTI context, activity, and an instructor-facing grading workflow has
-been sufficiently opaque that instructors have not had a sane way to retrieve
-and grade submissions. In practice this made the feature effectively
-ungradable and therefore essentially unused.
+## JavaScript authoring / publication / randomization
 
-As a workaround, the deployed behavior has been changed so that submitting a
-free response does not lower a student's grade: submission is effectively
-treated as full credit rather than waiting for manual grading that instructors
-cannot practically perform. This is a compatibility workaround, not the
-intended final grading model.
+### Author-JavaScript lifecycle
 
-Operationally, free response is believed to have extremely little authored
-usage. As of August 2026, the known deployment is believed to contain only one
-remaining rendered free-response box, in MAC1140 content, and that authored use
-was already considered a candidate for removal. Re-inventory published content
-before relying on that count.
+Keep this only where current bugs or new-server authoring compatibility justify
+work; do not extend the legacy coordinator merely to model author JS more deeply.
 
-Do **not** remove the Xronos free-response feature solely because current usage
-is negligible. The intended capability remains desirable and should eventually
-be rebuilt around an explicit instructor grading workflow. At the same time,
-do not spend substantial compatibility effort preserving undocumented or
-opaque legacy storage/grading internals merely because they exist.
+- Inventory execution paths: `javascript` setup, `\js{...}` evaluation,
+  saved-state-triggered execution, answer-driven reevaluation, and MathJax
+  rerenders caused by generated output.
+- Determine which behaviors are true authoring contracts that the new server
+  must reproduce versus accidental legacy behavior.
+- Isolate one author block failure from unrelated blocks.
+- Define an explicit post-state author hook if needed for a stable authoring
+  contract.
+- Random-marked setup blocks currently execute twice; inventory compatibility
+  before changing this and document idempotence requirement.
+- Replace textual `/random/` heuristic with explicit publisher contract when the
+  publication/new-server path is ready.
+- Add fixtures for persisted-answer restoration + post-load `\js` reevaluation,
+  malformed ordinary-text `\js`, and `XR-JS-INLINE-101`.
+- Decide whether author-facing UI needs stronger inline-JS diagnostics.
 
-Until the redesign occurs, the practical compatibility bar is deliberately
-low:
+### Publisher JavaScript correctness
 
-- preserve the feature surface so free response can be rebuilt later;
-- preferably keep the text box renderable and submission path functional;
-- a submitted response must not penalize a student merely because no usable
-  instructor grading workflow exists;
-- do not treat preservation of the current opaque manual-grading/storage
-  mechanism as a requirement;
-- regressions isolated to currently unused free-response grading behavior are
-  not page-runtime stabilization blockers unless they affect unrelated active
-  functionality.
+- Harden XimeraLaTeX publication so authored `javascript`/`javascriptCode`
+  becomes raw executable JS without authors needing CDATA-sensitive wrappers.
+- Prevent `<`, `>`, `&&`, etc. from becoming `&lt;`, `&gt;`, `&amp;&amp;` inside
+  executable script blocks.
+- Improve browser/audit diagnostics for author `SyntaxError`, preserving useful
+  source/location evidence and recognizing HTML-escaped operators as a likely
+  stale-publication hint without confusing author errors with Xronos defects.
 
-### Future redesign
+### JavaScript/Sage randomization ownership
 
-Build an explicit end-to-end free-response submission and manual-grading
-pipeline. Before implementation, inventory the current persistence path and any
-historical free-response records so useful data is not accidentally orphaned.
-
-The replacement should provide, at minimum:
-
-- a documented submission data model with stable links to:
-  - student identity;
-  - LTI/course context where applicable;
-  - repository/activity/page;
-  - the specific free-response interaction;
-  - submitted text;
-  - submission/update timestamps;
-- a clear server API for retrieving authorized free-response submissions;
-- an instructor-facing interface that can list, filter, open, and grade
-  submissions without direct database inspection;
-- explicit grading state such as ungraded versus graded;
-- instructor-entered score and, if useful, feedback;
-- appropriate authorization so students cannot view or alter other students'
-  submissions or instructor grades;
-- a defined interaction with Xronos progress and Canvas/LTI grade passback;
-- a deliberate policy for resubmission, regrading, and instructor overrides;
-- enough audit/history information to understand who graded a response and
-  when;
-- migration or compatibility handling for any historical records worth
-  preserving;
-- permanent fixtures and tests covering submission, persistence, identity
-  association, instructor retrieval, grading, and passback.
-
-When this work is undertaken, redesign the workflow from the instructor's
-grading task backward rather than treating the existing database representation
-as the required architecture.
-
-## JavaScript authoring and randomization
-
-### Initial author JavaScript lifecycle
-
-- Inventory every initial execution path in `javascript.js`, including:
-  - `javascript` environment setup blocks
-  - `\js{...}` result evaluation
-  - saved-state-triggered execution
-  - answer-driven `Javascript.reevaluate(...)`
-  - MathJax rerenders caused by generated output
-- Separate finite initial author JavaScript work from later interactive
-  reevaluation.
-- Determine whether initial author JavaScript can introduce additional:
-  - required visible content
-  - Sage requests
-  - answer boxes
-  - validators
-  - MathJax processing or rerender work
-- Define a finite initial manifest or generation identity rather than waiting
-  for the page to become globally idle.
-- Add explicit initial terminal outcomes such as settled, degraded, failed,
-  or not-required only after the existing execution graph is understood.
-- Keep ordinary answer-driven reevaluation outside page readiness unless it
-  is repairing unresolved initial content.
-- Isolate one author block failure so it does not silently prevent unrelated
-  blocks from initializing.
-- Passive setup-script and post-state inline-JavaScript lifecycle telemetry now
-  exists; browser-validate its event ordering before promoting it.
-- Decide whether parser-owned setup blocks should remain an authoring contract
-  or be migrated to an explicit Xronos-owned execution phase.
-- Define an explicit post-state author hook for code that requires persistent
-  data, answer globals, validators, or initialized activity behavior.
-- Random-marked setup blocks currently execute twice: once during parsing and
-  again through post-state `$.globalEval(...)`. Inventory compatibility before
-  removing either execution and document that random setup must be idempotent.
-- Replace the textual `/random/` heuristic with an explicit generated authoring
-  contract after compatibility review; comments, strings, and unrelated names
-  can currently classify a setup block as randomized.
-
-- Decide whether the current duplicate `.mathjax-javascript` watcher nodes are
-  an intentional MathJax representation detail or generated markup that can be
-  simplified. Current reevaluation safely deduplicates them by MathJax frame.
-- Add a permanent fixture covering persisted-answer restoration and post-load
-  answer-driven `\js{...}` reevaluation.
-
-- Add permanent coverage for malformed ordinary-text `\js{...}` evaluation
-  and diagnostic `XR-JS-INLINE-101`.
-- Decide whether author-facing UI should expose contained inline-JavaScript
-  diagnostics beyond the existing hollow-square fallback.
-- Harden XimeraLaTeX JavaScript publication so authored `javascript` /
-  `javascriptCode` content is emitted as raw executable JavaScript without
-  requiring authors to remember CDATA-sensitive wrappers. In particular,
-  prevent operators such as `<`, `>`, `&&`, and related syntax from being
-  serialized into executable `<script>` blocks as HTML entities such as
-  `&lt;`, `&gt;`, and `&amp;&amp;`. Preserve compatibility with existing authored
-  JavaScript while moving this correctness responsibility into the publishing
-  pipeline rather than individual activity authors.
-- Improve browser/audit diagnostics for authored JavaScript parse failures.
-  Distinguish a browser `SyntaxError` in authored inline JavaScript from a
-  Xronos runtime defect, retain actionable source/location evidence when
-  available, and recognize HTML-escaped operators as a strong hint that stale
-  content should be republished with the current XimeraLaTeX toolchain. Keep
-  ordinary author syntax errors distinct from this stale-publication hint so
-  reports do not overstate the cause.
-
-### MEDIUM - Standardize JavaScript randomization and seed ownership
-
-- Determine whether JavaScript and Sage share or overwrite persisted seed state.
-- Prevent either engine from unintentionally changing the other's effective seed.
-- Define a common context-scoped generation identity if appropriate.
-- Derive engine-specific Sage and JavaScript seeds if appropriate.
-- Determine how `Another` should affect JavaScript-generated content.
-- Determine behavior for JavaScript-only randomized pages.
-- Preserve compatibility with existing published activities.
+- Determine whether JS and Sage share/overwrite persisted seed state.
+- Prevent either engine from unintentionally changing the other's effective
+  seed.
+- Define context-scoped generation identity and engine-specific derived seeds if
+  appropriate.
+- Define `Another` behavior for JS-generated and JS-only randomized pages.
+- Preserve existing published activity compatibility and carry the resulting
+  contract into the new server.
 
 ### Author guidance
 
-- Document `javascript` environments as the preferred definition and setup layer.
-- Document `\js{...}` as the preferred result and call layer.
-- Mirror the `sagesilent` plus `\sage` authoring model where appropriate.
-- Document separate patterns for validators and non-mathematical interactions.
-- Inventory happenstance-supported dynamic `\js` behavior.
+- Document `javascript` environments as preferred setup/definition layer and
+  `\js{...}` as preferred result/call layer.
+- Mirror `sagesilent` + `\sage` concepts where useful.
+- Document validator/non-mathematical interaction patterns and inventory
+  happenstance-supported dynamic `\js` behavior.
 
-## Sage
+## Future browser ↔ Sage execution subsystem — NEW-SERVER RELEVANT
 
-Completed/current behavior:
+Current SageCell service deployment is stable; do not keep routine SageCell
+maintenance/support-trace work in this TODO.
 
-- the initial canonical request has stable coordinator operation identity;
-- explicit Retry creates a new canonical coordinator operation;
-- legitimate browser Sage execution is canonical-only;
-- obsolete standalone `.sage` / `.sageOutput`, browser kernel/iopub, queue, and
-  batching compatibility has been removed;
-- canonical execution is unconditional and the old deployment flag is inert;
-- canonical request and visible settlement remain separate lifecycles;
-- the initial visible deadline converts unresolved spinners into explicit
-  terminal UI;
-- missing MathJax `inputID` and missing-placeholder paths terminate visibly;
-- each visible placeholder has explicit request-attempt identity;
-- callbacks from superseded explicit Retry attempts are ignored;
-- repeated canonical `Another` is browser-validated;
-- 60 KB remains the compiled canonical request safety ceiling.
+Retain only future work relevant to a browser-facing Sage execution boundary that
+can serve the new server and may also be prototyped/used with the current server:
 
-Remaining/deferred Sage work:
+- design authorization so a student browser may execute only Sage requests that
+  are legitimately associated with authorized published content/context;
+- consider trusted-origin plus exact request/code hashes, signed manifests, or
+  equivalent capability-style authorization instead of trusting arbitrary
+  browser-submitted code;
+- define cache identity for authorized Sage requests so deterministic results can
+  be safely reused across requests/users only where the content/seed/context
+  contract permits it;
+- define interaction between cache key, effective random seed, publication
+  generation, course/LTI context, and `Another` semantics;
+- ensure browser-facing failure responses distinguish author-code failure,
+  authorization failure, cache behavior, and SageCell/infrastructure failure
+  without exposing arbitrary source/traceback to students;
+- prefer a subsystem/API boundary reusable by the new server rather than adding
+  more legacy-server-specific Sage architecture.
 
-- keep seed readiness conditional on actual seed consumers;
-- continue measuring canonical request and display timings separately;
-- verify same-context deterministic sequencing and later cross-LTI-context
-  expectations when needed;
-- verify effective seed remains part of exact canonical request/cache identity;
-- investigate manual author seed overrides only if encountered;
-- add instructor/author-facing Sage execution diagnostics to the browser console.
-  When canonical Sage execution fails, preserve and emit a safe exception
-  category/message so instructors testing authored content can distinguish
-  author-code failures from Xronos/SageCell infrastructure failures. Cover both
-  initial generation and explicit `Another` generations. In particular,
-  identify `ZeroDivisionError` / symbolic division-by-zero failures so an
-  instructor can immediately see that a randomized generation divided by zero.
-  More generally, surface useful Sage exception information in the developer
-  console without exposing arbitrary traceback/code details in student-facing
-  banners by default;
-- expired page-auth token refresh/retry is already implemented: the browser
-  refreshes through `/sagecell/auth` and retries the original Sage request once;
-  keep this behavior covered by regression tests rather than treating it as
-  unfinished work;
-- verify deployment uses a persistent `SAGECELL_PAGE_AUTH_SECRET` (or legacy
-  signing-secret equivalent) so process restarts do not invalidate otherwise
-  valid page tokens; this is deployment configuration, not missing browser retry
-  behavior;
-- keep regression coverage for the resolved Sage reliability policy:
-  `XronosSagePageResultError` is transient/retryable, while local SageCell
-  transport/missing-response and HTTP 408/429/500/502/503/504 failures trigger
-  automatic fallback;
-- after production stability, harden authorization using trusted origin plus
-  exact authorized request/code hashes or a build-time manifest rather than page
-  token alone;
-- remove only the dead `XRONOS_CANONICAL_PAGE_SAGE_ENABLED` `.env` entry during
-  deployment cleanup, leaving unrelated `.env` entries intact.
+## Startup / performance / initialization ordering
 
-### Deferred SageCell support-trace deployment
-
-- Xronos now generates and propagates the non-secret
-  `X-Xronos-Support-Trace` correlation identity, and Xronos-side state/Sage
-  logging has been browser/log validated.
-- The SageCell-side support-trace implementation has been migrated to the
-  standalone `xronosuf/sagecell-server` repository. Its canonical
-  `patch_sagecell.py` adds the same strictly validated opaque trace at SageCell
-  `/service` entry without logging Sage source, learner identity, cookies,
-  authorization material, or arbitrary headers.
-- The old embedded `server/sagecell-docker-v2` implementation has been retired;
-  do not restore or deploy SageCell from that historical copy.
-- Before marking this item complete, verify the deployed standalone SageCell
-  image contains the support-trace patch and validate end-to-end
-  report -> Xronos -> SageCell trace correlation.
-- Do not rebuild/recreate SageCell merely to activate this logging outside a
-  controlled SageCell maintenance change.
-
-### Reliability audit classification
-
-A fresh post-canonicalization audit at `fdb015b` rechecked every known Sage
-failure class against the stronger reliability goal: valid author Sage with a
-healthy browser connection and healthy Xronos/SageCell components should not
-surface avoidable internal/transient failures to students.
-
-The audit confirmed these are **not unfinished reliability bugs**:
-
-- expired page authorization already refreshes through `/sagecell/auth` and
-  retries the original request once;
-- missing/invalid/malformed/incomplete authorization remains fail-closed by
-  design; only the specifically expired-token case is safe to refresh
-  automatically;
-- canonical invariants such as `missing-snapshot`, `missing-trace-entry`,
-  `generation-unmapped-call`, `stale-generation`, and other unresolved canonical
-  mappings intentionally fail closed rather than executing an unverified legacy
-  Sage string;
-- the 60 KB compiled canonical request ceiling remains an intentional safety
-  boundary supported by the earlier content-size audit;
-- missing MathJax input IDs, missing visible placeholders, deadline settlement,
-  and callbacks from superseded explicit Retry attempts already have visible or
-  stale-safe terminal handling;
-- local SageCell transport failures and HTTP 502/503/504 already trigger the
-  configured local-to-fallback service path when running in
-  `local-with-fallback` mode.
-
-The two transient-classification items found by that audit were resolved
-without weakening canonical fail-closed behavior:
-
-1. `XronosSagePageResultError` is explicitly transient/retryable.
-2. Local SageCell transport/missing-response and HTTP
-   408/429/500/502/503/504 failures use automatic fallback.
-
-The production decisions are directly unit-tested. The focused suite passes
-57 tests, and the browser `page-result-error` one-shot probe validated the full
-visible error -> Retry -> successful recomputation path on `03-basic-sage`.
-
-If a canonical invariant occurs under valid current-publisher content, continue
-to treat it as an Xronos defect requiring diagnosis rather than authorization to
-execute a different path.
-
-## Startup and performance
-
-### MEDIUM - Remove synchronous startup HEAD request
+### Remove synchronous startup HEAD
 
 - Determine why `X-Ximera-SubPath` cannot be rendered into page metadata.
-- Replace the synchronous `HEAD` request.
-- Preserve subpath availability before dependent URL construction.
-- Add startup failure handling.
+- Replace synchronous HEAD while preserving subpath availability before URL
+  construction and add failure handling.
 
-### General startup work
+### Reload-sensitive initialization audit
 
-- Replace indefinite DOM polling with explicit component events.
+This is a current bug-finding project, not coordinator feature development.
+
+- Continue systematic audit of document-ready handlers, delayed callbacks,
+  polling, and runtime order dependencies; prioritize failures plausibly relieved
+  by reload.
+- Replace indefinite DOM/global polling with explicit component events only when
+  it fixes a real reliability problem or yields worthwhile diagnostics.
 - Classify xourse delayed relayout passes as visual-only operations.
-- Measure timeout percentiles under:
-  - warm and cold cache
-  - LTI and direct launch
-  - fast and slow connection
-  - desktop and mobile
-- Separate diagnostic deadline classes now exist for:
-  - initial saved state
-  - initial MathJax processing
-  - initial inline Sage display
-- Continue adding or refining timeout classes for:
-  - optional external libraries
-- Canonical Sage attempts already have explicit terminal classification; add a
-  separate request-level deadline only if production evidence shows one is
-  necessary beyond current request/proxy timeout behavior.
-- Measure whether the current 15-second readiness deadlines are appropriate
-  before treating them as a stable operational policy.
+- Measure timeout behavior across warm/cold cache, LTI/direct, fast/slow,
+  desktop/mobile when evidence warrants tuning.
+- Refine timeout/error handling for optional external libraries.
 
 ## Optional interactives
 
-- Add local timeouts and terminal errors.
-- Add external-script failure handlers.
-- Stop indefinite global-object polling.
-- Ensure optional failures do not block `content-ready`.
+- Add local timeouts/terminal errors and external-script failure handlers where
+  missing.
+- Stop indefinite global-object polling when it causes reliability/support
+  problems.
+- Ensure optional failures never block core `content-ready`.
+- For JSXGraph, Three.js, and Numeric: inventory actual published use and
+  XimeraLaTeX contract; classify retain/deprecate/remove.
 
-### JSXGraph
+## Identity / account / LTI UI
 
-- Determine whether any published content uses it.
-- Determine whether XimeraLaTeX emits a supported contract.
-- Classify as retain, deprecate, or remove.
+- Add localized `/users/me` failure handling and account-menu diagnostics for
+  authenticated, guest, request-failed, malformed-response, and unauthorized
+  states.
+- Block only operations requiring confirmed identity; keep ordinary content
+  usable during identity-display failure.
+- Improve LTI grade-sync pill so it reflects actual bridge/passback state and
+  distinguishes meaningful failure classes.
+- Add grade-sync diagnostics able to distinguish exact bridge, same-context
+  different assignment, same page different context, missing metadata, and no
+  successful bridge evidence; use evidence-based wording.
+- Consider short-retention privacy-bounded LTI launch diagnostics for cases not
+  explainable from existing bridge records.
 
-### Three.js
+## Recovery / support self-service — PHASE 4
 
-- Determine whether any published content uses it.
-- Determine whether XimeraLaTeX emits a supported contract.
-- Classify as retain, deprecate, or remove.
+The older standalone request for a dismissible recovery/reload prompt is
+superseded by the unified error/recovery banner plus this planned student-driven
+recovery work.
 
-### Numeric
+After reducing fixable bugs, add/finish recovery so support reports can record
+which actions were actually attempted:
+1. controlled non-destructive clean reload + record attempt;
+2. native hard-reload instructions as fallback;
+3. page-state reset with warning/copy-answer guidance, confirmed sync, then true
+   navigation/new JS runtime.
 
-- Determine whether any published content uses it.
-- Determine whether XimeraLaTeX emits a supported contract.
-- Classify as retain, deprecate, or remove.
+Do not let recovery mechanisms hide reproducible defects that should instead be
+fixed.
 
-## Identity and account UI
+## Browser cache / frontend generation
 
-- Add localized `/users/me` failure handling.
-- Show an account-menu identity diagnostic instead of leaving it blank.
-- Distinguish:
-  - authenticated
-  - guest
-  - request failed
-  - malformed response
-  - unauthorized operation
-- Block only operations that truly require confirmed identity.
-- Keep ordinary content usable during identity display failure.
+Current cache-hardening established current-generation immutable URLs,
+revalidating unversioned fallbacks, obsolete-generation 404s, service-worker
+retirement, legacy Cache Storage cleanup, versioned dynamic MathJax/Guppy paths,
+and packaged Guppy/KaTeX fonts. Remaining completion work:
 
-## Supervision, chat, pencil, and legacy systems
+- continue auditing first-party runtime-created URLs, CSS-relative assets,
+  redirects/aliases, and paths that can escape the generation namespace;
+- verify HTML/bootstrap revalidation on representative authenticated activity
+  routes, not only generic/root responses;
+- audit external/CDN assets for sufficient explicit versioning;
+- before production rollout, perform deliberate frontend/cache-generation
+  rollover so ordinary navigation abandons all previously stale generations
+  without requiring users to know how to hard refresh;
+- test stale-old-HTML/JS migration scenarios as practical;
+- preserve invariant: current versioned URL => immutable bytes; old/foreign
+  namespace never aliases current bytes; unversioned fallback revalidates.
 
-### Live supervision
+## CSS / rendering architecture — HIGH MIGRATION VALUE
 
-- Stop automatic browser initialization.
-- Remove the Supervise menu entry.
-- Remove real-time context-room observation.
-- Remove related browser code.
-- Remove backend support after compatibility review.
+Treat as an architecture/inventory project, not hand-cleanup of `base.css`.
+Useful both now and as new-server compatibility specification because author
+`global.css` and XimeraLaTeX/TeX4ht-generated styling continue while the new
+server still needs sane defaults reproducing legacy visual results.
 
-### Masquerade and SpeedGrader
+Effective styling can combine:
+- Xronos `base.scss` / generated `base.css`;
+- Bootstrap, Guppy, Font Awesome, MathJax, CodeMirror, etc.;
+- repository author `global.css`;
+- CSS embedded/emitted by published activity content;
+- XimeraLaTeX/TeX4ht sources including `ximera.4ht`, `xourse.4ht`, `ximera.cfg`,
+  `xourse.cfg`, `ximera.cls`, `xourse.cls`;
+- historical late-cascade overrides added instead of reconciling earlier rules.
+
+Do not begin by deleting apparently unused declarations or inserting dummy
+production defaults: cascade/inheritance/specificity can make changes nonlocal.
+
+Suggested stages:
+1. Generate CSS inventory/provenance map: selectors, declarations, custom
+   properties, media queries, keyframes, font faces, imports/assets; source
+   origin where possible; duplicate/override chains.
+2. Capture representative computed-style baselines across real pages/UI states,
+   content generations, mobile/responsive, and answer states; add visual
+   regression artifacts where useful.
+3. Define documented default CSS contract, preferably using named custom
+   properties/design tokens where appropriate and recording expected override
+   sources.
+4. Refactor one styling domain at a time with computed-style/render equivalence
+   checks; remove historical override chains only after accounting for effective
+   behavior.
+5. Use provenance/default contract as new-server migration input so the new
+   implementation can be cleaner while reproducing legacy rendering.
+
+### CSS-relative asset integrity
+
+- Parse generated CSS URL graph and verify every first-party font/image/SVG/etc.
+  is packaged in the same frontend generation.
+- Cache-hardening found Guppy CSS emitted relative KaTeX font URLs such as
+  `fonts/KaTeX_Main-Regular.woff2` without packaging those files beside
+  `base.css`; current builds now package them.
+- Historical font 404 appeared on some pages but not others. Do not assume one
+  cause: consider cache generation, whether the page uses the face/weight,
+  publication/generated CSS differences, relative-path context, and fallback
+  fonts masking failure.
+- Audit both declared CSS URLs and actual browser network requests.
+
+## Masquerade / SpeedGrader
 
 - Retain authorized learner-specific instructor view.
-- Keep masquerade distinct from real-time supervision.
-- Diagnose the verification-string-length 500 error.
+- Diagnose verification-string-length 500 if still reproducible.
 - Repair Canvas SpeedGrader launch behavior.
-- Priority: low.
-
-### Chat
-
-- Stop automatic initialization.
-- Remove browser UI and state-socket integration.
-- Remove backend handlers after compatibility review.
-
-### Pencil
-
-- Stop automatic initialization on every activity.
-- Remove full-page stylus drawing browser code.
-- Determine whether historical persistent pencil keys need pruning.
-
-### Annotator
-
-- Confirm it is unused.
-- Remove placeholder API integration and bundled dependency if safe.
-
-### Invigilator
-
-- Confirm no published authoring or routing dependency remains.
-- Remove disabled browser implementation.
-- Remove old template markup.
-- Investigate whether any XimeraLaTeX markup support exists.
+- Low priority.
 
 ## Image environment
 
 - Retain image modal behavior.
-- Confirm responsive sizing and centering ownership in XimeraLaTeX and CSS.
+- Confirm responsive sizing/centering ownership across XimeraLaTeX and CSS.
 - Ensure modal failure leaves ordinary images usable.
 
 ## Instructor statistics
 
-- Replace polling for the Try Another statistics button with an explicit event.
-- Add the online-content-coordinator aggregate statistics workflow.
-- Protect coordinator access with explicit server-side authorization.
-- Keep coordinator reports aggregate-only.
-- Support custom date-range generation on demand.
-- Preserve useful derived aggregate statistics before raw LRS data is purged.
+- Replace Try Another statistics-button polling with explicit event only if the
+  current implementation remains worth maintaining before new-server migration.
+- Preserve requirements for future/new-server coordinator statistics: explicit
+  server-side authorization, aggregate-only reports, custom date ranges, and
+  preservation of useful derived aggregates before raw LRS purge.
 
-## UI cleanup
+## UI / content behavior
 
-- Consolidate the duplicated xourse-entry presentation logic used by the
-  master xourse tile page and the in-activity sidebar/table of contents.
-  Both presentations consume the same underlying xourse activity information
-  but currently duplicate `xourseCard` classification/rendering logic in
-  `views/activity-card.pug` and `views/activity-list.pug`. Preserve their
-  intentionally different DOM/CSS presentations while introducing one shared
-  source/view-model or classification layer with explicit tile and TOC render
-  modes. Treat this as a later architecture/UI project, not part of dead-code
-  cleanup.
-
-- Merge profile and settings dropdowns if practical.
-- Improve hover and pointer behavior so dropdowns do not disappear prematurely.
-- Investigate or remove the nonfunctional See progress menu item.
+- Consolidate duplicated xourse-entry classification/view-model logic shared by
+  master tile page and in-activity sidebar/TOC if useful for current maintenance
+  or new-server migration; preserve distinct DOM/CSS render modes.
+- Merge profile/settings dropdowns if practical; improve hover/pointer behavior.
+- Investigate/remove nonfunctional See progress item.
 - Preserve remove-your-answers behavior.
-- Decide when to move Statistics into the unified account menu.
+- Decide Statistics placement in unified account menu.
 - Investigate Test Student role presentation under Canvas LTI.
 
-## Foldable and expandable content
+### Foldable / expandable
+- Restore clear accordion visual affordance (low priority).
+- Decide whether open state should persist across reload before changing current
+  behavior.
 
-- Low priority: restore a clear visual affordance for accordion headings.
-  Expandable and foldable headings remain clickable, but the historical
-  border, bar, or arrow treatment is no longer sufficiently visible.
-- Inventory whether foldable/expandable open state should persist across
-  reload before changing the current non-persistent accordion behavior.
+### Hints / feedback
+- Clarify why frozen publications emit ordinary `hint` through KU Leuven
+  accordion structure; retain UF legacy conversion until authoring contract and
+  republish path are understood.
+- Reevaluate whole-problem MathJax rerender on hint reveal after source-output
+  path is corrected.
+- Test persisted hint visibility, feedback availability, sequential hints,
+  reveal order, and first-paint hiding.
+- Low priority: fix hint counter wording (`2 of 3` currently describes next
+  reveal rather than already-revealed count).
 
-## Hints and feedback
+### Nested problems
+- Preserve immediate-child unlock and recursive hierarchy weighting unless an
+  intentional product decision changes them.
+- Possible first-paint flash of unavailable nested problems is low priority.
 
-- Clarify with XimeraLaTeX developers why current frozen publications emit
-  ordinary `hint` environments through the KU Leuven accordion structure.
-- Retain the UF legacy accordion conversion until that authoring contract is
-  understood and affected publications can be republished safely.
-- Decide later whether the whole-problem MathJax rerender on legacy hint reveal
-  remains necessary after the source-output path is corrected.
-- Test persisted hint visibility and feedback availability across reload.
-- Verify multiple sequential hints preserve reveal order and first-paint hiding.
-- Low priority: correct the sequential hint-button counter wording. After one
-  of three hints is revealed, the button currently shows the next reveal number
-  (`2 of 3`) rather than the number already revealed (`1 of 3`), which can be
-  misleading.
+### Completion accounting
+- Low priority: required interactions inside `hint` should initialize/persist but
+  not contribute to page completion percentage.
 
-## Nested problem behavior
+## Production/content auditing and testing
 
-- Three-level nested availability, completion, answer attachment, progress,
-  and reload persistence were browser-validated on July 31, 2026.
-- Preserve the current immediate-child unlock behavior.
-- Preserve the current recursive hierarchy weighting unless a later product
-  decision intentionally changes how nested work contributes to grades.
-- Possible first-paint flashing of unavailable nested problems is currently
-  out of scope.
+### Active vs historical publications
 
-## Completion accounting
+- Build student-facing production-health audit from current active xourse
+  reachability rather than every historically published artifact.
+- Preserve separate historical/orphan inventory for cleanup/compatibility/
+  forensic use; classify retained inactive content distinctly (`HISTORICAL` /
+  `ORPHAN`) instead of inflating navigation failures.
+- Keep crawler/audit work aware that old direct URLs may intentionally 404 after
+  removal from active content.
 
-- Low priority: answers and other required interactions inside a `hint`
-  environment should initialize and persist normally, but should not contribute
-  to or be required for page completion percentage.
+### Regression repository
 
-## Testing repository
+Keep repeatable browser fixtures covering:
+1. static/core MathJax;
+2. answers/saved progress;
+3. canonical Sage fault handling;
+4. Sage generation/repeated Another;
+5. mixed critical lifecycle;
+6. optional interactives;
+7. unusual/compatibility features;
+8. identity/launch context.
 
-### Production audit scope: active vs retained historical content
+Also retain:
+- grouped-validator button/Enter/enclosing-submit/preservation/containment tests;
+- authenticated LTI learner/role/context propagation test in addition to direct
+  development identity fixture;
+- fixture authoring lessons in fixture documentation rather than expanding this
+  backlog.
 
-- Distinguish current active course content from retained historical publication
-  artifacts when building production-audit inventories.
-- Xronos intentionally may retain HTML or publication records for activities
-  that were published previously but later removed from the current xourse.
-  Those retained artifacts should not automatically count as current production
-  navigation failures merely because their old direct URLs now return 404.
-- Build the student-facing production-health audit primarily from activities
-  reachable through current active xourse structure rather than treating every
-  ever-published HTML artifact as currently active content.
-- Preserve a separate historical/orphan inventory so retained publications
-  remain discoverable for storage, cleanup, compatibility, or forensic work.
-- Classify retained but no-longer-active publications separately (for example,
-  `HISTORICAL` or `ORPHAN`) rather than inflating `NAV` failure counts.
-- Where practical, run both views:
-  1. an active-content audit used to assess current student-facing production
-     health; and
-  2. a historical/orphan audit used to understand retained publication state.
-- The August 2026 production crawl exposed six examples in `mac2233limits`:
-  old `digIn...` activities that had been intentionally removed from the active
-  content long ago but remained discoverable through the broader publication
-  inventory and therefore appeared as HTTP 404 NAV failures.
+## Documentation artifacts if genuinely useful
 
-The eight-page direct-launch browser suite passed on July 31, 2026 after fixture
-corrections. Keep the fixtures as a repeatable regression suite covering:
-
-1. static content and core MathJax
-2. answers and saved progress
-3. basic canonical Sage plus missing-input-ID, missing-placeholder, and
-   stale-attempt fault cases
-4. canonical Sage generation and repeated Another
-5. mixed critical lifecycle
-6. optional interactives
-7. legacy and unusual features
-8. identity and launch context
-
-Include grouped-validator tests verifying:
-
-- button visibility
-- Enter behavior
-- enclosing submit behavior
-- response preservation
-- validator failure containment
-
-Use author `javascript` environments for glanceable test status where doing so
-does not introduce unintended state or seed dependencies.
-
-Fixture lessons:
-
-- A grouped validator must invoke its helper in the optional argument, for
-  example
-  `\begin{validator}[helper(answerA,answerB)]`, rather than merely returning
-  the helper function.
-- Numeric globals used by an author validator should use an explicit numeric
-  answer format when ordinary JavaScript arithmetic is expected.
-- Raw HTML fixture markup should use `\htmlOnly{...}` with `\HCode{...}`;
-  literal tags inside `htmlOnly` are escaped.
-- The identity fixture covered a direct development launch. Authenticated LTI
-  learner, role, and Canvas-context propagation still require a separate LTI
-  launch test.
-
-## Documentation follow-up
-
-### Final project documentation reconciliation
-
-The final page-runtime documentation reconciliation was performed after the
-support-contact follow-up at committed checkpoint `2759508`.
-
-The reconciliation updates the durable documents to:
-
-- treat the Phase 1 support taxonomy, recovery banner, support report, support
-  trace, and configured support contact as completed behavior;
-- remove stale language that still described completed state, answer, MathJax,
-  Sage, WebSocket, or support work as the next project target;
-- remove the obsolete state-protocol description that incorrectly collapsed
-  state-query failure into successful empty state;
-- preserve deliberately deferred work in this TODO list;
-- distinguish deployed Xronos support correlation from the source-ready but
-  deployment-deferred SageCell support-trace logger;
-- preserve the unresolved integrated answer/activity support-path browser
-  acceptance as a deferred test rather than a Phase 1 blocker.
-
-Possible future documentation artifacts, if they become useful as separate
-maintainer references:
-
+Possible maintainership references:
 - `LIFECYCLE_MODEL.md`
 - `DIAGNOSTIC_CODE_MODEL.md`
 - `SUPPORT_ESCALATION_MODEL.md`
 - `SAGE_SEED_AND_CONTEXT_INVARIANTS.md`
 - `TEST_MATRIX.md`
 
-Do not create these merely to duplicate the reconciled durable documents above.
-
-## Post-initial MathJax rerender errors
-
-A MathJax rerender after the initial page-ready lifecycle can currently
-produce visible MathJax `<merror>` output without causing the page runtime
-support UI to report a degraded condition.
-
-Observed production example:
-
-- a completed math answer rewrote its source TeX;
-- malformed rewritten TeX produced `Missing close brace`;
-- MathJax displayed the error inline;
-- no `Report this problem` / support banner appeared.
-
-Follow-up work:
-
-- observe MathJax processing errors from post-initial rerender passes;
-- retain enough safe context to identify the affected expression;
-- surface an appropriate support code / degraded diagnostic;
-- do not treat a successful initial MathJax pass as proof that later
-  rerenders also succeeded;
-- avoid exposing arbitrary authored TeX or internal stack traces to
-  students by default.
+Do not create them merely to duplicate existing durable docs.

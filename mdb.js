@@ -91,6 +91,13 @@ exports.initialize = function initialize(callback) {
         resultTotalScore: Number,
         submittedScore: Boolean,
 
+        // Raw Xronos result last accepted by Canvas.  Keep this
+        // separate from resultScore/resultTotalScore, which continue
+        // to represent the newest candidate waiting for passback.
+        lastSubmittedResultScore: Number,
+        lastSubmittedResultTotalScore: Number,
+        lastSubmittedAt: Date,
+
         oauthConsumerKey: String,
         oauthSignatureMethod: String,
         lisResultSourcedid: String,
@@ -108,6 +115,33 @@ exports.initialize = function initialize(callback) {
         minimize: false,
       }
     )
+  );
+
+  var LateGradePolicyObservationSchema = new mongoose.Schema(
+    {
+      toolConsumerInstanceGuid: { type: String, index: true },
+      contextId: { type: String, index: true },
+      bridge: { type: ObjectId, index: true, ref: "LtiBridge" },
+      rawScore: Number,
+      effectiveScore: Number,
+      lateIntervals: Number,
+      observedAt: { type: Date, index: true },
+      source: { type: String, index: true },
+    },
+    {
+      minimize: false,
+    }
+  );
+
+  LateGradePolicyObservationSchema.index({
+    toolConsumerInstanceGuid: 1,
+    contextId: 1,
+    observedAt: -1,
+  });
+
+  exports.LateGradePolicyObservation = mongoose.model(
+    "LateGradePolicyObservation",
+    LateGradePolicyObservationSchema
   );
 
   exports.State = mongoose.model(

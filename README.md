@@ -20,6 +20,9 @@ Start with the document that matches the work being performed:
 - `documentation/page-runtime/RUNTIME_OWNERSHIP_MATRIX.md` — lifecycle
   ownership and dependencies.
 - `documentation/page-runtime/TODO.md` — durable deferred/follow-up work.
+- `documentation/NETWORK_BINDINGS.md` — host-vs-container port binding rules,
+  including the `0.0.0.0` / `127.0.0.1` distinction and the requirement that
+  SageCell remain an internal container-network service.
 - `SAGECELL.md` — Xronos-to-SageCell proxy, service selection, caching, and
   current standalone SageCell workflow.
 - `public/branding/README.md` — institutional branding asset organization.
@@ -52,7 +55,8 @@ SageCell image/build maintenance now belongs in the standalone
 `xronosuf/sagecell-server` repository.
 
 See `SAGECELL.md` before changing Sage routing, caching, fallback behavior, or
-container operation.
+container operation. See `documentation/NETWORK_BINDINGS.md` before changing
+host port publications, container networks, or SageCell exposure.
 
 ## Legacy retired activity routes
 

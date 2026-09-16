@@ -28,6 +28,8 @@ var WEBSOCKET_HEARTBEAT_STALE = 45000;
 var heartbeatTimer = undefined;
 var heartbeatSocket = undefined;
 var lastPongAt = undefined;
+var heartbeatPingSentAt = undefined;
+var heartbeatLastCheckAt = undefined;
 var heartbeatDegraded = false;
 
 function stopHeartbeat(socketToStop) {
@@ -46,6 +48,8 @@ function stopHeartbeat(socketToStop) {
 
     heartbeatSocket = undefined;
     lastPongAt = undefined;
+    heartbeatPingSentAt = undefined;
+    heartbeatLastCheckAt = undefined;
     heartbeatDegraded = false;
 
     return true;
@@ -56,6 +60,8 @@ function startHeartbeat(socketForHeartbeat, attempt) {
 
     heartbeatSocket = socketForHeartbeat;
     lastPongAt = Date.now();
+    heartbeatPingSentAt = undefined;
+    heartbeatLastCheckAt = lastPongAt;
     heartbeatDegraded = false;
 
     pageRuntime.service(
@@ -73,6 +79,7 @@ function startHeartbeat(socketForHeartbeat, attempt) {
     function sendHeartbeat() {
         var now;
         var elapsed;
+        var schedulerDelay;
 
         if (
             heartbeatSocket !== socketForHeartbeat ||
@@ -82,57 +89,103 @@ function startHeartbeat(socketForHeartbeat, attempt) {
         }
 
         now = Date.now();
-        elapsed = now - lastPongAt;
 
-        if (
-            elapsed > WEBSOCKET_HEARTBEAT_STALE &&
-            !heartbeatDegraded
-        ) {
-            heartbeatDegraded = true;
+        schedulerDelay =
+            heartbeatLastCheckAt === undefined
+                ? 0
+                : now - heartbeatLastCheckAt;
 
-            pageRuntime.service(
-                "state-websocket-liveness",
-                "degraded",
-                {
-                    attempt: attempt,
-                    reason: "pong-stale",
-                    millisecondsSinceLastPong: elapsed,
-                    staleAfterMilliseconds:
-                        WEBSOCKET_HEARTBEAT_STALE
-                }
-            );
+        heartbeatLastCheckAt = now;
 
-            /*
-             * readyState can remain OPEN after the underlying path has
-             * become unusable.  Merely reporting degradation leaves
-             * differentialSynchronization() believing the connection is
-             * healthy, so a reload appears to be the only recovery.
-             *
-             * Actively close this stale transport and let the existing
-             * close/backoff path establish a fresh socket.
-             */
-            saveWorkStatus(
-                'error',
-                "Connection became unresponsive. Reconnecting..."
-            );
+        /*
+         * Only declare the transport stale when a ping was actually sent
+         * and remained unanswered while heartbeat callbacks continued to
+         * run normally.
+         *
+         * Browsers can heavily throttle or suspend JavaScript timers in a
+         * background tab.  If this callback itself was delayed substantially,
+         * elapsed wall-clock time does not prove that the WebSocket stopped
+         * responding.  Give the existing transport a fresh probe instead.
+         */
+        if (heartbeatPingSentAt !== undefined) {
+            elapsed = now - heartbeatPingSentAt;
 
-            try {
-                socketForHeartbeat.close(
-                    4000,
-                    "heartbeat stale"
-                );
-            } catch (closeErr) {
-                pageRuntime.service(
-                    "state-websocket-liveness",
-                    "recycle-failed",
-                    {
-                        attempt: attempt,
-                        reason: "heartbeat-close-failed"
-                    }
-                );
+            if (elapsed <= WEBSOCKET_HEARTBEAT_STALE) {
+                return;
             }
 
-            return;
+            if (
+                schedulerDelay >
+                    WEBSOCKET_HEARTBEAT_INTERVAL * 2
+            ) {
+                pageRuntime.service(
+                    "state-websocket-liveness",
+                    "checking",
+                    {
+                        attempt: attempt,
+                        reason: "scheduler-delayed",
+                        schedulerDelayMilliseconds:
+                            schedulerDelay,
+                        previousPingAgeMilliseconds:
+                            elapsed
+                    }
+                );
+
+                /*
+                 * The old probe crossed a period where browser JavaScript was
+                 * not scheduled reliably.  Do not use it as evidence that the
+                 * transport failed.  Replace it with a fresh probe below.
+                 */
+                heartbeatPingSentAt = undefined;
+            } else {
+                if (!heartbeatDegraded) {
+                    heartbeatDegraded = true;
+
+                    pageRuntime.service(
+                        "state-websocket-liveness",
+                        "degraded",
+                        {
+                            attempt: attempt,
+                            reason: "pong-stale",
+                            millisecondsSincePing: elapsed,
+                            millisecondsSinceLastPong:
+                                lastPongAt === undefined
+                                    ? undefined
+                                    : now - lastPongAt,
+                            staleAfterMilliseconds:
+                                WEBSOCKET_HEARTBEAT_STALE
+                        }
+                    );
+                }
+
+                /*
+                 * A ping really was sent and remained unanswered while the
+                 * heartbeat scheduler continued running.  Recycle the stale
+                 * transport and let the normal reconnect path recover.
+                 */
+                saveWorkStatus(
+                    'error',
+                    "Connection became unresponsive. Reconnecting..."
+                );
+
+                try {
+                    socketForHeartbeat.close(
+                        4000,
+                        "heartbeat stale"
+                    );
+                } catch (closeErr) {
+                    pageRuntime.service(
+                        "state-websocket-liveness",
+                        "recycle-failed",
+                        {
+                            attempt: attempt,
+                            reason: "heartbeat-close-failed"
+                        }
+                    );
+                }
+
+                return;
+            }
         }
 
         try {
@@ -140,6 +193,8 @@ function startHeartbeat(socketForHeartbeat, attempt) {
                 "ping",
                 now
             );
+
+            heartbeatPingSentAt = now;
         } catch (err) {
             if (!heartbeatDegraded) {
                 heartbeatDegraded = true;
@@ -998,6 +1053,7 @@ function connectToServer() {
         var now;
         var sentAtNumber;
         var latency;
+        var matchedOutstandingPing;
 
         if (this !== heartbeatSocket) {
             return;
@@ -1015,7 +1071,21 @@ function connectToServer() {
             latency = now - sentAtNumber;
         }
 
+        matchedOutstandingPing =
+            heartbeatPingSentAt !== undefined &&
+            sentAtNumber === heartbeatPingSentAt;
+
         lastPongAt = now;
+
+        /*
+         * A delayed pong from a probe sent before browser suspension must not
+         * clear a newer probe.  Match the echoed timestamp to the outstanding
+         * ping before clearing it.
+         */
+        if (matchedOutstandingPing) {
+            heartbeatPingSentAt = undefined;
+        }
+
         heartbeatDegraded = false;
 
         pageRuntime.service(
@@ -1023,7 +1093,9 @@ function connectToServer() {
             "healthy",
             {
                 latencyMilliseconds: latency,
-                lastPongAt: new Date(now).toISOString()
+                lastPongAt: new Date(now).toISOString(),
+                matchedOutstandingPing:
+                    matchedOutstandingPing
             }
         );
     };

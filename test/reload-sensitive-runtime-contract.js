@@ -39,9 +39,76 @@ describe('reload-sensitive runtime contracts', function() {
         );
     });
 
-    it('recycles stale state WebSockets instead of waiting for reload', function() {
+    it('recycles only genuinely unanswered state WebSocket heartbeats', function() {
         var database = source(
             'public/javascripts/database.js'
+        );
+
+        /*
+         * Background tabs can delay setInterval callbacks for much longer
+         * than the heartbeat interval.  A delayed callback must not condemn
+         * the socket merely because the previous pong is old.  Staleness is
+         * measured from a ping that was actually sent and remains unanswered.
+         */
+        assert(
+            database.indexOf(
+                'var heartbeatPingSentAt = undefined;'
+            ) !== -1
+        );
+
+        assert(
+            database.indexOf(
+                'if (heartbeatPingSentAt !== undefined)'
+            ) !== -1
+        );
+
+        assert(
+            database.indexOf(
+                'elapsed = now - heartbeatPingSentAt;'
+            ) !== -1
+        );
+
+        assert(
+            database.indexOf(
+                'heartbeatPingSentAt = now;'
+            ) !== -1
+        );
+
+        assert(
+            database.indexOf(
+                'var heartbeatLastCheckAt = undefined;'
+            ) !== -1
+        );
+
+        assert(
+            database.indexOf(
+                'reason: "scheduler-delayed"'
+            ) !== -1
+        );
+
+        assert(
+            database.indexOf(
+                'schedulerDelay >'
+            ) !== -1
+        );
+
+        assert(
+            database.indexOf(
+                'sentAtNumber === heartbeatPingSentAt'
+            ) !== -1
+        );
+
+        assert(
+            database.indexOf(
+                'heartbeatPingSentAt = undefined;'
+            ) !== -1
+        );
+
+        assert.strictEqual(
+            database.indexOf(
+                'elapsed = now - lastPongAt;'
+            ),
+            -1
         );
 
         assert(

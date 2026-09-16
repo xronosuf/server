@@ -1204,6 +1204,42 @@ app.get('/sw.js', function(req, res) {
                 res.redirect(config.toValidPath('/'));
         }
     });
+
+    // Preserve strict routing for APIs and resources, but make unmatched
+    // browser GET/HEAD URLs canonical before they reach activity rendering.
+    // This fixes the long-standing user-facing 404 caused by a trailing slash
+    // while preserving query parameters and leaving non-idempotent requests
+    // untouched.
+    app.use(function(req, res, next) {
+        var originalUrl;
+        var queryIndex;
+        var pathname;
+        var query;
+
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+            next();
+            return;
+        }
+
+        originalUrl = req.originalUrl || req.url || '';
+        queryIndex = originalUrl.indexOf('?');
+        pathname = queryIndex === -1
+            ? originalUrl
+            : originalUrl.slice(0, queryIndex);
+        query = queryIndex === -1
+            ? ''
+            : originalUrl.slice(queryIndex);
+
+        if (pathname.length > 1 && /\/$/.test(pathname)) {
+            res.redirect(
+                301,
+                pathname.replace(/\/+$/, '') + query
+            );
+            return;
+        }
+
+        next();
+    });
     
     ////////////////////////////////////////////////////////////////
     // Activity page rendering
@@ -1244,15 +1280,18 @@ app.get('/sw.js', function(req, res) {
 		 callback );
     };
 
-    serveContent( '*.svg', page.serve('image/svg+xml') );
-    serveContent( '*.png', page.serve('image/png') );
-    serveContent( '*.pdf', page.serve('application/pdf') );
-    serveContent( '*.jpg', page.serve('image/jpeg') );
-    serveContent( '*.gif', page.serve('image/gif') );
-    serveContent( '*.js',  page.serve('text/javascript') );
-    serveContent('*.css', page.serve('text/css'));
+    // These patterns become custom route regexes. Require a real literal dot
+    // so an extensionless activity ending in "-svg", "-pdf", etc. cannot be
+    // mistaken for a repository asset.
+    serveContent( '.*[.]svg', page.serve('image/svg+xml') );
+    serveContent( '.*[.]png', page.serve('image/png') );
+    serveContent( '.*[.]pdf', page.serve('application/pdf') );
+    serveContent( '.*[.]jpg', page.serve('image/jpeg') );
+    serveContent( '.*[.]gif', page.serve('image/gif') );
+    serveContent( '.*[.]js',  page.serve('text/javascript') );
+    serveContent('.*[.]css', page.serve('text/css'));
 
-    app.get( '/:repository/:path(*.tex)',
+    app.get( '/:repository/:path(.*[.]tex)',
 	     redirectUnnormalizeRepositoryName,
 	     page.activitiesFromRecentCommitsOnMaster,
 	     page.source );

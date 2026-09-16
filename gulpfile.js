@@ -21,7 +21,11 @@ var staticDirectoryCSS = './public/stylesheets/';
 var staticDirectoryJavascripts = './public/javascripts';
 
 // Source and target JS files for Browserify
-var jsMainFile                = './public/javascripts/main.js';
+//
+// main-sageplot.js installs the Sage plot bridge before loading main.js so
+// plot placeholders can join the immutable pre-MathJax canonical Sage
+// manifest.  The production bundle name remains unchanged.
+var jsMainFile                = './public/javascripts/main-sageplot.js';
 var jsBundleFile              = 'main.min.js';
 var jsServiceWorkerFile       = './public/javascripts/sw.js';
 var jsServiceWorkerBundleFile = 'sw.min.js';

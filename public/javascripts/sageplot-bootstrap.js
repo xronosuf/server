@@ -4,40 +4,9 @@ var installed = false;
 var prepared = false;
 var plots = {};
 var plotOrder = [];
-var helperInstalled = false;
 
 var plotScriptSelector =
     'script[type="text/x-sage-plot"]';
-
-var syntheticPrefix =
-    '_xronos_sageplot_svg(('; 
-
-var helperSource = [
-    'def _xronos_sageplot_svg(_xronos_graphics, _xronos_plot_id=None):',
-    '    import os as _xronos_os',
-    '    import tempfile as _xronos_tempfile',
-    '    _xronos_fd, _xronos_path = _xronos_tempfile.mkstemp(suffix=".svg")',
-    '    _xronos_os.close(_xronos_fd)',
-    '    try:',
-    '        _xronos_graphics.save(_xronos_path)',
-    '        with open(_xronos_path, "r", encoding="utf-8") as _xronos_file:',
-    '            return _xronos_file.read()',
-    '    finally:',
-    '        try:',
-    '            _xronos_os.remove(_xronos_path)',
-    '        except Exception:',
-    '            pass'
-].join('\n');
-
-function pad(value, width) {
-    var result = String(value);
-
-    while (result.length < width) {
-        result = '0' + result;
-    }
-
-    return result;
-}
 
 function closestPlotHolder(script) {
     var current = script;
@@ -57,55 +26,7 @@ function closestPlotHolder(script) {
     return null;
 }
 
-function helperScriptBefore(firstPlotHolder) {
-    if (helperInstalled) {
-        return;
-    }
-
-    var helper = document.createElement('script');
-    helper.type = 'text/sagemath';
-    helper.setAttribute(
-        'data-xronos-sageplot-helper',
-        'true'
-    );
-    helper.textContent = helperSource;
-
-    if (
-        firstPlotHolder &&
-        firstPlotHolder.parentNode
-    ) {
-        firstPlotHolder.parentNode.insertBefore(
-            helper,
-            firstPlotHolder
-        );
-    } else {
-        var activity =
-            document.querySelector('main.activity') ||
-            document.body;
-
-        activity.insertBefore(
-            helper,
-            activity.firstChild
-        );
-    }
-
-    helperInstalled = true;
-}
-
-function buildSyntheticExpression(
-    authoredExpression,
-    plotId
-) {
-    return (
-        syntheticPrefix +
-        authoredExpression +
-        '), ' +
-        JSON.stringify(plotId) +
-        ')'
-    );
-}
-
-function preparePlotSources() {
+function preparePlotSources(manifest) {
     if (prepared) {
         return plotOrder.length;
     }
@@ -117,66 +38,36 @@ function preparePlotSources() {
             )
         );
 
-    if (scripts.length === 0) {
-        prepared = true;
-        return 0;
+    var entries =
+        manifest && Array.isArray(manifest.entries)
+            ? manifest.entries.filter(
+                function(entry) {
+                    return entry.kind === 'plot';
+                }
+            )
+            : [];
+
+    if (scripts.length !== entries.length) {
+        throw new Error(
+            'Sage plot manifest/DOM count mismatch: ' +
+            entries.length + ' manifest plot(s), ' +
+            scripts.length + ' DOM plot marker(s).'
+        );
     }
 
-    var firstHolder =
-        closestPlotHolder(scripts[0]);
-
-    helperScriptBefore(firstHolder);
-
     scripts.forEach(function(script, index) {
-        if (
-            script.getAttribute(
-                'data-xronos-sageplot-prepared'
-            ) === 'true'
-        ) {
-            return;
-        }
-
-        var holder =
-            closestPlotHolder(script);
+        var entry = entries[index];
+        var holder = closestPlotHolder(script);
 
         if (!holder) {
-            return;
-        }
-
-        var plotId =
-            'sage-plot-' +
-            pad(index + 1, 4);
-
-        var authoredExpression =
-            script.textContent || '';
-
-        var syntheticExpression =
-            buildSyntheticExpression(
-                authoredExpression,
-                plotId
+            throw new Error(
+                'Sage plot marker has no .sage-plot holder.'
             );
-
-        var source =
-            document.createElement('span');
-
-        source.className =
-            'mathjax-inline ' +
-            'xronos-sageplot-canonical-source';
-
-        source.setAttribute(
-            'aria-hidden',
-            'true'
-        );
-
-        source.style.display = 'none';
-        source.textContent =
-            '\\sagestr{' +
-            syntheticExpression +
-            '}';
+        }
 
         holder.setAttribute(
             'data-xronos-sageplot-id',
-            plotId
+            entry.stableId
         );
 
         script.setAttribute(
@@ -184,20 +75,24 @@ function preparePlotSources() {
             'true'
         );
 
-        holder.appendChild(source);
-
-        plots[syntheticExpression] = {
-            id: plotId,
+        plots[entry.stableId] = {
+            id: entry.stableId,
             holder: holder,
-            source: source,
+            script: script,
             authoredExpression:
-                authoredExpression,
+                entry.expression,
+            manifestOrder:
+                entry.order,
             renders: 0,
-            failures: 0
+            failures: 0,
+            lastMime: null,
+            lastGenerationId: null,
+            lastGenerationSeed: null,
+            lastError: null
         };
 
         plotOrder.push(
-            syntheticExpression
+            entry.stableId
         );
     });
 
@@ -344,12 +239,12 @@ function renderSvg(plot, svgText) {
 
     wrapper.appendChild(svg);
 
-    plot.holder.insertBefore(
-        wrapper,
-        plot.source
+    plot.holder.appendChild(
+        wrapper
     );
 
     plot.renders += 1;
+    plot.lastError = null;
 }
 
 function renderError(plot, err, sagemath) {
@@ -383,26 +278,21 @@ function renderError(plot, err, sagemath) {
         );
     }
 
-    plot.holder.insertBefore(
-        wrapper,
-        plot.source
+    plot.holder.appendChild(
+        wrapper
     );
 
     plot.failures += 1;
-}
-
-function matchingPlot(traceEntry) {
-    if (
-        !traceEntry ||
-        typeof traceEntry.expression !==
-            'string'
-    ) {
-        return null;
-    }
-
-    return plots[
-        traceEntry.expression
-    ] || null;
+    plot.lastError = {
+        ename:
+            err && (err.ename || err.name)
+                ? err.ename || err.name
+                : '',
+        evalue:
+            err && (err.evalue || err.message)
+                ? err.evalue || err.message
+                : String(err || '')
+    };
 }
 
 function install(sagemath) {
@@ -418,97 +308,151 @@ function install(sagemath) {
             .captureInitialSagePageManifestSnapshot !==
             'function' ||
         typeof sagemath
-            .resolveMathJaxSageCall !==
+            .registerSagePlotRenderer !==
+            'function' ||
+        typeof sagemath
+            .ensureInitialCanonicalPageSage !==
             'function'
     ) {
         throw new Error(
-            'Sage plot support requires the canonical Sage runtime.'
+            'Sage plot support requires the first-class canonical Sage plot runtime.'
         );
     }
+
+    sagemath.registerSagePlotRenderer(
+        function(entry, payload, context) {
+            var plot =
+                plots[entry.stableId];
+
+            if (!plot) {
+                throw {
+                    ename: 'XronosSageDisplayError',
+                    evalue:
+                        'No DOM plot holder exists for ' +
+                        entry.stableId + '.'
+                };
+            }
+
+            plot.lastGenerationId =
+                context &&
+                context.generationId !== undefined
+                    ? context.generationId
+                    : null;
+
+            plot.lastGenerationSeed =
+                context &&
+                context.generationSeed !== undefined
+                    ? context.generationSeed
+                    : null;
+
+            plot.lastMime =
+                payload && payload.mime
+                    ? payload.mime
+                    : null;
+
+            if (!payload || !payload.ok) {
+                renderError(
+                    plot,
+                    payload && payload.error
+                        ? payload.error
+                        : {
+                            ename:
+                                'XronosSagePlotError',
+                            evalue:
+                                'The canonical Sage plot result failed.'
+                        },
+                    sagemath
+                );
+
+                return;
+            }
+
+            if (
+                payload.mime !==
+                'image/svg+xml'
+            ) {
+                var mimeError = {
+                    ename:
+                        'XronosSageDisplayError',
+                    evalue:
+                        'Unsupported Sage plot MIME type: ' +
+                        String(payload.mime || '')
+                };
+
+                renderError(
+                    plot,
+                    mimeError,
+                    sagemath
+                );
+
+                throw mimeError;
+            }
+
+            try {
+                renderSvg(
+                    plot,
+                    payload.data
+                );
+            } catch (err) {
+                renderError(
+                    plot,
+                    err,
+                    sagemath
+                );
+
+                throw err;
+            }
+        }
+    );
 
     var originalCapture =
         sagemath
             .captureInitialSagePageManifestSnapshot;
 
-    var originalResolve =
-        sagemath.resolveMathJaxSageCall;
-
     sagemath.captureInitialSagePageManifestSnapshot =
         function() {
-            preparePlotSources();
-
-            return originalCapture.apply(
-                sagemath,
-                arguments
-            );
-        };
-
-    sagemath.resolveMathJaxSageCall =
-        function(traceEntry, requestedCode) {
-            var plot =
-                matchingPlot(traceEntry);
-
-            var result =
-                originalResolve.apply(
+            var manifest =
+                originalCapture.apply(
                     sagemath,
                     arguments
                 );
 
-            if (!plot) {
-                return result;
+            preparePlotSources(
+                manifest
+            );
+
+            if (plotOrder.length > 0) {
+                sagemath
+                    .ensureInitialCanonicalPageSage()
+                    .catch(function() {
+                        /*
+                         * Canonical Sage owns request/reporting errors. The
+                         * plot renderer handles per-plot display failures.
+                         */
+                        return null;
+                    });
             }
 
-            return Promise.resolve(result).then(
-                function(svgText) {
-                    try {
-                        renderSvg(
-                            plot,
-                            svgText
-                        );
-                    } catch (err) {
-                        renderError(
-                            plot,
-                            err,
-                            sagemath
-                        );
-
-                        throw err;
-                    }
-
-                    /*
-                     * The canonical source is intentionally hidden. MathJax
-                     * still needs a scalar result so its normal lifecycle can
-                     * settle, but the visible result belongs in the authored
-                     * sage-plot placeholder.
-                     */
-                    return '';
-                },
-                function(err) {
-                    renderError(
-                        plot,
-                        err,
-                        sagemath
-                    );
-
-                    throw err;
-                }
-            );
+            return manifest;
         };
 
     window.xronosInspectSagePlots =
         function() {
             var result = {
                 prepared: prepared,
-                helperInstalled:
-                    helperInstalled,
+                transport:
+                    'first-class-canonical-plot',
                 count: plotOrder.length,
                 plots: plotOrder.map(
-                    function(expression) {
+                    function(stableId) {
                         var plot =
-                            plots[expression];
+                            plots[stableId];
 
                         return {
-                            id: plot.id,
+                            stableId:
+                                plot.id,
+                            manifestOrder:
+                                plot.manifestOrder,
                             expression:
                                 plot.authoredExpression,
                             renders:
@@ -519,7 +463,15 @@ function install(sagemath) {
                                 !!plot.holder
                                     .querySelector(
                                         '.xronos-sageplot-svg'
-                                    )
+                                    ),
+                            lastMime:
+                                plot.lastMime,
+                            lastGenerationId:
+                                plot.lastGenerationId,
+                            lastGenerationSeed:
+                                plot.lastGenerationSeed,
+                            lastError:
+                                plot.lastError
                         };
                     }
                 )

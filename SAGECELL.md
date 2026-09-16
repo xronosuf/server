@@ -2,19 +2,27 @@
 
 This document describes how Xronos sends Sage code to SageCell, how the local and fallback SageCell services are selected, and how server-side caching works.
 
+For the host-vs-container meaning of `0.0.0.0`, `127.0.0.1`, Podman `-p`, and internal-only service ports, also see `documentation/NETWORK_BINDINGS.md`.
+
 ## Quick Reference: Environment Variables
 
 ### `SAGECELL_SERVICE`
 
 Primary SageCell service endpoint.
 
-Default:
+The application-code fallback/default is:
 
 ```bash
 SAGECELL_SERVICE=http://127.0.0.1:8888/service
 ```
 
-In the current Podman deployment, this points to the local SageCell container running in the same network namespace as the Xronos server container.
+The current Podman test deployment overrides that value because SageCell is a separate container on the shared `xronos-net` network:
+
+```bash
+SAGECELL_SERVICE=http://sagecell:8888/service
+```
+
+In that deployment, `sagecell` is the container/network DNS name. SageCell port `8888` is not published on the host.
 
 ---
 
@@ -193,46 +201,34 @@ Build, patch, and image-maintenance work belongs in the standalone SageCell
 repository; Xronos communicates with the running service through its configured
 SageCell service URL.
 
+The current Podman test stack uses a normal shared Podman network rather than sharing the Xronos container's network namespace. SageCell is created on `xronos-net`, and the Xronos application container is also attached to `xronos-net`.
 
-In the current Podman setup, the local SageCell container is run with:
+Conceptually:
 
 ```bash
 podman run -d \
   --name sagecell \
-  --network container:devximserver \
+  --network xronos-net \
   -v sagecell-data:/var/lib/sagecell \
-  local/sagecell-xronos
+  local/sagecell-xronos:latest sagecell
 ```
 
-The important part is:
+The Xronos container is separately attached to that network. Xronos then reaches SageCell by container/network DNS name:
 
 ```bash
---network container:devximserver
+http://sagecell:8888/service
 ```
 
-This means SageCell shares the network namespace of the Xronos server container. From Xronos’s point of view, the local SageCell service is reachable at:
+No host port publication is required for SageCell. In particular, do not add either of these merely to make a connectivity test succeed:
 
 ```bash
-http://127.0.0.1:8888/service
+-p 0.0.0.0:8888:8888
+-p 127.0.0.1:8888:8888
 ```
 
-Because SageCell shares the Xronos container’s network namespace, if the Xronos server container is restarted, the SageCell container should generally be removed and recreated afterward.
+A host-side request to `http://127.0.0.1:8888/service` should therefore fail/refuse in the intended internal-only configuration. That is expected, not evidence that SageCell is unavailable to Xronos.
 
-Typical restart sequence:
-
-```bash
-podman restart devximserver
-
-podman rm -f sagecell 2>/dev/null || true
-
-cd /home/ximera/xronosuf/sagecell-server
-
-podman run -d \
-  --name sagecell \
-  --network container:devximserver \
-  -v sagecell-data:/var/lib/sagecell \
-  local/sagecell-xronos
-```
+The normal test-stack startup path is `scripts/xronos-start.sh`, which ensures the required networks exist, starts SageCell, starts/attaches Xronos, and waits for the services to become ready.
 
 Check that SageCell is healthy:
 
@@ -240,7 +236,15 @@ Check that SageCell is healthy:
 podman ps --filter name=sagecell
 ```
 
-Smoke test through Xronos:
+Check the internal service directly from Xronos:
+
+```bash
+podman exec devximserver \
+  curl -sS --data-urlencode 'code=print(2+2)' \
+  http://sagecell:8888/service
+```
+
+Smoke test through the Xronos proxy:
 
 ```bash
 curl -i --max-time 90 -sS \
@@ -259,6 +263,8 @@ Expected header in normal local mode:
 ```text
 X-SageCell-Proxy-Source: local
 ```
+
+See `documentation/NETWORK_BINDINGS.md` before changing either Xronos host publication or SageCell network exposure.
 
 ---
 
@@ -536,7 +542,7 @@ X-SageCell-Proxy-Cache: HIT-LOCAL
 Stop local SageCell:
 
 ```bash
-podman rm -f sagecell
+podman stop sagecell
 ```
 
 Then request a new uncached code string:
@@ -568,16 +574,10 @@ This confirms fallback routing is occurring, even if the configured fallback end
 
 ### Test local recovery
 
-Restart local SageCell:
+Restart the existing SageCell container:
 
 ```bash
-cd /home/ximera/xronosuf/sagecell-server
-
-podman run -d \
-  --name sagecell \
-  --network container:devximserver \
-  -v sagecell-data:/var/lib/sagecell \
-  local/sagecell-xronos
+podman start sagecell
 ```
 
 Wait for the container to become healthy:
@@ -648,13 +648,7 @@ podman logs devximserver --since=10m
 
 Changing any SageCell-related environment variable requires restarting the Xronos server container/process.
 
-If the local SageCell container is run with:
-
-```bash
---network container:devximserver
-```
-
-then restarting `devximserver` generally requires recreating the SageCell container afterward.
+In the current shared-network design, SageCell and Xronos are separate containers attached to `xronos-net`. Restarting the Xronos container does not inherently require recreating SageCell merely to repair a shared network namespace. If either container is recreated, verify that both are attached to the intended network and that Xronos still resolves `sagecell:8888`.
 
 No frontend asset rebuild is required for changes to these environment variables.
 
@@ -666,13 +660,15 @@ Frontend asset rebuild is only needed when changing browser JavaScript, SCSS, or
 
 ## Recommended Production Defaults
 
-Recommended default once the local SageCell container is deployed:
+For a container-network deployment analogous to the current test architecture:
 
 ```bash
-SAGECELL_SERVICE=http://127.0.0.1:8888/service
+SAGECELL_SERVICE=http://sagecell:8888/service
 SAGECELL_SERVICE_MODE=local-with-fallback
 SAGECELL_FALLBACK_COOLDOWN_MS=30000
 ```
+
+Do not publish raw SageCell port `8888` on the host. Xronos should reach it on the internal container network. See `documentation/NETWORK_BINDINGS.md` for the exposure rules and the `0.0.0.0` / `127.0.0.1` distinction.
 
 Recommended once a tested dedicated Ximera SageCell fallback exists:
 
@@ -703,4 +699,3 @@ Therefore:
 - `https://sagecell.sagemath.org/service` is not a supported fallback target.
 - `SAGECELL_FALLBACK_SERVICE` should remain configurable, but should point only to a dedicated SageCell server.
 - Until the Ximera Project has its own dedicated SageCell server, the local Xronos SageCell container is the only supported `/service` endpoint.
-

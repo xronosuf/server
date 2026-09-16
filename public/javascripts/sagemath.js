@@ -20,9 +20,11 @@ var currentSeedCode = "";
 var sageAuthRefreshInFlight = null;
 
 
-var sagePageManifestCompilerVersion = 4;
+var sagePageManifestCompilerVersion = 5;
 
 var initialSagePageManifestSnapshot = null;
+
+var sagePlotRenderer = null;
 
 /*
  * Stable authored Sage occurrences can be invoked by MathJax in an order
@@ -44,6 +46,8 @@ var canonicalPageSageRuntime = {
     postInitialReplayMappedCalls: 0,
     canonicalResolutions: 0,
     canonicalRejections: 0,
+    plotResolutions: 0,
+    plotRejections: 0,
     invariantFailures: 0,
     compiledCharacters: 0,
     compiledUtf8Bytes: 0,
@@ -53,6 +57,7 @@ var canonicalPageSageRuntime = {
     requestDurationMilliseconds: null,
     resultCount: 0,
     expressionFailureCount: 0,
+    plotFailureCount: 0,
     lastInvariantFailure: null,
     lastError: null
 };
@@ -321,6 +326,12 @@ function canonicalPageSageNewGeneration(
         canonicalRejections:
             0,
 
+        plotResolutions:
+            0,
+
+        plotRejections:
+            0,
+
         invariantFailures:
             0,
 
@@ -346,6 +357,9 @@ function canonicalPageSageNewGeneration(
             0,
 
         expressionFailureCount:
+            0,
+
+        plotFailureCount:
             0,
 
         lastInvariantFailure:
@@ -722,15 +736,9 @@ function findSageProblemContainer(element) {
 /*
  * Build an ordered description of all initial Sage content currently present
  * in the activity DOM.
- *
- * This is instrumentation only. The existing batching and request behavior
- * remain unchanged until the collected ordering and sizes are validated.
  */
 /*
  * Normalize htlatex's Sage CDATA wrapper before canonical manifest parsing.
- *
- * This helper is shared parsing infrastructure. It is intentionally retained
- * independently of the removed legacy browser Sage executor.
  */
 var stripCDATA = function(code) {
     return code.replace(
@@ -751,18 +759,11 @@ function sagePageSourceNodes(
         ) ||
         document.body;
 
-    /*
-     * Before MathJax startup, TeX is still stored in the author-delivered
-     * .mathjax-inline, .mathjax-block, and .mathjax-env wrappers. MathJax
-     * later converts those sources into script[type^="math/tex"] nodes.
-     *
-     * Keep the two modes separate so settled-DOM inspection does not count
-     * both a wrapper and its generated script.
-     */
     var selector = (
         preMathJax
             ? [
                 'script[type="text/sagemath"]',
+                'script[type="text/x-sage-plot"]',
                 '.mathjax-inline',
                 '.mathjax-block',
                 '.mathjax-env',
@@ -770,6 +771,7 @@ function sagePageSourceNodes(
             ]
             : [
                 'script[type="text/sagemath"]',
+                'script[type="text/x-sage-plot"]',
                 'script[type^="math/tex"]'
             ]
     ).join(",");
@@ -784,12 +786,6 @@ function sagePageSourceNodes(
                     "type"
                 ) || "";
 
-            /*
-             * Some transitional HTML may contain a generated math/tex
-             * script inside one of the raw MathJax wrapper elements.
-             * In that case the wrapper already contains the same TeX
-             * source, so retain the wrapper and omit the nested script.
-             */
             if (
                 preMathJax &&
                 type.indexOf(
@@ -835,9 +831,11 @@ function buildSagePageManifestProbe(
     var entries = [];
     var silentBlockCount = 0;
     var expressionCount = 0;
+    var plotCount = 0;
     var answerKeyCount = 0;
     var silentCharacters = 0;
     var expressionCharacters = 0;
+    var plotCharacters = 0;
 
     Array.prototype.forEach.call(
         scripts,
@@ -865,6 +863,47 @@ function buildSagePageManifestProbe(
                     scriptIndex: scriptIndex,
                     characters: source.length,
                     code: source
+                });
+
+                return;
+            }
+
+            if (type === "text/x-sage-plot") {
+                problem =
+                    findSageProblemContainer(
+                        script
+                    );
+
+                plotCount += 1;
+                plotCharacters += source.length;
+
+                entries.push({
+                    order: entries.length,
+                    kind: "plot",
+                    stableId:
+                        "sage-plot-" +
+                        padSageManifestNumber(
+                            plotCount,
+                            4
+                        ),
+                    scriptIndex: scriptIndex,
+                    scriptId: script.id || "",
+                    problemId:
+                        problem
+                            ? problem.id || null
+                            : null,
+                    problemDepth:
+                        sageProblemNestingDepth(
+                            problem
+                        ),
+                    macro: "sageplot",
+                    consumer: "plot",
+                    expression: source,
+                    mime: "image/svg+xml",
+                    parseError:
+                        $.trim(source).length > 0
+                            ? null
+                            : "Empty Sage plot expression"
                 });
 
                 return;
@@ -956,8 +995,10 @@ function buildSagePageManifestProbe(
         currentSeedCode.length +
         silentCharacters +
         expressionCharacters +
+        plotCharacters +
         expressionCount * 180 +
-        6000;
+        plotCount * 420 +
+        7600;
 
     return {
         compilerVersion:
@@ -989,6 +1030,8 @@ function buildSagePageManifestProbe(
                 silentBlockCount,
             expressions:
                 expressionCount,
+            plots:
+                plotCount,
             answerKeys:
                 answerKeyCount,
             manifestEntries:
@@ -999,6 +1042,8 @@ function buildSagePageManifestProbe(
                 silentCharacters,
             expressionCharacters:
                 expressionCharacters,
+            plotCharacters:
+                plotCharacters,
             estimatedCompiledCharacters:
                 estimatedCompiledCharacters
         },
@@ -1009,12 +1054,6 @@ function buildSagePageManifestProbe(
 
 
 
-/*
- * Return a deterministic debugging hash for comparing compiled page programs.
- *
- * The production proxy will continue using SHA-256 over the exact submitted
- * code. This smaller browser-side hash exists only for instrumentation.
- */
 function sageManifestDebugHash(value) {
     var hash = 2166136261;
     var index;
@@ -1087,19 +1126,10 @@ function sageUtf8ByteLength(value) {
 /*
  * Compile the ordered DOM manifest into one deterministic Sage program.
  *
- * Important:
- * - The page seed runs once.
- * - Silent blocks run in document order.
- * - Expressions are captured immediately at their document positions.
- * - A later silent block can therefore change values only for later outputs.
- * - Individual expression errors are returned without discarding other
- *   successfully captured outputs.
- * - Sage's preparse step is applied when executing silent block strings so
- *   author syntax such as ^ retains normal Sage semantics.
- *
- * The compiler is used by diagnostics and by the browser-local,
- * feature-gated initial-page integration. The deployed default remains the
- * existing browser batching path.
+ * \sage, \sagestr and \sageplot share the same seeded execution, namespace,
+ * request and generation. Plot entries differ only in their result serializer:
+ * their Sage Graphics value is persisted to a temporary SVG, read back as
+ * UTF-8 text, and the temporary file is removed before the request finishes.
  */
 function compileSagePageManifest(manifest) {
     var lines = [];
@@ -1116,6 +1146,14 @@ function compileSagePageManifest(manifest) {
 
     lines.push(
         "import traceback as _xronos_traceback"
+    );
+
+    lines.push(
+        "import os as _xronos_os"
+    );
+
+    lines.push(
+        "import tempfile as _xronos_tempfile"
     );
 
     lines.push(
@@ -1138,6 +1176,44 @@ function compileSagePageManifest(manifest) {
     lines.push(
         "from sage.repl.preparse import " +
         "preparse as _xronos_preparse"
+    );
+
+    lines.push("");
+    lines.push(
+        "def _xronos_plot_svg(_xronos_graphics):"
+    );
+    lines.push(
+        "    _xronos_fd, _xronos_path = _xronos_tempfile.mkstemp(suffix='.svg')"
+    );
+    lines.push(
+        "    _xronos_os.close(_xronos_fd)"
+    );
+    lines.push(
+        "    try:"
+    );
+    lines.push(
+        "        _xronos_graphics.save(_xronos_path)"
+    );
+    lines.push(
+        "        with open(_xronos_path, 'r', encoding='utf-8') as _xronos_file:"
+    );
+    lines.push(
+        "            return _xronos_file.read()"
+    );
+    lines.push(
+        "    finally:"
+    );
+    lines.push(
+        "        try:"
+    );
+    lines.push(
+        "            _xronos_os.remove(_xronos_path)"
+    );
+    lines.push(
+        "        except Exception:"
+    );
+    lines.push(
+        "            pass"
     );
 
     if (
@@ -1199,12 +1275,6 @@ function compileSagePageManifest(manifest) {
                     "'sagesilent',"
                 );
 
-                /*
-                 * Store compiler metadata as ordinary strings. SageCell
-                 * preparses the entire submitted program, so a bare numeric
-                 * literal here would become a Sage Integer rather than a
-                 * Python int and would not be directly JSON serializable.
-                 */
                 lines.push(
                     "            'block': " +
                     JSON.stringify(
@@ -1232,11 +1302,15 @@ function compileSagePageManifest(manifest) {
                 return;
             }
 
-            if (entry.kind !== "expression") {
+            if (
+                entry.kind !== "expression" &&
+                entry.kind !== "plot"
+            ) {
                 return;
             }
 
             evaluationCode =
+                entry.kind === "expression" &&
                 entry.latexify
                     ? "latex(" +
                       entry.expression +
@@ -1288,24 +1362,50 @@ function compileSagePageManifest(manifest) {
                 ", locals=globals())"
             );
 
-            lines.push(
-                "        _xronos_results[" +
-                JSON.stringify(entry.stableId) +
-                "] = {"
-            );
+            if (entry.kind === "plot") {
+                lines.push(
+                    "        _xronos_svg = _xronos_plot_svg(_xronos_value)"
+                );
+                lines.push(
+                    "        _xronos_results[" +
+                    JSON.stringify(entry.stableId) +
+                    "] = {"
+                );
+                lines.push(
+                    "            'ok': True,"
+                );
+                lines.push(
+                    "            'kind': 'plot',"
+                );
+                lines.push(
+                    "            'mime': 'image/svg+xml',"
+                );
+                lines.push(
+                    "            'result': _xronos_svg"
+                );
+                lines.push(
+                    "        }"
+                );
+            } else {
+                lines.push(
+                    "        _xronos_results[" +
+                    JSON.stringify(entry.stableId) +
+                    "] = {"
+                );
 
-            lines.push(
-                "            'ok': True,"
-            );
+                lines.push(
+                    "            'ok': True,"
+                );
 
-            lines.push(
-                "            'result': " +
-                "str(_xronos_value)"
-            );
+                lines.push(
+                    "            'result': " +
+                    "str(_xronos_value)"
+                );
 
-            lines.push(
-                "        }"
-            );
+                lines.push(
+                    "        }"
+                );
+            }
 
             lines.push(
                 "    except Exception as _xronos_e:"
@@ -1323,7 +1423,12 @@ function compileSagePageManifest(manifest) {
 
             lines.push(
                 "            'errorType': " +
-                "'expression',"
+                JSON.stringify(
+                    entry.kind === "plot"
+                        ? "plot"
+                        : "expression"
+                ) +
+                ","
             );
 
             lines.push(
@@ -1392,6 +1497,8 @@ window.xronosCompileSagePageManifestPreview =
                     manifest.summary.silentBlocks,
                 expressions:
                     manifest.summary.expressions,
+                plots:
+                    manifest.summary.plots || 0,
                 answerKeys:
                     manifest.summary.answerKeys,
                 manifestEntries:
@@ -1412,9 +1519,6 @@ window.xronosCompileSagePageManifestPreview =
                 compiledCode
         };
 
-        /*
-         * Emit exactly one object for Chrome's "Copy object" workflow.
-         */
         console.log(result);
 
         return result;
@@ -1489,10 +1593,6 @@ window.xronosCheckSagePageManifestDeterminism =
                     current.compiledDebugHash
         };
 
-        /*
-         * Emit one final object after the larger compiler preview object.
-         * This final object is the one to copy.
-         */
         console.log(result);
 
         return result;
@@ -1613,6 +1713,39 @@ function canonicalPageSageExpressionEntries(
 }
 
 
+function canonicalPageSagePlotEntries(
+    manifest
+) {
+    if (!manifest || !manifest.entries) {
+        return [];
+    }
+
+    return manifest.entries.filter(
+        function(entry) {
+            return entry.kind === "plot";
+        }
+    );
+}
+
+
+function canonicalPageSageResultEntries(
+    manifest
+) {
+    if (!manifest || !manifest.entries) {
+        return [];
+    }
+
+    return manifest.entries.filter(
+        function(entry) {
+            return (
+                entry.kind === "expression" ||
+                entry.kind === "plot"
+            );
+        }
+    );
+}
+
+
 function canonicalPageSageSimpleError(err) {
     if (!err) {
         return null;
@@ -1644,13 +1777,6 @@ function canonicalPageSageInvariantFailure(
     requestedCode,
     reason
 ) {
-    /*
-     * Canonical invariant boundary.
-     *
-     * Every live MathJax Sage call must resolve to a deterministic canonical
-     * operation. Missing identity, ambiguous mapping, or invalid lifecycle
-     * state is rejected explicitly and recorded for diagnostics.
-     */
     canonicalPageSageRuntime
         .invariantFailures += 1;
 
@@ -1677,10 +1803,6 @@ function canonicalPageSageInvariantFailure(
                 reason:
                     reason || null,
 
-                /*
-                 * Record shape only. Do not expose authored Sage code in
-                 * coordinator-visible diagnostics.
-                 */
                 requestedCodeCharacters:
                     requestedCode === undefined ||
                     requestedCode === null
@@ -1749,7 +1871,7 @@ function canonicalPageSageEntryError(
         message =
             rawError !== null
                 ? String(rawError)
-                : "Canonical Sage expression failed.";
+                : "Canonical Sage result failed.";
     }
 
     return {
@@ -1757,7 +1879,11 @@ function canonicalPageSageEntryError(
             result &&
             result.errorType === "setup"
                 ? "XronosSageSetupError"
-                : "XronosSageExpressionError",
+                : (
+                    entry && entry.kind === "plot"
+                        ? "XronosSagePlotError"
+                        : "XronosSageExpressionError"
+                ),
 
         evalue:
             message,
@@ -1789,6 +1915,9 @@ function canonicalPageSageEntryError(
 
             order:
                 entry.order,
+
+            kind:
+                entry.kind,
 
             expression:
                 entry.expression,
@@ -1860,6 +1989,213 @@ function reportInitialCanonicalPageSageFailure(
 }
 
 
+function registerSagePlotRenderer(renderer) {
+    sagePlotRenderer =
+        typeof renderer === "function"
+            ? renderer
+            : null;
+}
+
+exports.registerSagePlotRenderer =
+    registerSagePlotRenderer;
+
+
+function canonicalPageSageDeliverPlots(
+    execution,
+    generation
+) {
+    var plotEntries =
+        canonicalPageSagePlotEntries(
+            execution.manifest
+        );
+
+    if (plotEntries.length === 0) {
+        return Promise.resolve({
+            expected: 0,
+            rendered: 0,
+            failed: 0
+        });
+    }
+
+    var rendered = 0;
+    var failed = 0;
+
+    var deliveries =
+        plotEntries.map(
+            function(entry) {
+                var result =
+                    execution.results[
+                        entry.stableId
+                    ];
+
+                var payload;
+
+                if (!result || !result.ok) {
+                    failed += 1;
+                    canonicalPageSageRuntime
+                        .plotRejections += 1;
+
+                    if (generation) {
+                        generation.plotRejections += 1;
+                    }
+
+                    payload = {
+                        ok: false,
+                        kind: "plot",
+                        mime: "image/svg+xml",
+                        error:
+                            canonicalPageSageEntryError(
+                                entry,
+                                result || {
+                                    errorType: "plot",
+                                    error:
+                                        "Missing canonical plot result"
+                                },
+                                execution
+                            )
+                    };
+                } else {
+                    payload = {
+                        ok: true,
+                        kind: "plot",
+                        mime:
+                            result.mime ||
+                            "image/svg+xml",
+                        data:
+                            String(
+                                result.result ||
+                                ""
+                            )
+                    };
+                }
+
+                if (!sagePlotRenderer) {
+                    if (payload.ok) {
+                        failed += 1;
+                        canonicalPageSageRuntime
+                            .plotRejections += 1;
+
+                        if (generation) {
+                            generation.plotRejections += 1;
+                        }
+                    }
+
+                    return Promise.resolve();
+                }
+
+                return Promise.resolve().then(
+                    function() {
+                        return sagePlotRenderer(
+                            entry,
+                            payload,
+                            {
+                                generationId:
+                                    generation
+                                        ? generation.id
+                                        : null,
+                                generationSeed:
+                                    generation
+                                        ? generation.seed
+                                        : null,
+                                compiledDebugHash:
+                                    execution
+                                        .compiledDebugHash
+                            }
+                        );
+                    }
+                ).then(
+                    function() {
+                        if (!payload.ok) {
+                            return;
+                        }
+
+                        rendered += 1;
+
+                        canonicalPageSageRuntime
+                            .plotResolutions += 1;
+
+                        canonicalPageSageRuntime
+                            .canonicalResolutions += 1;
+
+                        if (generation) {
+                            generation.plotResolutions += 1;
+                            generation.canonicalResolutions += 1;
+                        }
+                    },
+                    function(err) {
+                        if (payload.ok) {
+                            failed += 1;
+
+                            canonicalPageSageRuntime
+                                .plotRejections += 1;
+
+                            canonicalPageSageRuntime
+                                .canonicalRejections += 1;
+
+                            if (generation) {
+                                generation.plotRejections += 1;
+                                generation.canonicalRejections += 1;
+                            }
+                        }
+
+                        try {
+                            return sagePlotRenderer(
+                                entry,
+                                {
+                                    ok: false,
+                                    kind: "plot",
+                                    mime: "image/svg+xml",
+                                    error: err
+                                },
+                                {
+                                    generationId:
+                                        generation
+                                            ? generation.id
+                                            : null,
+                                    generationSeed:
+                                        generation
+                                            ? generation.seed
+                                            : null,
+                                    compiledDebugHash:
+                                        execution
+                                            .compiledDebugHash
+                                }
+                            );
+                        } catch (ignored) {
+                            return null;
+                        }
+                    }
+                );
+            }
+        );
+
+    return Promise.all(deliveries).then(
+        function() {
+            var summary = {
+                expected:
+                    plotEntries.length,
+                rendered:
+                    rendered,
+                failed:
+                    failed
+            };
+
+            if (!generation) {
+                pageRuntime.component(
+                    "sage-plot-initial",
+                    failed > 0
+                        ? "degraded"
+                        : "completed",
+                    summary
+                );
+            }
+
+            return summary;
+        }
+    );
+}
+
+
 function executeInitialCanonicalPageSage() {
     var manifest =
         initialSagePageManifestSnapshot;
@@ -1911,12 +2247,22 @@ function executeInitialCanonicalPageSage() {
             manifest
         );
 
-    if (expressionEntries.length === 0) {
+    var plotEntries =
+        canonicalPageSagePlotEntries(
+            manifest
+        );
+
+    var resultEntries =
+        canonicalPageSageResultEntries(
+            manifest
+        );
+
+    if (resultEntries.length === 0) {
         canonicalPageSageRuntime
             .permanentFailureReason =
                 canonicalPageSageInvariantError(
                     "empty-manifest",
-                    "The initial Sage manifest contains no expressions."
+                    "The initial Sage manifest contains no result-producing entries."
                 );
 
         reportInitialCanonicalPageSageFailure(
@@ -1931,7 +2277,7 @@ function executeInitialCanonicalPageSage() {
     }
 
     var parseErrors =
-        expressionEntries.filter(
+        resultEntries.filter(
             function(entry) {
                 return !!entry.parseError;
             }
@@ -1942,7 +2288,7 @@ function executeInitialCanonicalPageSage() {
             .permanentFailureReason =
                 canonicalPageSageInvariantError(
                     "manifest-parse-error",
-                    "The initial Sage manifest contains an expression parse error.",
+                    "The initial Sage manifest contains a result parse error.",
                     {
                         entries:
                             parseErrors
@@ -1968,7 +2314,9 @@ function executeInitialCanonicalPageSage() {
         "waiting-for-seed",
         {
             expressions:
-                expressionEntries.length
+                expressionEntries.length,
+            plots:
+                plotEntries.length
         }
     );
 
@@ -2058,7 +2406,11 @@ function executeInitialCanonicalPageSage() {
                                 compiledUtf8Bytes:
                                     compiledUtf8Bytes,
                                 resultCountExpected:
-                                    expressionEntries.length
+                                    resultEntries.length,
+                                expressions:
+                                    expressionEntries.length,
+                                plots:
+                                    plotEntries.length
                             }
                         );
 
@@ -2110,11 +2462,30 @@ function executeInitialCanonicalPageSage() {
 
                                 canonicalPageSageRuntime
                                     .expressionFailureCount =
-                                        resultKeys.filter(
-                                            function(key) {
+                                        expressionEntries.filter(
+                                            function(entry) {
                                                 return !(
-                                                    results[key] &&
-                                                    results[key].ok
+                                                    results[
+                                                        entry.stableId
+                                                    ] &&
+                                                    results[
+                                                        entry.stableId
+                                                    ].ok
+                                                );
+                                            }
+                                        ).length;
+
+                                canonicalPageSageRuntime
+                                    .plotFailureCount =
+                                        plotEntries.filter(
+                                            function(entry) {
+                                                return !(
+                                                    results[
+                                                        entry.stableId
+                                                    ] &&
+                                                    results[
+                                                        entry.stableId
+                                                    ].ok
                                                 );
                                             }
                                         ).length;
@@ -2122,7 +2493,9 @@ function executeInitialCanonicalPageSage() {
                                 pageRuntime.component(
                                     "sage-initial",
                                     canonicalPageSageRuntime
-                                        .expressionFailureCount > 0
+                                        .expressionFailureCount > 0 ||
+                                    canonicalPageSageRuntime
+                                        .plotFailureCount > 0
                                         ? "results-degraded"
                                         : "results-available",
                                     {
@@ -2132,6 +2505,9 @@ function executeInitialCanonicalPageSage() {
                                         expressionFailureCount:
                                             canonicalPageSageRuntime
                                                 .expressionFailureCount,
+                                        plotFailureCount:
+                                            canonicalPageSageRuntime
+                                                .plotFailureCount,
                                         requestDurationMilliseconds:
                                             canonicalPageSageRuntime
                                                 .requestDurationMilliseconds
@@ -2193,13 +2569,23 @@ function executeInitialCanonicalPageSage() {
     canonicalPageSageRuntime.initialPromise =
         pending.then(
             function(execution) {
-                canonicalPageSageRuntime.status =
-                    "success";
+                return canonicalPageSageDeliverPlots(
+                    execution,
+                    null
+                ).then(
+                    function(plotSummary) {
+                        execution.plotSummary =
+                            plotSummary;
 
-                canonicalPageSageRuntime.lastError =
-                    null;
+                        canonicalPageSageRuntime.status =
+                            "success";
 
-                return execution;
+                        canonicalPageSageRuntime.lastError =
+                            null;
+
+                        return execution;
+                    }
+                );
             },
             function(err) {
                 if (
@@ -2218,11 +2604,6 @@ function executeInitialCanonicalPageSage() {
                         );
                 }
 
-                /*
-                 * Network, authorization, and response parsing errors may be
-                 * retried through the existing grouped Sage retry controls.
-                 * Permanent eligibility failures remain cached separately.
-                 */
                 canonicalPageSageRuntime.initialPromise =
                     null;
 
@@ -2238,6 +2619,9 @@ function executeInitialCanonicalPageSage() {
         .initialPromise;
 }
 
+
+exports.ensureInitialCanonicalPageSage =
+    executeInitialCanonicalPageSage;
 
 
 function canonicalPageSageGenerationInvariantFailure(
@@ -2312,11 +2696,6 @@ function canonicalPageSageUniqueMatchingEntry(
         return matches[0];
     }
 
-    /*
-     * Restoring a completed answer normally invokes its answer-key Sage
-     * expression before the full page pass. When otherwise duplicated source
-     * exists, prefer a uniquely identifiable answer-key entry.
-     */
     var answerKeyMatches =
         matches.filter(
             function(entry) {
@@ -2398,9 +2777,6 @@ function canonicalPageSageMapGenerationCall(
     var entry = null;
     var preliminary = false;
 
-    /*
-     * Continue a currently matching full-manifest prefix.
-     */
     if (
         expectedEntry &&
         canonicalPageSageCallMatchesEntry(
@@ -2418,11 +2794,6 @@ function canonicalPageSageMapGenerationCall(
             firstEntry
         )
     ) {
-        /*
-         * A restored completed equation can itself contain the first manifest
-         * expression. When the actual complete page pass begins, another
-         * occurrence of expression zero restarts the prefix safely.
-         */
         if (
             generation.fullPassCursor > 0
         ) {
@@ -2433,11 +2804,6 @@ function canonicalPageSageMapGenerationCall(
 
         generation.fullPassCursor = 1;
     } else {
-        /*
-         * This is a preliminary restored-answer call or other isolated call
-         * before the complete page sequence begins. Resolve it canonically
-         * only when it identifies exactly one manifest result.
-         */
         entry =
             canonicalPageSageUniqueMatchingEntry(
                 expressionEntries,
@@ -2646,13 +3012,23 @@ function executeCanonicalPageSageGeneration(
             manifest
         );
 
+    var plotEntries =
+        canonicalPageSagePlotEntries(
+            manifest
+        );
+
+    var resultEntries =
+        canonicalPageSageResultEntries(
+            manifest
+        );
+
     if (
-        expressionEntries.length === 0
+        resultEntries.length === 0
     ) {
         generation.permanentFailureReason =
             canonicalPageSageInvariantError(
                 "empty-manifest",
-                "The Sage page manifest contains no expressions."
+                "The Sage page manifest contains no result-producing entries."
             );
 
         return Promise.reject(
@@ -2661,8 +3037,12 @@ function executeCanonicalPageSageGeneration(
         );
     }
 
+    if (expressionEntries.length === 0) {
+        generation.fullPassComplete = true;
+    }
+
     var parseErrors =
-        expressionEntries.filter(
+        resultEntries.filter(
             function(entry) {
                 return !!entry.parseError;
             }
@@ -2672,7 +3052,7 @@ function executeCanonicalPageSageGeneration(
         generation.permanentFailureReason =
             canonicalPageSageInvariantError(
                 "manifest-parse-error",
-                "The Sage page manifest contains an expression parse error.",
+                "The Sage page manifest contains a result parse error.",
                 {
                     entries:
                         parseErrors
@@ -2829,11 +3209,30 @@ function executeCanonicalPageSageGeneration(
 
                 generation
                     .expressionFailureCount =
-                        resultKeys.filter(
-                            function(key) {
+                        expressionEntries.filter(
+                            function(entry) {
                                 return !(
-                                    results[key] &&
-                                    results[key].ok
+                                    results[
+                                        entry.stableId
+                                    ] &&
+                                    results[
+                                        entry.stableId
+                                    ].ok
+                                );
+                            }
+                        ).length;
+
+                generation
+                    .plotFailureCount =
+                        plotEntries.filter(
+                            function(entry) {
+                                return !(
+                                    results[
+                                        entry.stableId
+                                    ] &&
+                                    results[
+                                        entry.stableId
+                                    ].ok
                                 );
                             }
                         ).length;
@@ -2847,6 +3246,11 @@ function executeCanonicalPageSageGeneration(
                     .expressionFailureCount =
                         generation
                             .expressionFailureCount;
+
+                canonicalPageSageRuntime
+                    .plotFailureCount =
+                        generation
+                            .plotFailureCount;
 
                 return {
                     manifest:
@@ -2901,27 +3305,37 @@ function executeCanonicalPageSageGeneration(
     generation.requestPromise =
         pending.then(
             function(execution) {
-                generation.requestSettled =
-                    true;
-
-                generation.status =
-                    "success";
-
-                generation.lastError =
-                    null;
-
-                maybeReleaseCanonicalPageSageAnother(
+                return canonicalPageSageDeliverPlots(
+                    execution,
                     generation
+                ).then(
+                    function(plotSummary) {
+                        execution.plotSummary =
+                            plotSummary;
+
+                        generation.requestSettled =
+                            true;
+
+                        generation.status =
+                            "success";
+
+                        generation.lastError =
+                            null;
+
+                        maybeReleaseCanonicalPageSageAnother(
+                            generation
+                        );
+
+                        canonicalPageSageRuntime.status =
+                            "success";
+
+                        canonicalPageSageRuntime
+                            .lastError =
+                                null;
+
+                        return execution;
+                    }
                 );
-
-                canonicalPageSageRuntime.status =
-                    "success";
-
-                canonicalPageSageRuntime
-                    .lastError =
-                        null;
-
-                return execution;
             },
             function(err) {
                 generation.requestSettled =
@@ -2958,10 +3372,6 @@ function executeCanonicalPageSageGeneration(
                                 .lastError;
                 }
 
-                /*
-                 * Network, authorization and response parsing errors remain
-                 * retryable through the existing grouped Sage retry control.
-                 */
                 generation.requestPromise =
                     null;
 
@@ -2992,19 +3402,10 @@ function activateCanonicalPageSageGeneration(
     generation.status =
         "waiting-for-calls";
 
-    /*
-     * Start immediately so restored answer keys and the complete reprocess
-     * share the same in-flight page request.
-     */
     executeCanonicalPageSageGeneration(
         generation
     ).catch(
         function() {
-            /*
-             * Individual Sage placeholders attach their own handlers. This
-             * prevents a proactive request failure from becoming an unhandled
-             * browser rejection before the first placeholder attaches.
-             */
             return null;
         }
     );
@@ -3013,13 +3414,6 @@ function activateCanonicalPageSageGeneration(
 }
 
 
-/*
- * Describe how one live MathJax Sage call relates to the immutable initial
- * page manifest.
- *
- * This is passive runtime metadata. It does not choose the execution path or
- * change canonical resolution behavior.
- */
 exports.describeMathJaxSageCall =
     function(traceEntry) {
         var manifest =
@@ -3123,14 +3517,6 @@ exports.describeMathJaxSageCall =
     };
 
 
-/*
- * Resolve one MathJax Sage macro call.
- *
- * The initial full MathJax pass has a proven exact ordered mapping to the
- * immutable pre-MathJax manifest. Later replay and generation calls must map
- * deterministically to canonical manifest entries; unresolved calls are
- * treated as canonical invariant failures.
- */
 exports.resolveMathJaxSageCall =
     function(traceEntry, requestedCode) {
         var manifest =
@@ -3155,14 +3541,6 @@ exports.resolveMathJaxSageCall =
             );
         }
 
-        /*
-         * Preferred identity path.
-         *
-         * The immutable pre-MathJax manifest assigns each authored \sage or
-         * \sagestr occurrence a stable ID. MathJax may parse those occurrences
-         * in a different order, or may revisit one occurrence, without changing
-         * its authored identity.
-         */
         if (
             traceEntry.stableId
         ) {
@@ -3372,9 +3750,6 @@ exports.resolveMathJaxSageCall =
                 );
         }
 
-        /*
-         * Initial immutable page pass.
-         */
         if (
             traceEntry.callIndex >= 0 &&
             traceEntry.callIndex <
@@ -3465,20 +3840,6 @@ exports.resolveMathJaxSageCall =
                 );
         }
 
-        /*
-         * Completed-answer restoration and other MathJax replays can revisit
-         * an expression after the immutable initial manifest pass has ended.
-         *
-         * Reuse the original page result bundle only when:
-         *
-         *   1. the initial canonical request already exists,
-         *   2. no explicit Another generation is active, and
-         *   3. expression plus latexify identifies exactly one immutable
-         *      manifest entry.
-         *
-         * Ambiguous or unknown calls fall through to canonical invariant
-         * handling below.
-         */
         if (
             traceEntry.callIndex >=
                 expressionEntries.length &&
@@ -3547,12 +3908,6 @@ exports.resolveMathJaxSageCall =
             }
         }
 
-
-        /*
-         * Explicit Another generation. Calls before the complete manifest
-         * pass—normally restored completed-answer keys—share the same
-         * generation result bundle.
-         */
         var generation =
             canonicalPageSageActiveGeneration;
 
@@ -3664,9 +4019,14 @@ window.xronosInspectCanonicalPageSageRuntime =
                 manifest
             );
 
+        var plotEntries =
+            canonicalPageSagePlotEntries(
+                manifest
+            );
+
         var result = {
             scope:
-                "initial-pass-replays-and-explicit-another-generations",
+                "initial-pass-replays-plots-and-explicit-another-generations",
 
             anotherBusy:
                 canonicalPageSageAnotherBusy,
@@ -3679,6 +4039,9 @@ window.xronosInspectCanonicalPageSageRuntime =
 
             manifestExpressions:
                 expressionEntries.length,
+
+            manifestPlots:
+                plotEntries.length,
 
             answerKeys:
                 expressionEntries.filter(
@@ -3713,6 +4076,14 @@ window.xronosInspectCanonicalPageSageRuntime =
                 canonicalPageSageRuntime
                     .canonicalRejections,
 
+            plotResolutions:
+                canonicalPageSageRuntime
+                    .plotResolutions,
+
+            plotRejections:
+                canonicalPageSageRuntime
+                    .plotRejections,
+
             invariantFailures:
                 canonicalPageSageRuntime
                     .invariantFailures,
@@ -3740,6 +4111,10 @@ window.xronosInspectCanonicalPageSageRuntime =
             expressionFailureCount:
                 canonicalPageSageRuntime
                     .expressionFailureCount,
+
+            plotFailureCount:
+                canonicalPageSageRuntime
+                    .plotFailureCount,
 
             permanentFailure:
                 canonicalPageSageRuntime
@@ -3822,6 +4197,14 @@ window.xronosInspectCanonicalPageSageRuntime =
                             canonicalPageSageActiveGeneration
                                 .canonicalRejections,
 
+                        plotResolutions:
+                            canonicalPageSageActiveGeneration
+                                .plotResolutions,
+
+                        plotRejections:
+                            canonicalPageSageActiveGeneration
+                                .plotRejections,
+
                         invariantFailures:
                             canonicalPageSageActiveGeneration
                                 .invariantFailures,
@@ -3865,6 +4248,10 @@ window.xronosInspectCanonicalPageSageRuntime =
                         expressionFailureCount:
                             canonicalPageSageActiveGeneration
                                 .expressionFailureCount,
+
+                        plotFailureCount:
+                            canonicalPageSageActiveGeneration
+                                .plotFailureCount,
 
                         permanentFailure:
                             canonicalPageSageActiveGeneration
@@ -4011,10 +4398,6 @@ function measureExternalSageManifest(
     var compiledCode;
 
     try {
-        /*
-         * Compilation is synchronous. Temporarily substitute the captured
-         * page's seed source, then restore the active development page state.
-         */
         currentSeedCode =
             seedInfo.code;
 
@@ -4033,13 +4416,13 @@ function measureExternalSageManifest(
         );
 
     var expressionEntries =
-        manifest.entries.filter(
-            function(entry) {
-                return (
-                    entry.kind ===
-                    "expression"
-                );
-            }
+        canonicalPageSageExpressionEntries(
+            manifest
+        );
+
+    var plotEntries =
+        canonicalPageSagePlotEntries(
+            manifest
         );
 
     return {
@@ -4062,6 +4445,9 @@ function measureExternalSageManifest(
 
         expressions:
             expressionEntries.length,
+
+        plots:
+            plotEntries.length,
 
         answerKeys:
             expressionEntries.filter(
@@ -4091,9 +4477,6 @@ function measureExternalSageManifest(
             compiledUtf8Bytes >
             canonicalPageSageMaxCompiledUtf8Bytes,
 
-        /*
-         * No request is submitted. This inspector only compiles and measures.
-         */
         executed:
             false
     };
@@ -4311,10 +4694,6 @@ function sagePreviewErrorSummary(err) {
 }
 
 
-/*
- * Validate ordered execution and error isolation using small synthetic
- * manifests submitted through the real authenticated SageCell proxy.
- */
 window.xronosTestSagePageCompilerFixtures =
     function() {
         var orderedManifest = {
@@ -4384,11 +4763,6 @@ window.xronosTestSagePageCompilerFixtures =
             ]
         };
 
-        /*
-         * Run these sequentially. Besides making the fixture easier to
-         * diagnose, this avoids allowing two synthetic requests to race
-         * through an expired page-authorization refresh.
-         */
         return executeSagePageManifestPreview(
             orderedManifest
         ).then(
@@ -4506,9 +4880,6 @@ window.xronosTestSagePageCompilerFixtures =
                     }
                 };
 
-                /*
-                 * Emit one copyable final object.
-                 */
                 console.log(result);
 
                 return result;
@@ -4578,13 +4949,6 @@ function sageTraceNodeSummary(value) {
 }
 
 
-/*
- * Called by the MathJax TeX macro handler whenever it encounters a live
- * \sage or \sagestr expression.
- *
- * The returned trace entry also provides the verified initial-pass index
- * used by the browser-local canonical page feature gate.
- */
 exports.traceMathJaxSageCall =
     function(
         rawExpression,
@@ -4898,9 +5262,6 @@ window.xronosInspectSageMathJaxParserSources =
                 calls
         };
 
-        /*
-         * Emit one copyable object.
-         */
         console.log(result);
 
         return result;
@@ -5043,6 +5404,11 @@ window.xronosInspectSageMathJaxCallTrace =
                 manifestExpressions:
                     expected.length,
 
+                manifestPlots:
+                    canonicalPageSagePlotEntries(
+                        manifest
+                    ).length,
+
                 tracedCalls:
                     actual.length,
 
@@ -5127,10 +5493,6 @@ function captureInitialSagePageManifestSnapshot() {
             }
         );
 
-    /*
-     * Clone the manifest so no later DOM work or debugging mutation can
-     * alter the canonical pre-MathJax source snapshot.
-     */
     snapshot =
         JSON.parse(
             JSON.stringify(manifest)
@@ -5152,14 +5514,22 @@ function captureInitialSagePageManifestSnapshot() {
             initialSagePageManifestSnapshot
         );
 
+    var initialPlotEntries =
+        canonicalPageSagePlotEntries(
+            initialSagePageManifestSnapshot
+        );
+
     pageRuntime.component(
         "sage-initial",
-        initialExpressionEntries.length > 0
+        initialExpressionEntries.length > 0 ||
+        initialPlotEntries.length > 0
             ? "discovered"
             : "not-required",
         {
             expressions:
                 initialExpressionEntries.length,
+            plots:
+                initialPlotEntries.length,
             answerKeys:
                 initialExpressionEntries.filter(
                     function(entry) {
@@ -5225,14 +5595,6 @@ function annotateInitialSagePageSourceStableIds() {
         }
     );
 
-    /*
-     * Prepare every source transformation first. Do not mutate the DOM until
-     * all immutable manifest expressions have been proven annotatable.
-     *
-     * Mixed stable-ID / call-index operation would be unsafe because a
-     * reordered or repeated stable-ID call can change the global MathJax call
-     * index seen by a later unannotated expression.
-     */
     var prepared = [];
     var skipped = 0;
 
@@ -5257,13 +5619,11 @@ function annotateInitialSagePageSourceStableIds() {
                     "type"
                 ) || "";
 
-            /*
-             * Silent Sage blocks are manifest entries but are not inline
-             * MathJax expressions and therefore require no annotation.
-             */
             if (
                 type ===
-                "text/sagemath"
+                "text/sagemath" ||
+                type ===
+                "text/x-sage-plot"
             ) {
                 return;
             }
@@ -5416,13 +5776,8 @@ window.xronosCompareInitialSageSnapshotToMathJaxTrace =
         }
 
         var expected =
-            manifest.entries.filter(
-                function(entry) {
-                    return (
-                        entry.kind ===
-                        "expression"
-                    );
-                }
+            canonicalPageSageExpressionEntries(
+                manifest
             );
 
         var actual =
@@ -5555,6 +5910,11 @@ window.xronosCompareInitialSageSnapshotToMathJaxTrace =
                 manifestExpressions:
                     expected.length,
 
+                manifestPlots:
+                    canonicalPageSagePlotEntries(
+                        manifest
+                    ).length,
+
                 tracedCalls:
                     actual.length,
 
@@ -5641,22 +6001,12 @@ window.xronosTestLegacyMathTexManifestCapture =
             '\\sage {a+2}' +
             '</div>' +
 
-            /*
-             * The nested script must not be counted separately from its
-             * containing raw wrapper.
-             */
             '<div class="mathjax-block">' +
             '<script type="math/tex; mode=display">' +
             '\\sage {a+3}' +
             '<\/script>' +
             '</div>' +
 
-            /*
-             * htlatex emits TeX environments such as align* in a
-             * .mathjax-env wrapper before MathJax converts them to a
-             * math/tex script. The raw wrapper must participate in
-             * the immutable pre-MathJax Sage manifest.
-             */
             '<div class="mathjax-env mathjax-align*">' +
             '\\begin{align*}' +
             '\\sage {a+4} &= ' +
@@ -5674,13 +6024,8 @@ window.xronosTestLegacyMathTexManifestCapture =
             );
 
         var expressions =
-            manifest.entries.filter(
-                function(entry) {
-                    return (
-                        entry.kind ===
-                        "expression"
-                    );
-                }
+            canonicalPageSageExpressionEntries(
+                manifest
             );
 
         var expressionValues =
@@ -5729,6 +6074,10 @@ window.xronosTestLegacyMathTexManifestCapture =
                 manifest.summary
                     .expressions,
 
+            plots:
+                manifest.summary
+                    .plots,
+
             answerKeys:
                 manifest.summary
                     .answerKeys,
@@ -5744,6 +6093,8 @@ window.xronosTestLegacyMathTexManifestCapture =
                     .silentBlocks === 1 &&
                 manifest.summary
                     .expressions === 6 &&
+                manifest.summary
+                    .plots === 0 &&
                 manifest.summary
                     .answerKeys === 2 &&
                 exactExpressionSequence &&
@@ -5769,10 +6120,6 @@ window.xronosInspectSagePageManifest =
         var result =
             buildSagePageManifestProbe();
 
-        /*
-         * Deliberately emit one object so it can be copied from Chrome with
-         * the console's "Copy object" command.
-         */
         console.log(result);
 
         return result;
@@ -5791,19 +6138,19 @@ var stopSpinning = _.debounce(function() {
 
 MathJax.Hub.signal.Interest(function (message) {
     if (message[0] == "End Reprocess") {
-stopSpinning();
+        stopSpinning();
     }
     if (message[0] == "End Rerender") {
-stopSpinning();
+        stopSpinning();
     }
 });
 
 var setSeed = function(callback) {
     if (seeded) {
-callback();
+        callback();
     } else {
-seedCallbacks.push(callback);
-getSeed();
+        seedCallbacks.push(callback);
+        getSeed();
     }
 };
 
@@ -5830,15 +6177,15 @@ var sageSeedKey = function(newSeed) {
     var seedVersion = newSeed !== undefined ? String(newSeed) : 'base';
 
     if (!randomizationScope) {
-randomizationScope = 'public:' + repositoryName;
+        randomizationScope = 'public:' + repositoryName;
     }
 
     return [
-randomizationScope,
-repositoryName,
-xoursePath,
-activityPath,
-seedVersion
+        randomizationScope,
+        repositoryName,
+        xoursePath,
+        activityPath,
+        seedVersion
     ].join('/');
 };
 
@@ -5852,24 +6199,24 @@ var scopedSeedCode = function(newSeed) {
 
 var sendSeed = function(newSeed) {
     if ((seed == newSeed) && (seed !== null)) {
-return;
+        return;
     }
 
     seed = newSeed;
     currentSeedCode = "";
 
     if ($('main.activity').length > 0) {
-if (newSeed !== undefined || scopedSageBaseSeedsEnabled()) {
-    currentSeedCode = scopedSeedCode(newSeed);
-} else {
-    currentSeedCode = legacyBaseSeedCode();
-}
+        if (newSeed !== undefined || scopedSageBaseSeedsEnabled()) {
+            currentSeedCode = scopedSeedCode(newSeed);
+        } else {
+            currentSeedCode = legacyBaseSeedCode();
+        }
 
-return;
+        return;
     }
 
     if (newSeed !== undefined) {
-currentSeedCode = "set_random_seed(" + newSeed + ")";
+        currentSeedCode = "set_random_seed(" + newSeed + ")";
     }
 };
 
@@ -5877,77 +6224,72 @@ var getSeed = _.once(function() {
     var seedDiv;
 
     if ($("#seed").length > 0) {
-seedDiv = $("#seed").first();
+        seedDiv = $("#seed").first();
     } else {
-seedDiv = $('<div id="seed" style="display: none;"></div>');
-$('main.activity').append(seedDiv);
+        seedDiv = $('<div id="seed" style="display: none;"></div>');
+        $('main.activity').append(seedDiv);
     }
 
     seedDiv.fetchData(function() {
-seeded = true;
+        seeded = true;
 
-var storedSeed = seedDiv.persistentData('seed');
-sendSeed(storedSeed);
+        var storedSeed = seedDiv.persistentData('seed');
+        sendSeed(storedSeed);
 
-seedDiv.persistentData(function() {
-    var newSeed = seedDiv.persistentData('seed');
-    if (newSeed == seed) {
-return;
-    }
+        seedDiv.persistentData(function() {
+            var newSeed = seedDiv.persistentData('seed');
+            if (newSeed == seed) {
+                return;
+            }
 
-    var isPendingAnother =
-        canonicalPageSagePendingAnotherSeed !==
-            null &&
-        canonicalPageSageSeedsEqual(
-            canonicalPageSagePendingAnotherSeed,
-            newSeed
-        );
+            var isPendingAnother =
+                canonicalPageSagePendingAnotherSeed !==
+                    null &&
+                canonicalPageSageSeedsEqual(
+                    canonicalPageSagePendingAnotherSeed,
+                    newSeed
+                );
 
-    sendSeed(newSeed);
+            sendSeed(newSeed);
 
-    var activatedCanonicalGeneration =
-        null;
+            var activatedCanonicalGeneration =
+                null;
 
-    if (isPendingAnother) {
-        activatedCanonicalGeneration =
-            activateCanonicalPageSageGeneration(
-                newSeed
-            );
-    }
+            if (isPendingAnother) {
+                activatedCanonicalGeneration =
+                    activateCanonicalPageSageGeneration(
+                        newSeed
+                    );
+            }
 
-    /*
-     * Queue restoration only after the new canonical generation has started.
-     * These MathJax Text operations therefore consume the same result bundle
-     * as the complete page reprocess queued below.
-     */
-    if (isPendingAnother) {
-        restoreCompletedAnswerMathJax();
+            if (isPendingAnother) {
+                restoreCompletedAnswerMathJax();
 
-        canonicalPageSagePendingAnotherSeed =
-            null;
-    }
+                canonicalPageSagePendingAnotherSeed =
+                    null;
+            }
 
-    reprocessMathjax();
+            reprocessMathjax();
 
-    if (activatedCanonicalGeneration) {
-        MathJax.Hub.Queue(
-            function() {
-                activatedCanonicalGeneration
-                    .mathJaxPassComplete =
-                        true;
+            if (activatedCanonicalGeneration) {
+                MathJax.Hub.Queue(
+                    function() {
+                        activatedCanonicalGeneration
+                            .mathJaxPassComplete =
+                                true;
 
-                maybeReleaseCanonicalPageSageAnother(
-                    activatedCanonicalGeneration
+                        maybeReleaseCanonicalPageSageAnother(
+                            activatedCanonicalGeneration
+                        );
+                    }
                 );
             }
-        );
-    }
-});
+        });
 
-seedCallbacks.forEach(function(callback) {
-    callback();
-});
-seedCallbacks = [];
+        seedCallbacks.forEach(function(callback) {
+            callback();
+        });
+        seedCallbacks = [];
     }, "sage-seed");
 });
 
@@ -5955,36 +6297,36 @@ function ensureShowMeAnotherButton() {
     var button = $("#show-me-another-button");
 
     if (button.length > 0) {
-return button;
+        return button;
     }
 
     button = $('<button/>', {
-type: 'button',
-id: 'show-me-another-button',
-'class': 'xmanother',
-role: 'button',
-style: 'display: none;',
-title: 'Generate another version of this page',
-'aria-label': 'Generate another version of this page'
+        type: 'button',
+        id: 'show-me-another-button',
+        'class': 'xmanother',
+        role: 'button',
+        style: 'display: none;',
+        title: 'Generate another version of this page',
+        'aria-label': 'Generate another version of this page'
     });
 
     button.append($('<i/>', {
-'class': 'fa fa-repeat',
-'aria-hidden': 'true'
+        'class': 'fa fa-repeat',
+        'aria-hidden': 'true'
     }));
 
     button.append($('<span/>', {
-'class': 'xronos-another-label xmhidden-small hidden-md-down'
+        'class': 'xronos-another-label xmhidden-small hidden-md-down'
     }).html('&nbsp;Another'));
 
     if ($(".xmdownload").length > 0) {
-	$(".xmdownload").first().before(button);
+        $(".xmdownload").first().before(button);
     } else if ($("#math-edit-button").length > 0) {
-	$("#math-edit-button").after(button);
+        $("#math-edit-button").after(button);
     } else if ($(".xmupdate").length > 0) {
-	$(".xmupdate").first().before(button);
+        $(".xmupdate").first().before(button);
     } else {
-	$("body").prepend(button);
+        $("body").prepend(button);
     }
 
     return button;
@@ -5994,62 +6336,52 @@ $(function() {
     ensureShowMeAnotherButton();
 
     $(document)
-.off("click.xronosAnother", "#show-me-another-button")
-.on("click.xronosAnother", "#show-me-another-button", function() {
-    var button =
-        $(this);
+        .off("click.xronosAnother", "#show-me-another-button")
+        .on("click.xronosAnother", "#show-me-another-button", function() {
+            var button =
+                $(this);
 
-    if (
-        canonicalPageSageAnotherBusy ||
-        button.data(
-            canonicalPageSageAnotherClaimDataKey
-        ) === true
-    ) {
-        canonicalPageSageIgnoredAnotherClicks += 1;
-        return;
-    }
+            if (
+                canonicalPageSageAnotherBusy ||
+                button.data(
+                    canonicalPageSageAnotherClaimDataKey
+                ) === true
+            ) {
+                canonicalPageSageIgnoredAnotherClicks += 1;
+                return;
+            }
 
-    /*
-     * Claim the UI action synchronously. Two native click events can already
-     * be queued before the first handler disables the button.
-     */
-    button.data(
-        canonicalPageSageAnotherClaimDataKey,
-        true
-    );
+            button.data(
+                canonicalPageSageAnotherClaimDataKey,
+                true
+            );
 
-    button.prop(
-        "disabled",
-        true
-    );
+            button.prop(
+                "disabled",
+                true
+            );
 
-    try {
-        xronosShowMeAnotherSage();
-    } catch (err) {
-        button.removeData(
-            canonicalPageSageAnotherClaimDataKey
-        );
+            try {
+                xronosShowMeAnotherSage();
+            } catch (err) {
+                button.removeData(
+                    canonicalPageSageAnotherClaimDataKey
+                );
 
-        button.prop(
-            "disabled",
-            false
-        );
+                button.prop(
+                    "disabled",
+                    false
+                );
 
-        throw err;
-    }
-});
+                throw err;
+            }
+        });
 });
 
 function revealShowMeAnotherForAuthoredSage() {
     var foundRandomSage = false;
 
     $('script[type="text/sagemath"]').each(function() {
-        /*
-         * Preserve the historical authored-content heuristic that exposes
-         * Another whenever a sagesilent block contains "rand". Canonical
-         * execution itself uses the immutable page manifest and does not
-         * depend on this scan.
-         */
         if ($(this).text().match('rand')) {
             foundRandomSage = true;
             return false;
@@ -6085,7 +6417,6 @@ function parseSageCellError(err) {
         try {
             return JSON.parse(err.responseText);
         } catch (e) {
-            // Fall through to the outer error object below.
         }
     }
 
@@ -6385,11 +6716,11 @@ function postSageRaw(requestCode) {
 
 function responseToResult(response) {
     if (response.execute_result !== undefined) {
-return response.execute_result;
+        return response.execute_result;
     }
 
     if (response.stdout !== undefined) {
-return response.stdout;
+        return response.stdout;
     }
 
     return "";
@@ -6397,25 +6728,25 @@ return response.stdout;
 
 function restoreCompletedAnswerMathJax() {
     $('script[type^="math/tex"][data-initial]').each(function() {
-	var scriptElement = $(this);
-	var initialTex = scriptElement.attr('data-initial');
-	var currentTex = scriptElement.text();
+        var scriptElement = $(this);
+        var initialTex = scriptElement.attr('data-initial');
+        var currentTex = scriptElement.text();
 
-	if (!initialTex || initialTex.indexOf('\\answer') < 0) {
-	    return;
-	}
+        if (!initialTex || initialTex.indexOf('\\answer') < 0) {
+            return;
+        }
 
-	if (currentTex === initialTex) {
-	    return;
-	}
+        if (currentTex === initialTex) {
+            return;
+        }
 
-	var jax = MathJax.Hub.getAllJax(scriptElement.attr('id'))[0];
+        var jax = MathJax.Hub.getAllJax(scriptElement.attr('id'))[0];
 
-	if (jax) {
-	    MathJax.Hub.Queue(["Text", jax, initialTex]);
-	} else {
-	    scriptElement.text(initialTex);
-	}
+        if (jax) {
+            MathJax.Hub.Queue(["Text", jax, initialTex]);
+        } else {
+            scriptElement.text(initialTex);
+        }
     });
 }
 
@@ -6444,32 +6775,24 @@ function xronosShowMeAnotherSage() {
     seed = undefined;
 
     if (TinCan && TinCan.generatedAnotherVersion) {
-	TinCan.generatedAnotherVersion($("main.activity").first(), oldSeed, newSeed);
+        TinCan.generatedAnotherVersion($("main.activity").first(), oldSeed, newSeed);
     }
 
     if (typeof database !== "undefined" && database.resetWork) {
-	database.resetWork({
-	    preserve: {
-		seed: {
-		    seed: newSeed
-		}
-	    }
-	});
+        database.resetWork({
+            preserve: {
+                seed: {
+                    seed: newSeed
+                }
+            }
+        });
     } else {
-	$("#seed").persistentData('seed', newSeed);
+        $("#seed").persistentData('seed', newSeed);
     }
-
-    /*
-     * Completed-answer MathJax restoration now occurs inside the observed
-     * seed-change transaction, after the canonical generation request starts
-     * and before the complete page reprocess is queued.
-     */
 
     return $("#seed").persistentData('seed');
 }
 
-// Temporary/debug hook. This lets us test the production "Another" behavior
-// even if the test layout is missing or hiding the button.
 window.xronosShowMeAnotherSage = xronosShowMeAnotherSage;
 
 $(function() {

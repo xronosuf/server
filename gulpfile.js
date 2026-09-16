@@ -22,6 +22,7 @@ var staticDirectoryJavascripts = './public/javascripts';
 
 // Source and target JS files for Browserify
 var jsMainFile                = './public/javascripts/main.js';
+var jsSagePlotFile            = './public/javascripts/sageplot-entry.js';
 var jsBundleFile              = 'main.min.js';
 var jsServiceWorkerFile       = './public/javascripts/sw.js';
 var jsServiceWorkerBundleFile = 'sw.min.js';
@@ -35,8 +36,13 @@ var guppyFontTarget   = './public/stylesheets/fonts';
 
 ////////////////////////////////////////////////////////////////
 // Browserify bundler
+//
+// main.js keeps its historical module-load ordering.  The second entry runs
+// immediately after main.js has registered its document-ready startup callback
+// and patches the shared sagemath module before that callback captures the
+// immutable pre-MathJax manifest.
 var options = {
-    entries: [jsMainFile],
+    entries: [jsMainFile, jsSagePlotFile],
     transform: [
 	[aliasify],
 	[babelify, {

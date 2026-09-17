@@ -1,0 +1,67 @@
+.instructor-settings-table {
+  th,
+  td {
+    vertical-align: middle;
+  }
+}
+
+.instructor-settings-help {
+  cursor: help;
+  opacity: 0.7;
+}
+
+.instructor-settings-help:focus {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.instructor-setting-switch {
+  display: inline-flex;
+  border: 1px solid #ccc;
+}
+
+.instructor-setting-choice {
+  min-width: 4.5rem;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.instructor-setting-choice[aria-pressed="true"][data-setting-value="due-date"] {
+  background: #0275d8;
+  color: #fff;
+}
+
+.instructor-setting-choice[aria-pressed="true"][data-setting-value="late-policy"] {
+  background: #f0ad4e;
+  color: #212529;
+}
+
+.instructor-setting-choice:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.instructor-setting-unavailable {
+  display: inline-block;
+  min-width: 9rem;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid #ccc;
+  background: #e9ecef;
+  color: #6c757d;
+  cursor: not-allowed;
+}
+
+.instructor-settings-save-status {
+  min-height: 1.5rem;
+  margin-top: 0.75rem;
+  font-weight: 600;
+}
+
+.instructor-settings-save-status.is-error {
+  color: #a94442;
+}
+
+.instructor-settings-save-status.is-saved {
+  color: #3c763d;
+}

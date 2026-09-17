@@ -144,8 +144,52 @@ function queueGradeSyncCutoffSave(value) {
     }, 1000);
 }
 
+function forceHideInstructorSettingsModal() {
+    var modal = $('#instructorSettingsModal');
+
+    modal
+        .removeClass('show in')
+        .hide()
+        .attr('aria-hidden', 'true')
+        .removeAttr('aria-modal');
+
+    $('.modal-backdrop').remove();
+    $('body')
+        .removeClass('modal-open')
+        .css('padding-right', '');
+
+    /*
+     * If Bootstrap resumed from a suspended tab with stale internal modal
+     * state, discard that instance so the next data-toggle open creates a
+     * fresh one.
+     */
+    modal.removeData('bs.modal');
+}
+
+function dismissInstructorSettingsModal() {
+    var modal = $('#instructorSettingsModal');
+
+    try {
+        modal.modal('hide');
+    } catch (err) {
+        forceHideInstructorSettingsModal();
+        return;
+    }
+
+    window.setTimeout(function() {
+        if (
+            modal.is(':visible') ||
+            modal.hasClass('show') ||
+            modal.hasClass('in')
+        ) {
+            forceHideInstructorSettingsModal();
+        }
+    }, 150);
+}
+
 function installInstructorSettingsUi(user) {
-    if (!$('#instructorSettingsModal').length) return;
+    var modal = $('#instructorSettingsModal');
+    if (!modal.length) return;
 
     $('.instructor-settings-help').tooltip({trigger: 'hover focus'});
 
@@ -157,6 +201,22 @@ function installInstructorSettingsUi(user) {
             }
             showInstructorSettingsLoadError();
         });
+    });
+
+    modal.on('click.instructorSettingsDismiss', '.instructor-settings-dismiss', function(event) {
+        event.preventDefault();
+        dismissInstructorSettingsModal();
+    });
+
+    modal.on('click.instructorSettingsBackdrop', function(event) {
+        if (event.target === this) {
+            dismissInstructorSettingsModal();
+        }
+    });
+
+    modal.on('hidden.bs.modal', function() {
+        $('.modal-backdrop').remove();
+        $('body').removeClass('modal-open').css('padding-right', '');
     });
 
     $('#grade-sync-cutoff-switch').on('click', '.instructor-setting-choice', function(event) {

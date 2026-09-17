@@ -10,7 +10,8 @@ function bridge(overrides) {
         contextId: 'course-123',
         resourceLinkId: 'assignment-456',
         repository: 'mac1140',
-        path: 'xourse'
+        path: 'xourse',
+        roles: ['urn:lti:role:ims/lis/Instructor']
     }, overrides || {});
 }
 
@@ -59,6 +60,36 @@ describe('instructor settings route authorization policy', function() {
                 bridge({resourceLinkId: null})
             ),
             true
+        );
+    });
+
+    it('accepts a current Instructor role', function() {
+        assert.strictEqual(
+            routes.bridgeHasCurrentInstructionalRole(
+                bridge({roles: ['urn:lti:role:ims/lis/Instructor']})
+            ),
+            true
+        );
+    });
+
+    it('accepts a current TeachingAssistant role', function() {
+        assert.strictEqual(
+            routes.bridgeHasCurrentInstructionalRole(
+                bridge({roles: ['urn:lti:role:ims/lis/TeachingAssistant']})
+            ),
+            true
+        );
+    });
+
+    it('rejects a learner even if a historical instructionalStaff flag is true', function() {
+        assert.strictEqual(
+            routes.bridgeHasCurrentInstructionalRole(
+                bridge({
+                    instructionalStaff: true,
+                    roles: ['urn:lti:role:ims/lis/Learner']
+                })
+            ),
+            false
         );
     });
 });

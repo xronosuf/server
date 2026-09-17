@@ -23,6 +23,17 @@ function referenceMatchesBridge(reference, bridge) {
     );
 }
 
+function bridgeHasCurrentInstructionalRole(bridge) {
+    return !!(
+        bridge &&
+        Array.isArray(bridge.roles) &&
+        bridge.roles.some(function(role) {
+            role = text(role) || '';
+            return /Instructor|TeachingAssistant/.test(role);
+        })
+    );
+}
+
 function loadAuthorizedBridge(req) {
     if (!req.user || !req.user._id) {
         return Promise.reject({status: 401, error: 'authentication-required'});
@@ -50,7 +61,12 @@ function loadAuthorizedBridge(req) {
         if (!instructorSettings.bridgeHasAuthoritativeLtiContext(bridge)) {
             throw {status: 403, error: 'authoritative-lti-context-required'};
         }
-        if (bridge.instructionalStaff !== true) {
+        /*
+         * roles is refreshed from the current LTI launch.  Do not rely on the
+         * historical instructionalStaff boolean alone, because an LMS role may
+         * have changed since this bridge was first created.
+         */
+        if (!bridgeHasCurrentInstructionalRole(bridge)) {
             throw {status: 403, error: 'instructional-staff-required'};
         }
         return bridge;
@@ -126,5 +142,6 @@ exports.updateCurrent = function(req, res, next) {
         });
 };
 
+exports.bridgeHasCurrentInstructionalRole = bridgeHasCurrentInstructionalRole;
 exports.loadAuthorizedBridge = loadAuthorizedBridge;
 exports.referenceMatchesBridge = referenceMatchesBridge;

@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "start": "node app.js",
-    "test": "mocha --recursive",
+    "test": "NODE_ENV=test mocha --require ./test-support/redis-test-guard.js --recursive --exit",
     "build": "gulp",
     "build:js": "gulp js",
     "build:css": "gulp css"

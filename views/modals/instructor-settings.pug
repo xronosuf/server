@@ -2,8 +2,8 @@
   .modal-dialog.modal-lg(role="document")
     .modal-content
       .modal-header
-        h5.modal-title#instructorSettingsModalTitle Canvas Integration Settings
-        button.close(type="button",data-dismiss="modal",aria-label="Close")
+        h5.modal-title#instructorSettingsModalTitle Instructor Settings
+        button.close(type="button",data-dismiss="modal",aria-label="Close",onclick="$('#instructorSettingsModal').modal('hide');")
           span(aria-hidden="true") &times;
       .modal-body
         div#instructor-settings-loading
@@ -73,4 +73,4 @@
           )
           p.small.text-muted#instructor-settings-fallback-note
       .modal-footer
-        button.btn.btn-secondary(type="button",data-dismiss="modal") Close
+        button.btn.btn-secondary(type="button",data-dismiss="modal",onclick="$('#instructorSettingsModal').modal('hide');") Close

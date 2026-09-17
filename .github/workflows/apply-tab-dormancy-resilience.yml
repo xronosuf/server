@@ -1,0 +1,66 @@
+name: Apply tab dormancy resilience patch
+
+on:
+  push:
+    branches:
+      - instructor-settings
+    paths:
+      - .github/dormancy-patch.trigger
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: instructor-settings
+          fetch-depth: 0
+
+      - name: Set up Node 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Apply source patch
+        run: node scripts/modernization/apply-tab-dormancy-resilience.js
+
+      - name: Check patch formatting
+        run: git diff --check
+
+      - name: Run dormancy and related regression tests
+        run: >-
+          npx mocha
+          test/visibility-deadline.js
+          test/tab-dormancy-policy.js
+          test/tab-dormancy-browser-contract.js
+          test/page-runtime-support-policy.js
+          test/page-runtime-support-ui.js
+          test/grade-sync-browser-contract.js
+          test/grade-sync-presentation.js
+          --exit
+
+      - name: Build browser assets
+        run: npm run build
+
+      - name: Commit patched source
+        run: |
+          if git diff --quiet; then
+            echo "No source changes were needed."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/javascripts/page-runtime.js \
+                  public/javascripts/sagemath.js \
+                  public/javascripts/gradebook.js
+          git commit -m "Make runtime checks resilient to dormant tabs"
+          git push origin HEAD:instructor-settings

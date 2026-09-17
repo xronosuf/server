@@ -17,6 +17,7 @@ function referenceMatchesBridge(reference, bridge) {
         text(reference.bridgeId) === text(bridge._id) &&
         text(reference.toolConsumerInstanceGuid) === text(bridge.toolConsumerInstanceGuid) &&
         text(reference.contextId) === text(bridge.contextId) &&
+        text(reference.resourceLinkId) === text(bridge.resourceLinkId) &&
         text(reference.repository) === text(bridge.repository) &&
         text(reference.path) === text(bridge.path)
     );

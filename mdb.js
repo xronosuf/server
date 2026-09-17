@@ -87,6 +87,15 @@ exports.initialize = function initialize(callback) {
         untilDate: Date,
         pointsPossible: Number,
 
+        /*
+         * Materialized shell-level instructor policy.  The authoritative
+         * configuration lives in instructorSettings; these fields keep the
+         * gradebook worker/status helpers synchronous and are refreshed on
+         * validated LTI launches and instructor setting changes.
+         */
+        gradeSyncCutoff: String,
+        fallbackGradeSyncEndAt: Date,
+
         resultScore: Number,
         resultTotalScore: Number,
         submittedScore: Boolean,

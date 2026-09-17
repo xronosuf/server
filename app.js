@@ -93,6 +93,16 @@ app.set('trust proxy',1)
 // Common mongodb initializer for the app server and the activity service
 mdb.initialize(function (err) {
     
+    // Store session data in MongoDB so multiple web servers can share
+    // authenticated sessions.
+    //
+    // connect-mongo <= 0.x is a factory that takes express-session and
+    // accepts an existing Mongoose connection. Modern connect-mongo exposes
+    // MongoStore.create() and no longer accepts mongooseConnection.
+    //
+    // Keep both forms temporarily so the legacy Node 12 comparison container
+    // can run against its existing node_modules while Node 24 moves to the
+    // maintained session-store package.
     function createMongoSessionStore() {
         var connectMongo = require('connect-mongo');
 
@@ -113,6 +123,10 @@ mdb.initialize(function (err) {
             });
         }
 
+        /*
+         * Some intermediate connect-mongo releases expose create()
+         * directly. Keep support for that shape during modernization.
+         */
         if (
             connectMongo &&
             typeof connectMongo.create === 'function'
@@ -159,6 +173,7 @@ mdb.initialize(function (err) {
 
     console.log( "Session setup." );
 
+    // We may have a default LTI key
     if (config.ltiAuth) {
 	mdb.KeyAndSecret.updateOne(
 	    {ltiKey: config.lti.key},
@@ -167,6 +182,7 @@ mdb.initialize(function (err) {
 	)
 	    .exec()
 	    .catch(function() {
+	        // Preserve legacy behavior: startup ignored this error.
 	    });
     }
     
@@ -178,14 +194,15 @@ mdb.initialize(function (err) {
 		    colorize: true
 		})	    
 	    ],
-	    expressFormat: true,
-	    colorize: true,
+	    expressFormat: true, // Use the default Express/morgan request formatting. Enabling this will override any msg if true. Will only output colors with colorize set to true
+	    colorize: true, // Color the text and status code, using the Express/morgan color palette (text: gray, status: default green, 3XX cyan, 4XX yellow, 5XX red).
 	}));
     }
     
 passport.use('lms', login.lmsStrategy(config.root));    
 passport.use(login.githubStrategy(config.root));
 
+// Only store the user _id in the session
 passport.serializeUser(function(user, done) {
    done(null, user._id);
 });
@@ -219,6 +236,7 @@ passport.deserializeUser(function(id, done) {
 
     function private(req, res, next){
         if( config.privateUser !== "none" ) {
+            // console.log("PRIVATE_USER = " + config.privateUser + ".");
             basicAuth({
                 users: { [config.privateUser]: config.privateCred },
                 challenge: true
@@ -245,10 +263,13 @@ passport.deserializeUser(function(id, done) {
             next()
     }	
     
+    ////////////////////////////////////////////////////////////////
+    // API endpoints for the xake tool
+
     var limiter = new rateLimit({
-	windowMs: 15*60*1000,
-	max: config.rateLimit,
-	delayMs: 0
+	windowMs: 15*60*1000, // 15 minutes 
+	max: config.rateLimit, // limit each IP to 100 requests per windowMs 
+	delayMs: 0 // disable delaying - full speed until the max limit is reached 
     });
 
     app.use( '/gpg/', limiter );
@@ -269,6 +290,9 @@ passport.deserializeUser(function(id, done) {
     app.get( '/:repository.git/log.sz', repositories.normalizeName, tincan.get );
     
     app.use( '/:repository.git', repositories.normalizeName, repositories.git );
+
+    ////////////////////////////////////////////////////////////////
+    // Static content    
 
     app.get('/version', function(req, res) {
 	res.header('Cache-Control', 'private, no-cache, no-store, must-revalidate');
@@ -379,6 +403,9 @@ return false;
 }
 
 function sagecellProxyShouldFallback(err, response) {
+    // Treat transport failure, timeout, throttling and server/gateway failures
+    // as infrastructure failures. Do not fallback on normal Sage execution
+    // errors, which should be returned as HTTP 200 with success:false.
     return sageReliabilityPolicy
         .sagecellProxyShouldFallback(
             err,
@@ -550,6 +577,19 @@ function sagecellProxyTryFallback(
 }
 
 
+/*
+ * Xronos SageCell page authorization.
+ *
+ * Raw SageCell is an internal compute service. Browser requests must go
+ * through /sagecell/service and include a short-lived token issued when Xronos
+ * rendered the activity page. This prevents unauthenticated direct use of the
+ * Xronos SageCell proxy as a general public code-execution endpoint.
+ *
+ * For multi-process or multi-server deployments, set SAGECELL_PAGE_AUTH_SECRET
+ * to the same long random value everywhere. If omitted, this process uses an
+ * ephemeral startup secret, which is fine for a single test server but makes
+ * page tokens invalid after restart.
+ */
 var xronosSagecellPageAuthRequired = (process.env.SAGECELL_REQUIRE_PAGE_AUTH !== "false");
 var xronosSagecellPageAuthMaxAgeMs = parseInt(process.env.SAGECELL_PAGE_AUTH_MAX_AGE_MS || "43200000", 10);
 var xronosSagecellPageAuthRefreshGraceMs = parseInt(process.env.SAGECELL_PAGE_AUTH_REFRESH_GRACE_MS || "604800000", 10);
@@ -738,10 +778,21 @@ app.use(function(req, res, next) {
 
 
 app.post('/sagecell/auth', function(req, res) {
-    var supportTrace = normalizeXronosSupportTrace(req.get("X-Xronos-Support-Trace"));
+    var supportTrace =
+        normalizeXronosSupportTrace(
+            req.get(
+                "X-Xronos-Support-Trace"
+            )
+        );
+
     var authCheck = xronosVerifySagecellPageAuth(req, { allowExpired: true });
 
-    console.log("XRONOS SUPPORT TRACE", supportTrace || "-", "sage-auth", req.path);
+    console.log(
+        "XRONOS SUPPORT TRACE",
+        supportTrace || "-",
+        "sage-auth",
+        req.path
+    );
 
     if (!authCheck.ok) {
         console.error("Rejected SageCell page-auth refresh:", authCheck.reason);
@@ -759,11 +810,23 @@ app.post('/sagecell/auth', function(req, res) {
 
 
 app.post('/sagecell/service', function(req, res) {
-    var supportTrace = normalizeXronosSupportTrace(req.get("X-Xronos-Support-Trace"));
+    var supportTrace =
+        normalizeXronosSupportTrace(
+            req.get(
+                "X-Xronos-Support-Trace"
+            )
+        );
+
     var authCheck = xronosVerifySagecellPageAuth(req);
     var code = (req.body && req.body.code) ? req.body.code : "";
 
-    console.log("XRONOS SUPPORT TRACE", supportTrace || "-", "sage-service", "codeLength", code.length);
+    console.log(
+        "XRONOS SUPPORT TRACE",
+        supportTrace || "-",
+        "sage-service",
+        "codeLength",
+        code.length
+    );
     var sagecellForwardBody = xronosSagecellForwardBody(req.body);
     var cacheKey = crypto.createHash('sha256').update(code).digest('hex');
 
@@ -784,6 +847,8 @@ app.post('/sagecell/service', function(req, res) {
     var localInCooldown = now < sagecellLocalUnhealthyUntil;
     var waitingKey;
 
+    // In normal/fallback-enabled mode, local cache is canonical.  Even during
+    // a local outage, a known-good local cached response is safe to return.
     if (mode !== "remote-only" && localCacheEntry) {
 sagecellProxySendCached(res, localCacheEntry, "local");
 return;
@@ -810,21 +875,51 @@ waitingKey = "auto:" + cacheKey;
     }
 
     if (sagecellProxyInFlight[waitingKey]) {
-sagecellProxyLog("SageCell proxy cache WAIT", "trace", supportTrace || "-", waitingKey, "len", code.length);
+sagecellProxyLog(
+    "SageCell proxy cache WAIT",
+    "trace",
+    supportTrace || "-",
+    waitingKey,
+    "len",
+    code.length
+);
 sagecellProxyInFlight[waitingKey].push(res);
 return;
     }
 
-    sagecellProxyLog("SageCell proxy cache MISS", "trace", supportTrace || "-", waitingKey, "len", code.length, "mode", mode);
+    sagecellProxyLog(
+    "SageCell proxy cache MISS",
+    "trace",
+    supportTrace || "-",
+    waitingKey,
+    "len",
+    code.length,
+    "mode",
+    mode
+);
     sagecellProxyInFlight[waitingKey] = [res];
 
     if (mode === "remote-only") {
-sagecellProxyTryFallback(waitingKey, cacheKey, code.length, sagecellForwardBody, supportTrace, "remote-only mode");
+sagecellProxyTryFallback(
+    waitingKey,
+    cacheKey,
+    code.length,
+    sagecellForwardBody,
+    supportTrace,
+    "remote-only mode"
+);
 return;
     }
 
     if (mode === "local-with-fallback" && localInCooldown) {
-sagecellProxyTryFallback(waitingKey, cacheKey, code.length, sagecellForwardBody, supportTrace, "local cooldown");
+sagecellProxyTryFallback(
+    waitingKey,
+    cacheKey,
+    code.length,
+    sagecellForwardBody,
+    supportTrace,
+    "local cooldown"
+);
 return;
     }
 
@@ -852,7 +947,10 @@ err || (response && response.statusCode)
         code.length,
         sagecellForwardBody,
         supportTrace,
-        err ? err.message : "HTTP " + (response && response.statusCode)
+        err
+            ? err.message
+            : "HTTP " +
+                (response && response.statusCode)
     );
     return;
 }
@@ -875,6 +973,8 @@ sagecellProxyFinish(waitingKey, cacheKey, code.length, "local", statusCode, cont
 });
 
 app.get('/sw.js', function(req, res) {
+        // This endpoint is now a retirement worker for historical
+        // root-scoped Xronos service-worker registrations.
         res.set(
             'Cache-Control',
             'private, no-cache, no-store, must-revalidate'
@@ -908,6 +1008,10 @@ app.get('/sw.js', function(req, res) {
 
     var xronosPageRepair = require('./lib/page-repair');
 
+    // A one-shot Repair this page request deliberately reaches the
+    // dynamic page after static routing has had a chance to serve assets.
+    // The response clears only browser cache data, never cookies/storage,
+    // and gives rendered versioned assets a unique recovery URL.
     app.use(function(req, res, next) {
         if (req.method === 'GET') {
             xronosPageRepair.applyRecoveryResponse(
@@ -919,6 +1023,9 @@ app.get('/sw.js', function(req, res) {
         next();
     });
 
+    // Static requests have already been handled above. Dynamic GET
+    // responses should revalidate so an ordinary navigation cannot remain
+    // on stale HTML from a previous frontend generation.
     app.use(function(req, res, next) {
         if (
             req.method === 'GET' &&
@@ -938,10 +1045,22 @@ app.get('/sw.js', function(req, res) {
     
     app.use(guests.middleware);
     
-    app.get('/', page.defaultHomePage);
+    ////////////////////////////////////////////////////////////////
+    // Landing page and associated routes
     
+    app.get('/',
+        page.defaultHomePage
+    );
+    
+    ////////////////////////////////////////////////////////////////
+    // TinCan (aka Experience) API
+
     app.post('/xAPI/statements', function(req,res) { res.status(200).send('ignoring statements without a repository.'); } );
+    
     app.post('/:repository/xAPI/statements', repositories.normalizeName, tincan.postStatements);    
+    
+    ////////////////////////////////////////////////////////////////
+    // User identity
     
     app.get('/users/me', user.getCurrent);
     app.get('/users/:id', user.get);
@@ -949,13 +1068,14 @@ app.get('/sw.js', function(req, res) {
     app.post('/users/:id', user.update);
 
     app.get('/users/', user.index);
-    app.get('/users/page/:page', user.index);
+    app.get('/users/page/:page', user.index); // pagination in Mongo is fairly slow
     
     app.delete('/users/:id/google', function( req, res, next ) { user.deleteLinkedAccount( req, res, next, 'google' ); } );
     app.delete('/users/:id/github', function( req, res, next ) { user.deleteLinkedAccount( req, res, next, 'github' ); } );
     app.delete('/users/:id/twitter', function( req, res, next ) { user.deleteLinkedAccount( req, res, next, 'twitter' ); } );
 
     app.put('/users/:id/secret', function( req, res ) { user.putSecret( req, res ); } );
+
     app.delete('/users/:id/bridges/:bridge', function( req, res, next ) { user.deleteBridge( req, res, next ); } );    
 
     app.get('/instructor-settings/current', instructorSettingsRoutes.getCurrent);
@@ -964,6 +1084,8 @@ app.get('/sw.js', function(req, res) {
     app.get('/progress-audit/redeem', progressAudit.redeemForm );
     app.post('/progress-audit/redeem', progressAudit.redeemToken );
 
+    ////////////////////////////////////////////////////////////////
+    // BADBAD: some permanent redirects for OSU courses from old URLs
     app.get( '/course', function( req, res ) { res.redirect('/mooculus'); });
     app.get( '/courses', function( req, res ) { res.redirect('/mooculus'); });
     app.get( '/courses/', function( req, res ) { res.redirect('/mooculus'); });
@@ -973,7 +1095,7 @@ app.get('/sw.js', function(req, res) {
 	res.status(301).send();
     });
     app.get( '/course/mooculus/:path(*)', function( req, res ) { 
-	res.set( 'location', '/' + req.params.path );
+	res.set( 'location', '/mooculus/' + req.params.path );
 	res.status(301).send();
     });
     app.get( '/course/:path(*)', function( req, res ) { 
@@ -984,6 +1106,7 @@ app.get('/sw.js', function(req, res) {
 	res.set( 'location', '/' + req.params.path );
 	res.status(301).send();
     });    
+    // BADBAD: hard redirect zomercursus naar blik-op-wiskunde for sommige xourses 
     app.get( '/zomercursus/zomercursusWisFys', function( req, res ) { res.redirect(config.toValidPath('/blik-op-wiskunde/zomercursusWisFys')); });
     app.get( '/zomercursus/handboekB', function( req, res ) { res.redirect(config.toValidPath('/blik-op-wiskunde/handboekB')); });
     app.get( '/zomercursus/handboekB/:path(*)', function( req, res ) { 
@@ -995,12 +1118,20 @@ app.get('/sw.js', function(req, res) {
         res.status(301).send();
         });
     
+    
     app.get( '/certificate/:certificate/:signature', certificate.view );
 
+    
     app.get( '/statistics/:repository/:path(*)/:activityHash',
+	     // include some sort of authorization here -- being an LTI "instuctor" in any xourse in the repo suffices
 	     repositories.normalizeName,
 	     statistics.get );
     
+
+    ////////////////////////////////////////////////////////////////
+    // Logins
+
+    // GitHub login.
     if (config.githubAuth) {
 	app.get('/auth/github', passport.authenticate('oauth2'));
 	app.get('/auth/github/callback',
@@ -1010,6 +1141,7 @@ app.get('/sw.js', function(req, res) {
 						  failureFlash: true}));
     }
 
+    // LTI login
     if (config.ltiAuth) {
         app.post('/lms',
                  passport.authenticate('lms', {
@@ -1077,6 +1209,11 @@ app.get('/sw.js', function(req, res) {
         }
     });
 
+    // Preserve strict routing for APIs and resources, but make unmatched
+    // browser GET/HEAD URLs canonical before they reach activity rendering.
+    // This fixes the long-standing user-facing 404 caused by a trailing slash
+    // while preserving query parameters and leaving non-idempotent requests
+    // untouched.
     app.use(function(req, res, next) {
         var originalUrl;
         var queryIndex;
@@ -1090,23 +1227,35 @@ app.get('/sw.js', function(req, res) {
 
         originalUrl = req.originalUrl || req.url || '';
         queryIndex = originalUrl.indexOf('?');
-        pathname = queryIndex === -1 ? originalUrl : originalUrl.slice(0, queryIndex);
-        query = queryIndex === -1 ? '' : originalUrl.slice(queryIndex);
+        pathname = queryIndex === -1
+            ? originalUrl
+            : originalUrl.slice(0, queryIndex);
+        query = queryIndex === -1
+            ? ''
+            : originalUrl.slice(queryIndex);
 
         if (pathname.length > 1 && /\/$/.test(pathname)) {
-            res.redirect(301, pathname.replace(/\/+$/, '') + query);
+            res.redirect(
+                301,
+                pathname.replace(/\/+$/, '') + query
+            );
             return;
         }
 
         next();
     });
     
+    ////////////////////////////////////////////////////////////////
+    // Activity page rendering
+
     app.get( '/:repository/:path(*)/certificate',
 	     redirectUnnormalizeRepositoryName,
 	     page.activitiesFromRecentCommitsOnMaster,
 	     page.chooseMostRecentBlob,
 	     page.parseActivity,
 	     certificate.xourse );
+
+    // BADBAD: i also need to serve pngs and pdfs and such from the repo here
 
     app.get( '/:repository/lti-setup',
              redirectUnnormalizeRepositoryName,
@@ -1123,6 +1272,7 @@ app.get('/sw.js', function(req, res) {
 	     page.ltiConfig );    
     
     var serveContent = function( regexp, callback ) {
+	// Just ignore masquerades for non-page resources
 	app.get( '/users/:masqueradingUserId/:repository/:path(' + regexp + ')',
 		 repositories.normalizeName,	
 		 page.activitiesFromRecentCommitsOnMaster,		 
@@ -1134,6 +1284,9 @@ app.get('/sw.js', function(req, res) {
 		 callback );
     };
 
+    // These patterns become custom route regexes. Require a real literal dot
+    // so an extensionless activity ending in "-svg", "-pdf", etc. cannot be
+    // mistaken for a repository asset.
     serveContent( '.*[.]svg', page.serve('image/svg+xml') );
     serveContent( '.*[.]png', page.serve('image/png') );
     serveContent( '.*[.]pdf', page.serve('application/pdf') );
@@ -1155,16 +1308,23 @@ app.get('/sw.js', function(req, res) {
 	};
     }    
         
+    // SVG files will only be rendered if they are sent with content type image/svg+xml
+    
     app.locals.moment = require('moment');
     app.locals._ = require('underscore');
     app.locals.config = config;
     app.locals.version = app.version;
 
+    // Start HTTP server for fully configured express App.
     var server = http.createServer(app);
 
     var wss = new WebSocketServer({server: server});
 
+    ////////////////////////////////////////////////////////////////
+    // State storage    
+    
     var state = require('./routes/state.js');
+    
     state.wss = wss;
     
     wss.on("connection", function (ws, req) {
@@ -1175,7 +1335,7 @@ app.get('/sw.js', function(req, res) {
 	    }
 	    
 	    theSession(req, {}, function(err, session) {
-		if(err) {
+		if (err) {
 		    winston.error(err);
 		    return;		    
 		} else {
@@ -1203,6 +1363,7 @@ app.get('/sw.js', function(req, res) {
      repositories.normalizeName,
      progressAudit.createToken );
 
+    // Instructors should be based around a context instead?
     app.get( '/:repository/:path(*)/instructors',
 	     redirectUnnormalizeRepositoryName,
 	     page.activitiesFromRecentCommitsOnMaster,
@@ -1246,6 +1407,7 @@ app.get('/sw.js', function(req, res) {
         page.repositories)
 
     app.get( '/:repository',
+        //  private,
 	     redirectUnnormalizeRepositoryName,	     	     
 	     page.mostRecentMetadata,
          xourses.index );      
@@ -1256,11 +1418,17 @@ app.get('/sw.js', function(req, res) {
     });		    
 }    
 
+// If nothing else matches, it is a 404
 app.use(function(req, res, next){
     res.status(404).render('404', { status: 404, url: req.url });
 });
 
+////////////////////////////////////////////////////////////////
+// Present errors to the user
+
 if ('development' == app.get('env')) {
+    // Middleware for development only, since this will dump a
+	// stack trace
     console.log('Running development version ');
 	errorHandler.title = 'Ximera';
     app.use(errorHandler());

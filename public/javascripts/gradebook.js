@@ -4,10 +4,65 @@ var debugLog = require('./debug-log');
 var gradeSyncPresentation = require('./grade-sync-presentation');
 var gradeSyncSupportReport = require('./grade-sync-support-report');
 var gradeSyncRecoveryPolicy = require('./grade-sync-recovery-policy');
+var tabDormancyPolicy = require('./tab-dormancy-policy');
 
 var xronosLatestGradeSync = null;
 var xronosLatestGradeSyncDiagnostics = null;
 var xronosGradeSyncRecoveries = [];
+var xronosGradeSyncWasHidden = false;
+var xronosGradeSyncLastVisibleAt = null;
+
+function xronosDocumentHidden() {
+    return !!(
+        typeof document !== "undefined" &&
+        (
+            document.hidden === true ||
+            document.visibilityState === "hidden"
+        )
+    );
+}
+
+function xronosGradeSyncFailureIsDormancyAdjacent() {
+    return tabDormancyPolicy.shouldDeferFailure({
+        hidden: xronosDocumentHidden(),
+        lastVisibleAt: xronosGradeSyncLastVisibleAt,
+        now: Date.now()
+    });
+}
+
+function xronosScheduleGradeSyncRecheckAfterResume() {
+    var delay = tabDormancyPolicy.retryDelay({
+        hidden: xronosDocumentHidden(),
+        lastVisibleAt: xronosGradeSyncLastVisibleAt,
+        now: Date.now()
+    });
+
+    if (delay === null) return;
+
+    window.setTimeout(function() {
+        if ($("main").attr("data-xourse-url")) {
+            exports.update();
+        }
+    }, Math.max(250, delay));
+}
+
+if (
+    typeof document !== "undefined" &&
+    typeof document.addEventListener === "function"
+) {
+    document.addEventListener("visibilitychange", function() {
+        if (xronosDocumentHidden()) {
+            xronosGradeSyncWasHidden = true;
+            return;
+        }
+
+        if (!xronosGradeSyncWasHidden) return;
+
+        xronosGradeSyncWasHidden = false;
+        xronosGradeSyncLastVisibleAt = Date.now();
+        xronosScheduleGradeSyncRecheckAfterResume();
+    });
+}
 
 function xronosCurrentBrowserEnvironment() {
     var timezone = null;
@@ -639,6 +694,18 @@ exports.update = _.debounce( function() {
 		error: err,
 		exception: exception
 	    });
+            if (xronosGradeSyncFailureIsDormancyAdjacent()) {
+                debugLog.log(
+                    'Deferred grade-sync transport failure after tab dormancy; a fresh foreground check will decide status.'
+                );
+                $(".progress.completion-meter").attr(
+                    'title',
+                    'Rechecking grade sync after this tab resumes.'
+                );
+                xronosScheduleGradeSyncRecheckAfterResume();
+                return;
+            }
+
             xronosLatestGradeSyncDiagnostics = null;
 	    xronosUpdateGradeSyncStatus({state: 'error'});
 	    $(".progress.completion-meter").attr('title', 'Could not submit grade.' );

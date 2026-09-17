@@ -7,6 +7,9 @@ var supportSnapshotAdapter = require(
 var supportPolicy = require(
     "./page-runtime-support-policy"
 );
+var visibilityDeadline =
+    require("./visibility-deadline")
+        .create(window, document);
 
 /*
  * Passive page-runtime diagnostics.
@@ -657,7 +660,7 @@ function transition(collectionName, name, state, details) {
         readinessWatchdogs.initialState
             .timer !== null
     ) {
-        window.clearTimeout(
+        visibilityDeadline.clearTimeout(
             readinessWatchdogs.initialState
                 .timer
         );
@@ -690,7 +693,7 @@ function transition(collectionName, name, state, details) {
             initialMathJaxWatchdog.timer !==
                 null
         ) {
-            window.clearTimeout(
+            visibilityDeadline.clearTimeout(
                 initialMathJaxWatchdog.timer
             );
 
@@ -731,7 +734,7 @@ function transition(collectionName, name, state, details) {
             initialInlineSageWatchdog.timer !==
                 null
         ) {
-            window.clearTimeout(
+            visibilityDeadline.clearTimeout(
                 initialInlineSageWatchdog.timer
             );
 
@@ -775,7 +778,7 @@ function startInitialStateReadinessWatchdog() {
     }
 
     watchdog.timer =
-        window.setTimeout(
+        visibilityDeadline.setTimeout(
             function() {
                 var websocket =
                     runtime.services[
@@ -853,7 +856,7 @@ function startInitialMathJaxReadinessWatchdog() {
     }
 
     watchdog.timer =
-        window.setTimeout(
+        visibilityDeadline.setTimeout(
             function() {
                 var mathJaxService =
                     runtime.services.mathjax;
@@ -1001,7 +1004,7 @@ function startInitialInlineSageReadinessWatchdog() {
     }
 
     watchdog.timer =
-        window.setTimeout(
+        visibilityDeadline.setTimeout(
             function() {
                 var observed =
                     runtime.components[
@@ -1161,7 +1164,7 @@ function beginInitialInlineSageRetry(
     }
 
     if (watchdog.timer !== null) {
-        window.clearTimeout(
+        visibilityDeadline.clearTimeout(
             watchdog.timer
         );
         watchdog.timer = null;

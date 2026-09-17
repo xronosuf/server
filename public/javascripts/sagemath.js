@@ -4,6 +4,9 @@ var MathJax = require('mathjax');
 var database = require('./database');
 var TinCan = require('./tincan');
 var pageRuntime = require('./page-runtime');
+var sageVisibilityDeadline =
+    require('./visibility-deadline')
+        .create(window, document);
 var sageErrorPolicy = require('./sage-error-policy');
 var sageCanonicalReplayPolicy =
     require('./sage-canonical-replay-policy');
@@ -6619,7 +6622,22 @@ function refreshSageCellPageAuthorization() {
             },
             data: sageRequestAuthData(),
             dataType: "json",
-            timeout: 15000
+            timeout: 0,
+            beforeSend: function(jqXHR) {
+                var timeoutHandle =
+                    sageVisibilityDeadline.setTimeout(
+                        function() {
+                            jqXHR.abort("timeout");
+                        },
+                        15000
+                    );
+
+                jqXHR.always(function() {
+                    sageVisibilityDeadline.clearTimeout(
+                        timeoutHandle
+                    );
+                });
+            }
         }).done(function(response) {
             if (typeof response === "string") {
                 response = JSON.parse(response);

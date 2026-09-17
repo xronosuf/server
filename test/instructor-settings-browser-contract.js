@@ -15,7 +15,7 @@ describe('instructor settings browser contract', function() {
     var topbar = source('views/layouts/topbar/index.pug');
 
     it('uses the agreed modal and scope labels', function() {
-        assert(modal.indexOf('Canvas Integration Settings') >= 0);
+        assert(modal.indexOf('Instructor Settings') >= 0);
         assert(modal.indexOf('This Page') >= 0);
         assert(modal.indexOf('All Xronos Content') >= 0);
         assert(modal.indexOf('Stop grade sync at the due date') >= 0);
@@ -45,9 +45,17 @@ describe('instructor settings browser contract', function() {
     it('keeps the settings entry hidden until the authorized API probe succeeds', function() {
         assert(users.indexOf("$('#instructor-settings-link').show()") >= 0);
         assert(navbar.indexOf('#instructor-settings-link') >= 0);
+        assert(navbar.indexOf('Instructor Settings') >= 0);
         assert(navbar.indexOf('style="display: none;"') >= 0);
         assert(topbar.indexOf('#instructor-settings-link') >= 0);
+        assert(topbar.indexOf('Instructor Settings') >= 0);
         assert(topbar.indexOf('style="display: none;"') >= 0);
+    });
+
+    it('provides explicit modal dismissal as a fallback for legacy Bootstrap behavior', function() {
+        var dismiss = "onclick=\"$('#instructorSettingsModal').modal('hide');\"";
+        assert(modal.indexOf(dismiss) >= 0);
+        assert(modal.indexOf(dismiss) !== modal.lastIndexOf(dismiss));
     });
 
     it('explains that All Xronos Content is limited to the current LMS shell', function() {

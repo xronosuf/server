@@ -52,10 +52,14 @@ describe('instructor settings browser contract', function() {
         assert(topbar.indexOf('style="display: none;"') >= 0);
     });
 
-    it('provides explicit modal dismissal as a fallback for legacy Bootstrap behavior', function() {
-        var dismiss = "onclick=\"$('#instructorSettingsModal').modal('hide');\"";
-        assert(modal.indexOf(dismiss) >= 0);
-        assert(modal.indexOf(dismiss) !== modal.lastIndexOf(dismiss));
+    it('recovers modal dismissal even if legacy Bootstrap state becomes stale', function() {
+        assert(modal.indexOf('instructor-settings-dismiss') >= 0);
+        assert(users.indexOf('function forceHideInstructorSettingsModal()') >= 0);
+        assert(users.indexOf("modal.removeData('bs.modal')") >= 0);
+        assert(users.indexOf("$('.modal-backdrop').remove()") >= 0);
+        assert(users.indexOf(".removeClass('modal-open')") >= 0);
+        assert(users.indexOf('event.target === this') >= 0);
+        assert(users.indexOf('}, 150);') >= 0);
     });
 
     it('explains that All Xronos Content is limited to the current LMS shell', function() {

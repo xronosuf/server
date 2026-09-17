@@ -63,6 +63,7 @@ div.xmuser#loginUser(style="display: none;")
       li: a#progress-audit-redeem-link(href=toValidPath('/progress-audit/redeem'),style="display: none;") <i class='fa fa-search'></i> Redeem progress audit token
       if activity
         li: a#instructor-view-statistics(href="#", data-activity-url=repositoryName + '/' + activity.path, data-activity-hash=activity.hash, style="display: none;") <i class='fa fa-bar-chart'></i> View page statistics
+        li: a#instructor-settings-link(href="#",data-toggle="modal",data-target="#instructorSettingsModal",style="display: none;") <i class='fa fa-sliders'></i> Canvas Integration Settings
         li: a#progress-audit-token-link(href="#", style="display: none;") <i class='fa fa-key'></i> Generate progress audit token
         li.xmerase(role="button", data-toggle="modal", data-target="#resetWarningModal")
           i.fa.fa-eraser

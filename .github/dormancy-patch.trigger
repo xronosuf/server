@@ -1,1 +1,1 @@
-Apply the tab dormancy resilience source patch once.
+Apply the tab dormancy resilience source patch retry 2.

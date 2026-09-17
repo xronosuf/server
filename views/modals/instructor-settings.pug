@@ -1,0 +1,76 @@
+.modal.fade#instructorSettingsModal(tabindex="-1",role="dialog",aria-labelledby="instructorSettingsModalTitle")
+  .modal-dialog.modal-lg(role="document")
+    .modal-content
+      .modal-header
+        h5.modal-title#instructorSettingsModalTitle Canvas Integration Settings
+        button.close(type="button",data-dismiss="modal",aria-label="Close")
+          span(aria-hidden="true") &times;
+      .modal-body
+        div#instructor-settings-loading
+          i.fa.fa-spinner.fa-spin(aria-hidden="true")
+          | &nbsp;Loading settings&hellip;
+        div#instructor-settings-error.alert.alert-danger(style="display:none;",role="alert")
+        div#instructor-settings-content(style="display:none;")
+          p.text-muted
+            | These settings control how Xronos interacts with the LMS shell from which you launched this content. They do not change Canvas availability dates.
+          .table-responsive
+            table.table.table-sm.instructor-settings-table
+              thead
+                tr
+                  th(scope="col") Setting
+                  th.text-center(scope="col")
+                    | This Page&nbsp;
+                    span.instructor-settings-help.fa.fa-question-circle(
+                      tabindex="0",
+                      role="img",
+                      aria-label="Help for This Page",
+                      title="This Page applies only to the current Xronos page. If a setting does not make sense at page scope, this control is unavailable."
+                    )
+                  th.text-center(scope="col")
+                    | All Xronos Content&nbsp;
+                    span.instructor-settings-help.fa.fa-question-circle(
+                      tabindex="0",
+                      role="img",
+                      aria-label="Help for All Xronos Content",
+                      title="All Xronos Content means every Xronos page or assignment launched from this specific LMS course shell. It does not mean all Xronos content everywhere."
+                    )
+              tbody
+                tr(data-setting-key="gradeSyncCutoff")
+                  th(scope="row")
+                    | Stop grade sync at the due date&nbsp;
+                    span.instructor-settings-help.fa.fa-question-circle(
+                      tabindex="0",
+                      role="img",
+                      aria-label="Help for Stop grade sync at the due date",
+                      title="When On, Xronos stops sending grade changes after the Canvas due date while students may continue practicing if Canvas still permits access. When Off, the normal late grade-sync policy remains active."
+                    )
+                  td.text-center
+                    .instructor-setting-unavailable(
+                      aria-disabled="true",
+                      title="This setting applies to the LMS shell's grade-sync policy and cannot be configured for an individual page."
+                    )
+                      span Unavailable
+                  td.text-center
+                    .instructor-setting-switch#grade-sync-cutoff-switch(
+                      role="group",
+                      aria-label="Stop grade sync at the due date"
+                    )
+                      button.btn.btn-sm.instructor-setting-choice(
+                        type="button",
+                        data-setting-key="gradeSyncCutoff",
+                        data-setting-value="late-policy",
+                        aria-pressed="false"
+                      ) Off
+                      button.btn.btn-sm.instructor-setting-choice(
+                        type="button",
+                        data-setting-key="gradeSyncCutoff",
+                        data-setting-value="due-date",
+                        aria-pressed="false"
+                      ) On
+          .instructor-settings-save-status#instructor-settings-save-status(
+            aria-live="polite",
+            aria-atomic="true"
+          )
+          p.small.text-muted#instructor-settings-fallback-note
+      .modal-footer
+        button.btn.btn-secondary(type="button",data-dismiss="modal") Close

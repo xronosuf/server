@@ -56,7 +56,7 @@
     "method-override": "^2.3.10",
     "moment": "2.30.1",
     "mongoose": "7.8.12",
-    "morgan": "1.11.0",
+    "morgan": "1.12.0",
     "passport": "^0.6.0",
     "passport-oauth2": "1.8.0",
     "pug": "^3.0.2",

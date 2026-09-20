@@ -13,7 +13,7 @@
   "dependencies": {
     "async": "3.2.6",
     "base64url": "^3.0.1",
-    "body-parser": "1.20.6",
+    "body-parser": "2.3.0",
     "bootstrap": "4.0.0-alpha.6",
     "brush-base": "4.0.0",
     "brush-javascript": "4.0.0",
@@ -30,7 +30,7 @@
     "dotenv": "16.6.1",
     "eonasdan-bootstrap-datetimepicker": "^4.17.47",
     "errorhandler": "^1.5.1",
-    "express": "4.22.2",
+    "express": "5.2.1",
     "express-basic-auth": "1.2.1",
     "express-rate-limit": "^2.7.0",
     "express-session": "1.19.0",

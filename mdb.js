@@ -130,6 +130,8 @@ exports.initialize = function initialize(callback) {
         oauthSignatureMethod: String,
         lisResultSourcedid: String,
         lisOutcomeServiceUrl: String,
+        // Canvas advertises the LTI 1.1 submittedAt extension on launch.
+        submissionSubmittedAtAccepted: Boolean,
 
         instructionalStaff: { type: Boolean, index: true },
 

@@ -7,6 +7,9 @@ imsx_POXEnvelopeRequest(xmlns="http://www.imsglobal.org/services/ltiv1p1/xsd/ims
         imsx_messageIdentifier #{messageIdentifier}
   imsx_POXBody
     replaceResultRequest
+      if submittedAt
+        submissionDetails
+          submittedAt #{submittedAt}
       resultRecord
         if sourcedId
           sourcedGUID

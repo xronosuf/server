@@ -1145,7 +1145,7 @@ exports.record = function(req, res, next) {
                         // Permit late work while the Canvas availability/passback
                         // window remains open.  processGradebook performs the
                         // readResult safety check immediately before a late write.
-                        if (!bridgeIsOpen(bridge)) {
+                        if (!bridgeIsOpen(bridge, now)) {
                             callback(null);
                             return;
                         }

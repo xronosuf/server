@@ -262,6 +262,33 @@ function validCanvasCustomDate(value) {
   return moment(value).isValid();
 }
 
+function updateObservedCanvasDate(
+  bridge,
+  field,
+  observedField,
+  value,
+  observedAt
+) {
+  if (!validCanvasCustomDate(value)) return;
+
+  var incoming = new Date(value);
+  var existing = bridge[field]
+    ? new Date(bridge[field]).getTime()
+    : null;
+
+  if (existing !== incoming.getTime()) {
+    bridge[field] = incoming;
+    bridge[observedField] = observedAt;
+  } else if (!bridge[observedField]) {
+    /*
+     * Legacy bridge: we know the date is current, but not when Xronos first
+     * learned it. Stamp this launch conservatively rather than inventing an
+     * earlier authoritative observation.
+     */
+    bridge[observedField] = observedAt;
+  }
+}
+
 function bridgeHasNoRecordedScore(bridge) {
   return (
     bridge &&
@@ -286,8 +313,20 @@ function initializeZeroGradePassback(bridge, callback) {
     return;
   }
 
+  var observedAt = new Date();
+
   bridge.resultScore = 0;
   bridge.resultTotalScore = 0;
+  bridge.resultScoreObservedAt = observedAt;
+  bridge.resultPointsEarned = 0;
+  bridge.resultPointsPossible = undefined;
+  bridge.recentBestScoreObservations = [{
+    resultScore: 0,
+    resultTotalScore: 0,
+    pointsEarned: 0,
+    pointsPossible: null,
+    observedAt: observedAt
+  }];
   bridge.submittedScore = false;
 
   bridge
@@ -422,19 +461,29 @@ function addLmsAccount(req, identifier, profile, done) {
           }
         }
 
+        var canvasDateObservedAt = new Date();
+
         if (bridge) {
           //console.log("Found bridge:");
           // update the bridge, roles, etc.
           if (roles) bridge.roles = roles;
-          if (validCanvasCustomDate(profile.custom_due_at))
-            bridge.dueDate = profile.custom_due_at;
+          updateObservedCanvasDate(
+            bridge,
+            "dueDate",
+            "dueDateObservedAt",
+            profile.custom_due_at,
+            canvasDateObservedAt
+          );
           if (profile.custom_canvas_assignment_points_possible)
             bridge.pointsPossible =
               profile.custom_canvas_assignment_points_possible;
-          if (
-            validCanvasCustomDate(profile.custom_lock_at)
-          )
-            bridge.untilDate = profile.custom_lock_at;
+          updateObservedCanvasDate(
+            bridge,
+            "untilDate",
+            "untilDateObservedAt",
+            profile.custom_lock_at,
+            canvasDateObservedAt
+          );
           if (profile.lis_result_sourcedid)
             bridge.lisResultSourcedid = profile.lis_result_sourcedid;
           if (profile.oauth_consumer_key)
@@ -468,15 +517,17 @@ function addLmsAccount(req, identifier, profile, done) {
           };
 
           if (roles) hash.roles = roles;
-          if (validCanvasCustomDate(profile.custom_due_at))
-            hash.dueDate = profile.custom_due_at;
+          if (validCanvasCustomDate(profile.custom_due_at)) {
+            hash.dueDate = new Date(profile.custom_due_at);
+            hash.dueDateObservedAt = canvasDateObservedAt;
+          }
           if (profile.custom_canvas_assignment_points_possible)
             hash.pointsPossible =
               profile.custom_canvas_assignment_points_possible;
-          if (
-            validCanvasCustomDate(profile.custom_lock_at)
-          )
-            hash.untilDate = profile.custom_lock_at;
+          if (validCanvasCustomDate(profile.custom_lock_at)) {
+            hash.untilDate = new Date(profile.custom_lock_at);
+            hash.untilDateObservedAt = canvasDateObservedAt;
+          }
           if (profile.lis_result_sourcedid)
             hash.lisResultSourcedid = profile.lis_result_sourcedid;
           bridge = new mdb.LtiBridge(hash);
@@ -503,6 +554,24 @@ function addLmsAccount(req, identifier, profile, done) {
           })
           .then(function () {
             ltiLaunchReference.stage(req, bridge);
+
+            gradebook.scheduleBridgeBoundaries(
+              bridge,
+              function (boundaryErr) {
+                if (boundaryErr) {
+                  /*
+                   * Boundary scheduling is diagnostic/grade-protection work and
+                   * must not prevent a valid LTI launch.
+                   */
+                  console.log(
+                    "Error scheduling grade boundaries for bridge " +
+                      bridge._id
+                  );
+                  console.log(boundaryErr);
+                }
+              }
+            );
+
             initializeZeroGradePassback(bridge, function (err) {
               if (err) {
                 /*

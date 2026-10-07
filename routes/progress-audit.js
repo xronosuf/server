@@ -1,5 +1,6 @@
 var crypto = require('crypto');
 var mdb = require('../mdb');
+var gradeBoundaryPolicy = require('../lib/grade-boundary-policy');
 
 var REPORT_TIME_ZONE = 'America/New_York';
 var REPORT_TIME_ZONE_LABEL = 'ET';
@@ -113,8 +114,19 @@ function baseMilestoneQuery(scope) {
     return query;
 }
 
+function ordinaryMilestoneQuery(scope) {
+    return Object.assign({}, baseMilestoneQuery(scope), {
+        source: {
+            $nin: [
+                gradeBoundaryPolicy.DUE_SOURCE,
+                gradeBoundaryPolicy.UNTIL_SOURCE
+            ]
+        }
+    });
+}
+
 function findMilestones(scope, asOf, callback) {
-    var baseQuery = baseMilestoneQuery(scope);
+    var baseQuery = ordinaryMilestoneQuery(scope);
 
     mdb.ProgressMilestone.findOne(
         Object.assign({}, baseQuery, {
@@ -729,7 +741,7 @@ function milestoneViewModel(milestone) {
 
 function findCurrentMilestone(scope, callback) {
     mdb.ProgressMilestone.findOne(
-        baseMilestoneQuery(scope)
+        ordinaryMilestoneQuery(scope)
     )
         .sort({ observedAt: -1 })
         .lean()

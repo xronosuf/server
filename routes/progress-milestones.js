@@ -1,4 +1,5 @@
 var mdb = require('../mdb');
+var gradeBoundaryPolicy = require('../lib/grade-boundary-policy');
 
 var MIN_SCORE_DELTA = 0.001;
 var MIN_MILESTONE_INTERVAL_MS = 1000 * 60 * 5;
@@ -141,7 +142,13 @@ exports.record = function recordProgressMilestone(options, callback) {
     query = {
         user: options.user,
         repository: options.repository,
-        path: options.path
+        path: options.path,
+        source: {
+            $nin: [
+                gradeBoundaryPolicy.DUE_SOURCE,
+                gradeBoundaryPolicy.UNTIL_SOURCE
+            ]
+        }
     };
 
     if (bridge && bridge.contextId) {
@@ -192,3 +199,199 @@ exports.record = function recordProgressMilestone(options, callback) {
             callback(err);
         });
 };
+
+
+function boundaryKey(bridge, type, boundaryAt) {
+    return [
+        bridge._id.toString(),
+        type,
+        new Date(boundaryAt).toISOString()
+    ].join(':');
+}
+
+function boundaryDocument(bridge, type, boundaryAt, observation, evidence) {
+    var source = gradeBoundaryPolicy.boundarySource(type);
+    var document = {
+        user: bridge.user,
+        repository: bridge.repository,
+        path: bridge.path,
+        canvasPointsPossible: numberOrUndefined(bridge.pointsPossible),
+        source: source,
+        boundaryKey: boundaryKey(bridge, type, boundaryAt),
+        boundaryAt: new Date(boundaryAt),
+        boundaryEvidence: evidence,
+        bridge: bridge._id,
+        toolConsumerInstanceGuid: bridge.toolConsumerInstanceGuid,
+        contextId: bridge.contextId,
+        resourceLinkId: bridge.resourceLinkId
+    };
+
+    if (observation) {
+        document.score = observation.resultScore;
+        document.canvasScore = observation.resultTotalScore;
+        document.observedAt = new Date(observation.observedAt);
+        document.qualifyingObservedAt = new Date(observation.observedAt);
+        document.windowStartedAt = new Date(observation.observedAt);
+
+        if (observation.pointsEarned !== null) {
+            document.pointsEarned = observation.pointsEarned;
+        }
+
+        if (observation.pointsPossible !== null) {
+            document.pointsPossible = observation.pointsPossible;
+        }
+    } else {
+        /*
+         * An inferred zero means Xronos has no trusted score observation at or
+         * before the boundary. It is useful instructor-facing grade evidence,
+         * but qualifyingObservedAt remains absent so it cannot masquerade as a
+         * recorded student submission time.
+         */
+        document.score = 0;
+        document.canvasScore = 0;
+        document.pointsEarned = 0;
+        document.observedAt = new Date(boundaryAt);
+        document.windowStartedAt = new Date(boundaryAt);
+    }
+
+    return document;
+}
+
+function findExistingBoundary(bridge, type, boundaryAt) {
+    return mdb.ProgressMilestone.findOne({
+        boundaryKey: boundaryKey(bridge, type, boundaryAt)
+    })
+        .lean()
+        .exec();
+}
+
+function createBoundarySnapshot(bridge, type, boundaryAt, observation, evidence, callback) {
+    var document = boundaryDocument(
+        bridge,
+        type,
+        boundaryAt,
+        observation,
+        evidence
+    );
+
+    mdb.ProgressMilestone.findOneAndUpdate(
+        {
+            boundaryKey: document.boundaryKey
+        },
+        {
+            $setOnInsert: document
+        },
+        {
+            upsert: true,
+            new: true
+        }
+    )
+        .lean()
+        .exec()
+        .then(function(saved) {
+            callback(null, saved);
+        })
+        .catch(function(err) {
+            if (err && err.code === 11000) {
+                findExistingBoundary(
+                    bridge,
+                    type,
+                    boundaryAt
+                )
+                    .then(function(existing) {
+                        callback(null, existing);
+                    })
+                    .catch(callback);
+                return;
+            }
+
+            callback(err);
+        });
+}
+
+/*
+ * Finalize a boundary only after it has passed. If Xronos knew the Canvas date
+ * before the boundary, a trusted bridge observation can produce an
+ * authoritative snapshot. If the student first appears after the boundary and
+ * there is no earlier observation, record the instructor-facing inferred zero.
+ *
+ * A date moved retroactively into the past while earlier progress exists is
+ * deliberately not converted into an authoritative snapshot. The audit route
+ * reconstructs that case from ordinary milestone history and labels it
+ * approximate.
+ */
+exports.ensureBoundary = function ensureBoundary(bridge, type, now, callback) {
+    var descriptor = gradeBoundaryPolicy.boundaryDescriptor(bridge, type);
+    var nowTime = new Date(now || new Date()).getTime();
+
+    callback = callback || function() {};
+
+    if (!descriptor) {
+        callback(null, null, 'no-boundary');
+        return;
+    }
+
+    if (descriptor.boundaryAt.getTime() > nowTime) {
+        callback(null, null, 'boundary-not-reached');
+        return;
+    }
+
+    findExistingBoundary(
+        bridge,
+        type,
+        descriptor.boundaryAt
+    )
+        .then(function(existing) {
+            if (existing) {
+                callback(null, existing, 'existing');
+                return;
+            }
+
+            var observation =
+                gradeBoundaryPolicy.bestObservationAtOrBefore(
+                    bridge,
+                    descriptor.boundaryAt
+                );
+
+            if (observation && !descriptor.knownBeforeBoundary) {
+                callback(
+                    null,
+                    null,
+                    'retroactive-boundary-requires-reconstruction'
+                );
+                return;
+            }
+
+            createBoundarySnapshot(
+                bridge,
+                type,
+                descriptor.boundaryAt,
+                observation,
+                observation
+                    ? 'authoritative'
+                    : 'inferred-zero-no-prior-observation',
+                function(err, saved) {
+                    callback(
+                        err,
+                        saved,
+                        observation
+                            ? 'created-authoritative'
+                            : 'created-inferred-zero'
+                    );
+                }
+            );
+        })
+        .catch(callback);
+};
+
+exports.findBoundary = function findBoundary(bridge, type, boundaryAt, callback) {
+    callback = callback || function() {};
+
+    findExistingBoundary(bridge, type, boundaryAt)
+        .then(function(document) {
+            callback(null, document);
+        })
+        .catch(callback);
+};
+
+exports.MIN_MILESTONE_INTERVAL_MS = MIN_MILESTONE_INTERVAL_MS;

@@ -85,6 +85,11 @@ exports.initialize = function initialize(callback) {
         resourceLinkId: String,
         dueDate: Date,
         untilDate: Date,
+        // Server receipt time when the current Canvas date value was first
+        // observed. Preserve this while the date is unchanged so Xronos can
+        // distinguish a real-time boundary from a retroactive date change.
+        dueDateObservedAt: Date,
+        untilDateObservedAt: Date,
         pointsPossible: Number,
 
         /*
@@ -98,7 +103,21 @@ exports.initialize = function initialize(callback) {
 
         resultScore: Number,
         resultTotalScore: Number,
+        resultScoreObservedAt: Date,
+        resultPointsEarned: Number,
+        resultPointsPossible: Number,
+        // Keep only a tiny recent history on the bridge. Long-term progress
+        // history remains in ProgressMilestone; these entries protect exact
+        // deadline selection while workers and browser updates race.
+        recentBestScoreObservations: [Mixed],
         submittedScore: Boolean,
+
+        // Persistent retry metadata lets the retry horizon survive process or
+        // container restarts. A new better candidate resets these fields.
+        passbackRetryStartedAt: Date,
+        passbackRetryAttempts: Number,
+        passbackNextRetryAt: Date,
+        passbackRetryExhaustedAt: Date,
 
         // Raw Xronos result last accepted by Canvas.  Keep this
         // separate from resultScore/resultTotalScore, which continue
@@ -207,6 +226,16 @@ exports.initialize = function initialize(callback) {
         observedAt: { type: Date, index: true },
         windowStartedAt: { type: Date, index: true },
         source: { type: String, index: true },
+
+        // Boundary milestones are immutable snapshots tied to one exact Canvas
+        // date value. boundaryKey exists only for these special rows, so a
+        // sparse unique index makes competing finalizers idempotent without
+        // constraining ordinary five-minute milestones.
+        boundaryKey: { type: String, index: true, unique: true, sparse: true },
+        boundaryAt: { type: Date, index: true },
+        boundaryEvidence: { type: String, index: true },
+        qualifyingObservedAt: { type: Date, index: true },
+        reconstructedFromMilestone: { type: ObjectId, ref: "ProgressMilestone" },
 
         bridge: { type: ObjectId, index: true, ref: "LtiBridge" },
         toolConsumerInstanceGuid: { type: String, index: true },

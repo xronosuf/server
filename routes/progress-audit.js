@@ -695,11 +695,41 @@ function redeemToken(req, res) {
                             return;
                         }
 
-                        renderRedeemPage(req, res, Object.assign({
-                            token: rawToken,
-                            report: auditReportViewModel(auditToken, asOf, milestone, currentMilestone),
-                            reportLines: tokenReportLines(auditToken, asOf, milestone, earliestAfter)
-                        }, asOfParts));
+                        findBoundaryAudits(
+                            auditToken,
+                            function(boundaryErr, boundaryAudits) {
+                                if (boundaryErr) {
+                                    renderRedeemPage(
+                                        req,
+                                        res,
+                                        Object.assign({
+                                            error:
+                                                'There was a problem reading assignment boundary evidence for this token.',
+                                            token: rawToken
+                                        }, asOfParts)
+                                    );
+                                    return;
+                                }
+
+                                renderRedeemPage(req, res, Object.assign({
+                                    token: rawToken,
+                                    report: auditReportViewModel(
+                                        auditToken,
+                                        asOf,
+                                        milestone,
+                                        currentMilestone,
+                                        boundaryAudits
+                                    ),
+                                    reportLines: tokenReportLines(
+                                        auditToken,
+                                        asOf,
+                                        milestone,
+                                        earliestAfter,
+                                        boundaryAudits
+                                    )
+                                }, asOfParts));
+                            }
+                        );
                     });
                 });
             });
@@ -754,7 +784,233 @@ function findCurrentMilestone(scope, callback) {
         });
 }
 
-function auditReportViewModel(auditToken, asOf, milestone, currentMilestone) {
+function boundaryLabel(type) {
+    return type === gradeBoundaryPolicy.DUE_TYPE
+        ? 'Due'
+        : 'Until';
+}
+
+function findBoundaryAuditForType(scope, bridge, type, callback) {
+    var descriptor = gradeBoundaryPolicy.boundaryDescriptor(
+        bridge,
+        type
+    );
+
+    if (!descriptor) {
+        callback(null, null);
+        return;
+    }
+
+    var exactQuery = Object.assign(
+        {},
+        baseMilestoneQuery(scope),
+        {
+            source: descriptor.source,
+            boundaryAt: descriptor.boundaryAt
+        }
+    );
+
+    mdb.ProgressMilestone.findOne(exactQuery)
+        .lean()
+        .exec()
+        .then(function(exact) {
+            if (exact) {
+                callback(null, {
+                    type: type,
+                    label: boundaryLabel(type),
+                    boundaryAt: descriptor.boundaryAt,
+                    status:
+                        exact.boundaryEvidence ===
+                        'inferred-zero-no-prior-observation'
+                            ? 'inferred-zero'
+                            : 'authoritative',
+                    milestone: exact,
+                    persisted: true
+                });
+                return;
+            }
+
+            if (descriptor.boundaryAt.getTime() > Date.now()) {
+                callback(null, {
+                    type: type,
+                    label: boundaryLabel(type),
+                    boundaryAt: descriptor.boundaryAt,
+                    status: 'pending',
+                    milestone: null,
+                    persisted: false
+                });
+                return;
+            }
+
+            mdb.ProgressMilestone.findOne(
+                Object.assign(
+                    {},
+                    ordinaryMilestoneQuery(scope),
+                    {
+                        observedAt: {
+                            $lte: descriptor.boundaryAt
+                        }
+                    }
+                )
+            )
+                .sort({ observedAt: -1 })
+                .lean()
+                .exec()
+                .then(function(supporting) {
+                    if (!supporting) {
+                        callback(null, {
+                            type: type,
+                            label: boundaryLabel(type),
+                            boundaryAt: descriptor.boundaryAt,
+                            status: 'inferred-zero',
+                            milestone: null,
+                            persisted: false
+                        });
+                        return;
+                    }
+
+                    callback(null, {
+                        type: type,
+                        label: boundaryLabel(type),
+                        boundaryAt: descriptor.boundaryAt,
+                        status: 'approximate',
+                        milestone: supporting,
+                        persisted: false
+                    });
+                });
+        })
+        .catch(callback);
+}
+
+function findBoundaryAudits(scope, callback) {
+    mdb.LtiBridge.findOne({
+        _id: scope.bridge
+    })
+        .lean()
+        .exec()
+        .then(function(bridge) {
+            if (!bridge) {
+                callback(null, []);
+                return;
+            }
+
+            asyncBoundaryMap(
+                scope,
+                bridge,
+                [
+                    gradeBoundaryPolicy.DUE_TYPE,
+                    gradeBoundaryPolicy.UNTIL_TYPE
+                ],
+                callback
+            );
+        })
+        .catch(callback);
+}
+
+function asyncBoundaryMap(scope, bridge, types, callback) {
+    var results = [];
+    var index = 0;
+
+    function next(err, result) {
+        if (err) {
+            callback(err);
+            return;
+        }
+
+        if (result) {
+            results.push(result);
+        }
+
+        if (index >= types.length) {
+            callback(null, results);
+            return;
+        }
+
+        var type = types[index];
+        index += 1;
+
+        findBoundaryAuditForType(
+            scope,
+            bridge,
+            type,
+            next
+        );
+    }
+
+    next(null, null);
+}
+
+function boundaryAuditViewModel(entry) {
+    if (!entry) {
+        return null;
+    }
+
+    var milestone = entry.milestone;
+    var result = {
+        type: entry.type,
+        label: entry.label,
+        status: entry.status,
+        boundaryAt: humanTime(entry.boundaryAt),
+        boundaryAtUtc: iso(entry.boundaryAt),
+        persisted: entry.persisted
+    };
+
+    if (entry.status === 'pending') {
+        result.progress = 'Not reached yet';
+        result.note =
+            'This boundary has not occurred yet.';
+        return result;
+    }
+
+    if (entry.status === 'inferred-zero') {
+        result.progress = '0%';
+        result.canvasPoints = milestone
+            ? points(milestone.canvasScore) + ' / ' +
+                points(milestone.canvasPointsPossible)
+            : '0';
+        result.note =
+            'Inferred — Xronos has no recorded score observation at or before this deadline.';
+        return result;
+    }
+
+    result.progress = percent(milestone && milestone.score);
+    result.canvasPoints =
+        points(milestone && milestone.canvasScore) +
+        ' / ' +
+        points(milestone && milestone.canvasPointsPossible);
+    result.observedAt = humanTime(
+        milestone && (
+            milestone.qualifyingObservedAt ||
+            milestone.observedAt
+        )
+    );
+    result.observedAtUtc = iso(
+        milestone && (
+            milestone.qualifyingObservedAt ||
+            milestone.observedAt
+        )
+    );
+
+    if (entry.status === 'authoritative') {
+        result.note =
+            'Authoritative Xronos boundary snapshot.';
+    } else {
+        result.note =
+            'Approximate — no authoritative boundary snapshot exists for this deadline.';
+        result.timingNote =
+            'Student submission most likely occurred within the 5 minutes prior to the listed milestone observation time.';
+    }
+
+    return result;
+}
+
+function auditReportViewModel(
+    auditToken,
+    asOf,
+    milestone,
+    currentMilestone,
+    boundaryAudits
+) {
     return {
         scope: {
             repository: auditToken.repository,
@@ -769,7 +1025,9 @@ function auditReportViewModel(auditToken, asOf, milestone, currentMilestone) {
             utc: iso(asOf)
         },
         asOfMilestone: milestoneViewModel(milestone),
-        currentMilestone: milestoneViewModel(currentMilestone)
+        currentMilestone: milestoneViewModel(currentMilestone),
+        boundaries: (boundaryAudits || [])
+            .map(boundaryAuditViewModel)
     };
 }
 

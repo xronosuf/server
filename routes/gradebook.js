@@ -408,6 +408,64 @@ function processGradebook(id, callback) {
     })
         .exec()
         .then(function(bridge) {
+            if (!bridge) {
+                callback(null);
+                return null;
+            }
+
+            var passbackWindow = lateGradePolicy.passbackWindowEnd(bridge);
+            var deliveryAfterCutoff =
+                passbackWindow.time !== null &&
+                Date.now() > passbackWindow.time;
+            var scoreObservedAt =
+                gradeBoundaryPolicy.timeValue(
+                    bridge.resultScoreObservedAt
+                );
+            var boundaryBackedDelivery =
+                deliveryAfterCutoff &&
+                (
+                    passbackWindow.source === 'canvas-until' ||
+                    passbackWindow.source === 'xronos-due-date-setting'
+                );
+            var frozenCandidateEligible =
+                boundaryBackedDelivery &&
+                scoreObservedAt !== null &&
+                scoreObservedAt <= passbackWindow.time;
+            var policyNow = deliveryAfterCutoff && scoreObservedAt !== null
+                ? scoreObservedAt
+                : Date.now();
+
+            if (deliveryAfterCutoff && !frozenCandidateEligible) {
+                console.log(
+                    'Canvas eligibility boundary passed without a trusted pre-boundary candidate for bridge ' +
+                    bridge._id
+                );
+                callback(null);
+                return null;
+            }
+
+            if (boundaryBackedDelivery) {
+                var controllingType =
+                    passbackWindow.source === 'canvas-until'
+                        ? gradeBoundaryPolicy.UNTIL_TYPE
+                        : gradeBoundaryPolicy.DUE_TYPE;
+
+                progressMilestones.ensureBoundary(
+                    bridge,
+                    controllingType,
+                    new Date(),
+                    function(boundaryErr) {
+                        if (boundaryErr) {
+                            console.log(
+                                'Could not finalize controlling boundary before passback for bridge ' +
+                                bridge._id
+                            );
+                            console.log(boundaryErr);
+                        }
+                    }
+                );
+            }
+
             var pox = passback({
                 messageIdentifier: crypto.randomUUID(),
                 resultDataUrl:
@@ -422,6 +480,10 @@ function processGradebook(id, callback) {
                     bridge.resultScore,
                 resultTotalScore:
                     bridge.resultTotalScore,
+                submittedAt:
+                    boundaryBackedDelivery && scoreObservedAt !== null
+                        ? new Date(scoreObservedAt).toISOString()
+                        : null,
                 sourcedId:
                     bridge.lisResultSourcedid
             });
@@ -518,6 +580,7 @@ function processGradebook(id, callback) {
                                 bridge.lastSubmittedResultTotalScore =
                                     bridge.resultTotalScore;
                                 bridge.lastSubmittedAt = acceptedAt;
+                                clearRetryState(bridge);
 
                                 function saveAcceptedBridge() {
                                     bridge
@@ -614,23 +677,29 @@ function processGradebook(id, callback) {
                     );
                     }
 
-                    if (!lateGradePolicy.bridgeIsPassbackWindowOpen(bridge)) {
+                    if (boundaryBackedDelivery) {
                         console.log(
-                            'Canvas passback window closed for bridge ' + bridge._id
+                            'Delivering trusted pre-boundary Canvas candidate after cutoff for bridge ' +
+                            bridge._id +
+                            '; observedAt=' +
+                            new Date(scoreObservedAt).toISOString() +
+                            ', boundary=' +
+                            new Date(passbackWindow.time).toISOString()
                         );
-                        callback(null);
-                        return;
                     }
 
-                    if (!lateGradePolicy.bridgeIsLate(bridge)) {
+                    if (!lateGradePolicy.bridgeIsLate(bridge, policyNow)) {
                         sendPassback();
                         return;
                     }
 
                     var boundaryDecision =
-                        lateGradePolicy.lateBoundaryDecision(bridge);
+                        lateGradePolicy.lateBoundaryDecision(
+                            bridge,
+                            policyNow
+                        );
 
-                    if (boundaryDecision.defer) {
+                    if (!boundaryBackedDelivery && boundaryDecision.defer) {
                         queueBridgeAt(
                             bridge,
                             boundaryDecision.retryAt,
@@ -660,7 +729,10 @@ function processGradebook(id, callback) {
                             var candidateRawScore =
                                 lateGradeEvidence.candidateRawScore(bridge);
                             var currentLateIntervals =
-                                lateGradePolicy.lateIntervalNumber(bridge);
+                                lateGradePolicy.lateIntervalNumber(
+                                    bridge,
+                                    policyNow
+                                );
 
                             loadLatePolicyEvidence(
                                 bridge,

@@ -289,6 +289,15 @@ function updateObservedCanvasDate(
   }
 }
 
+function canvasAcceptsSubmittedAt(profile) {
+  var value =
+    profile &&
+    profile.ext_outcome_submission_submitted_at_accepted;
+
+  return value === true ||
+    String(value || "").toLowerCase() === "true";
+}
+
 function bridgeHasNoRecordedScore(bridge) {
   return (
     bridge &&
@@ -490,6 +499,12 @@ function addLmsAccount(req, identifier, profile, done) {
             bridge.oauthConsumerKey = profile.oauth_consumer_key;
           if (profile.lis_outcome_service_url)
             bridge.lisOutcomeServiceUrl = profile.lis_outcome_service_url;
+          if (
+            profile.ext_outcome_submission_submitted_at_accepted !==
+            undefined
+          )
+            bridge.submissionSubmittedAtAccepted =
+              canvasAcceptsSubmittedAt(profile);
         } else {
           // console.log("Creating bridge:");
           // make a new bridge
@@ -530,6 +545,8 @@ function addLmsAccount(req, identifier, profile, done) {
           }
           if (profile.lis_result_sourcedid)
             hash.lisResultSourcedid = profile.lis_result_sourcedid;
+          hash.submissionSubmittedAtAccepted =
+            canvasAcceptsSubmittedAt(profile);
           bridge = new mdb.LtiBridge(hash);
         }
         // console.log(bridge);

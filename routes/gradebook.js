@@ -481,7 +481,9 @@ function processGradebook(id, callback) {
                 resultTotalScore:
                     bridge.resultTotalScore,
                 submittedAt:
-                    boundaryBackedDelivery && scoreObservedAt !== null
+                    boundaryBackedDelivery &&
+                    bridge.submissionSubmittedAtAccepted === true &&
+                    scoreObservedAt !== null
                         ? new Date(scoreObservedAt).toISOString()
                         : null,
                 sourcedId:

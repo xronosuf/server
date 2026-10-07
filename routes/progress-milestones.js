@@ -362,24 +362,74 @@ exports.ensureBoundary = function ensureBoundary(bridge, type, now, callback) {
                 return;
             }
 
-            createBoundarySnapshot(
-                bridge,
-                type,
-                descriptor.boundaryAt,
-                observation,
-                observation
-                    ? 'authoritative'
-                    : 'inferred-zero-no-prior-observation',
-                function(err, saved) {
-                    callback(
-                        err,
-                        saved,
-                        observation
-                            ? 'created-authoritative'
-                            : 'created-inferred-zero'
-                    );
+            if (observation) {
+                createBoundarySnapshot(
+                    bridge,
+                    type,
+                    descriptor.boundaryAt,
+                    observation,
+                    'authoritative',
+                    function(err, saved) {
+                        callback(
+                            err,
+                            saved,
+                            'created-authoritative'
+                        );
+                    }
+                );
+                return;
+            }
+
+            /*
+             * Before inferring zero, check the longer milestone history. This is
+             * important during rollout and after retroactive date edits: the
+             * bridge keeps only three recent best observations, while an older
+             * real score may still exist in the ordinary audit trail.
+             */
+            mdb.ProgressMilestone.findOne({
+                bridge: bridge._id,
+                user: bridge.user,
+                repository: bridge.repository,
+                path: bridge.path,
+                source: {
+                    $nin: [
+                        gradeBoundaryPolicy.DUE_SOURCE,
+                        gradeBoundaryPolicy.UNTIL_SOURCE
+                    ]
+                },
+                observedAt: {
+                    $lte: descriptor.boundaryAt
                 }
-            );
+            })
+                .sort({ observedAt: -1 })
+                .lean()
+                .exec()
+                .then(function(supporting) {
+                    if (supporting) {
+                        callback(
+                            null,
+                            null,
+                            'boundary-requires-reconstruction'
+                        );
+                        return;
+                    }
+
+                    createBoundarySnapshot(
+                        bridge,
+                        type,
+                        descriptor.boundaryAt,
+                        null,
+                        'inferred-zero-no-prior-observation',
+                        function(err, saved) {
+                            callback(
+                                err,
+                                saved,
+                                'created-inferred-zero'
+                            );
+                        }
+                    );
+                })
+                .catch(callback);
         })
         .catch(callback);
 };

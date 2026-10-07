@@ -136,6 +136,42 @@ block content
                   div.alert.alert-secondary.mb-0(role="status")
                     strong No current progress milestone has been recorded for this token.
 
+        if report.boundaries && report.boundaries.length
+          div.card.mb-4.border-info
+            div.card-header
+              h3.h4.mb-0 Assignment boundary information
+            div.card-body
+              each boundary in report.boundaries
+                div.mb-4
+                  div.d-flex.flex-wrap.align-items-baseline
+                    strong.h4.mr-2.mb-1 #{boundary.label}:
+                    span.h4.mb-1 #{boundary.boundaryAt}
+                  div.small.text-muted UTC: #{boundary.boundaryAtUtc}
+
+                  if boundary.status == 'pending'
+                    div.alert.alert-secondary.mt-2.mb-0(role="status")
+                      strong This boundary has not occurred yet.
+                  else
+                    div.mt-2
+                      strong Grade at boundary:
+                      |  #{boundary.progress}
+
+                    if boundary.observedAt
+                      div.mt-1
+                        strong Best qualifying score observed:
+                        |  #{boundary.observedAt}
+
+                    if boundary.status == 'inferred-zero'
+                      div.alert.alert-warning.mt-2.mb-0(role="status")
+                        strong #{boundary.note}
+                    else if boundary.status == 'approximate'
+                      div.alert.alert-warning.mt-2.mb-0(role="status")
+                        strong #{boundary.note}
+                        if boundary.timingNote
+                          div.mt-1 #{boundary.timingNote}
+                    else
+                      div.small.text-muted.mt-1 #{boundary.note}
+
         div.card.mb-4
           div.card-header Token scope
           div.card-body

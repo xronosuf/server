@@ -300,7 +300,47 @@ function resultLines(milestone, earliestAfter) {
     ]);
 }
 
-function tokenReportLines(auditToken, asOf, milestone, earliestAfter) {
+function boundaryReportLines(boundaryAudits) {
+    var lines = [
+        'Assignment boundary information',
+        '-------------------------------'
+    ];
+
+    if (!boundaryAudits || boundaryAudits.length === 0) {
+        lines.push('No Canvas Due/Until boundary information is available.');
+        return lines;
+    }
+
+    boundaryAudits.forEach(function(entry) {
+        var view = boundaryAuditViewModel(entry);
+
+        lines.push('');
+        lines.push(view.label + ': ' + view.boundaryAt);
+        lines.push('Boundary UTC:     ' + view.boundaryAtUtc);
+
+        if (view.status === 'pending') {
+            lines.push('Status:           Boundary not reached yet.');
+            return;
+        }
+
+        lines.push('Grade at boundary: ' + view.progress);
+
+        if (view.observedAt) {
+            lines.push('Best score observed: ' + view.observedAt);
+            lines.push('Observed UTC:       ' + view.observedAtUtc);
+        }
+
+        lines.push('Evidence:          ' + view.note);
+
+        if (view.timingNote) {
+            lines.push('Timing note:       ' + view.timingNote);
+        }
+    });
+
+    return lines;
+}
+
+function tokenReportLines(auditToken, asOf, milestone, earliestAfter, boundaryAudits) {
     return [
         '',
         'Xronos Progress Audit Token Report',
@@ -317,6 +357,10 @@ function tokenReportLines(auditToken, asOf, milestone, earliestAfter) {
             ''
         ])
         .concat(resultLines(milestone, earliestAfter))
+        .concat([
+            ''
+        ])
+        .concat(boundaryReportLines(boundaryAudits))
         .concat([
             ''
         ]);
@@ -1047,6 +1091,7 @@ exports.redeemToken = redeemToken;
 
 exports.baseMilestoneQuery = baseMilestoneQuery;
 exports.findMilestones = findMilestones;
+exports.findBoundaryAudits = findBoundaryAudits;
 
 exports.humanTime = humanTime;
 exports.iso = iso;

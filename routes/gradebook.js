@@ -421,11 +421,21 @@ function processGradebook(id, callback) {
                 gradeBoundaryPolicy.timeValue(
                     bridge.resultScoreObservedAt
                 );
+            var controllingBoundaryType =
+                passbackWindow.source === 'canvas-until'
+                    ? gradeBoundaryPolicy.UNTIL_TYPE
+                    : (
+                        passbackWindow.source ===
+                        'xronos-due-date-setting'
+                            ? gradeBoundaryPolicy.DUE_TYPE
+                            : null
+                    );
             var boundaryBackedDelivery =
                 deliveryAfterCutoff &&
-                (
-                    passbackWindow.source === 'canvas-until' ||
-                    passbackWindow.source === 'xronos-due-date-setting'
+                controllingBoundaryType !== null &&
+                gradeBoundaryPolicy.dateWasKnownByBoundary(
+                    bridge,
+                    controllingBoundaryType
                 );
             var frozenCandidateEligible =
                 boundaryBackedDelivery &&
@@ -445,14 +455,9 @@ function processGradebook(id, callback) {
             }
 
             if (boundaryBackedDelivery) {
-                var controllingType =
-                    passbackWindow.source === 'canvas-until'
-                        ? gradeBoundaryPolicy.UNTIL_TYPE
-                        : gradeBoundaryPolicy.DUE_TYPE;
-
                 progressMilestones.ensureBoundary(
                     bridge,
-                    controllingType,
+                    controllingBoundaryType,
                     new Date(),
                     function(boundaryErr) {
                         if (boundaryErr) {

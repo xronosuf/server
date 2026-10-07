@@ -789,6 +789,140 @@ function processGradebook(id, callback) {
         });
 }
 
+function parseBoundaryMember(value) {
+    var parts = (value || '').split('|');
+    var timestamp;
+
+    if (parts.length !== 3) {
+        return null;
+    }
+
+    timestamp = Number(parts[2]);
+
+    if (
+        !parts[0] ||
+        (
+            parts[1] !== gradeBoundaryPolicy.DUE_TYPE &&
+            parts[1] !== gradeBoundaryPolicy.UNTIL_TYPE
+        ) ||
+        !isFinite(timestamp)
+    ) {
+        return null;
+    }
+
+    return {
+        bridgeId: parts[0],
+        type: parts[1],
+        boundaryAt: timestamp
+    };
+}
+
+function processBoundaryMember(value, callback) {
+    var parsed = parseBoundaryMember(value);
+
+    if (!parsed) {
+        callback(null);
+        return;
+    }
+
+    mdb.LtiBridge.findOne({
+        _id: new mdb.ObjectId(parsed.bridgeId)
+    })
+        .exec()
+        .then(function(bridge) {
+            if (!bridge) {
+                callback(null);
+                return;
+            }
+
+            var currentBoundary =
+                gradeBoundaryPolicy.boundaryAt(
+                    bridge,
+                    parsed.type
+                );
+
+            /*
+             * Stale queue members are expected after an instructor changes a
+             * Canvas date. They must never create a snapshot for a boundary
+             * that is no longer current on the bridge.
+             */
+            if (currentBoundary !== parsed.boundaryAt) {
+                callback(null);
+                return;
+            }
+
+            progressMilestones.ensureBoundary(
+                bridge,
+                parsed.type,
+                new Date(),
+                function(err, milestone, status) {
+                    if (!err && milestone) {
+                        console.log(
+                            'Finalized ' + parsed.type +
+                            ' grade boundary for bridge ' +
+                            bridge._id +
+                            ' at ' +
+                            new Date(parsed.boundaryAt).toISOString() +
+                            ' (' + status + ')'
+                        );
+                    }
+
+                    callback(err);
+                }
+            );
+        })
+        .catch(callback);
+}
+
+function processBoundaries(done) {
+    done = done || function() {};
+
+    client.zrangebyscore(
+        BOUNDARY_QUEUE,
+        -Infinity,
+        Date.now(),
+        function(err, responses) {
+            if (err) {
+                console.log('Boundary processing error:');
+                console.log(err);
+                done(err);
+                return;
+            }
+
+            async.each(
+                responses,
+                function(response, callback) {
+                    client.zrem(
+                        BOUNDARY_QUEUE,
+                        response,
+                        function(removeErr, count) {
+                            if (removeErr || count !== 1) {
+                                callback(removeErr);
+                                return;
+                            }
+
+                            processBoundaryMember(
+                                response,
+                                callback
+                            );
+                        }
+                    );
+                },
+                function(batchErr) {
+                    if (batchErr) {
+                        console.log(
+                            'Grade boundary batch processing error:'
+                        );
+                        console.log(batchErr);
+                    }
+
+                    done(batchErr);
+                }
+            );
+        }
+    );
+}
+
 function process() {
 	// console.log('Running process')
     client.zrangebyscore('gradebook', -Infinity, Date.now(), function(err, responses) {
@@ -817,8 +951,14 @@ function process() {
     });
     });
 }
-// Look if there is anything to process every few seconds
-setInterval( process, 10000 );
+// Finalize any crossed boundary before processing passback work from
+// the same polling cycle. processGradebook also performs a defensive boundary
+// finalization, so correctness does not depend on exact timer ordering.
+setInterval(function() {
+    processBoundaries(function() {
+        process();
+    });
+}, 10000);
 
 function gradebookRequestPayload(req) {
     var body = (req && req.body) || {};

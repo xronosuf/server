@@ -13,6 +13,7 @@ var config = require('../config');
 var async = require('async');
 var crypto = require('crypto');
 var progressMilestones = require('./progress-milestones');
+var gradeBoundaryPolicy = require('../lib/grade-boundary-policy');
 
 const Redis = require("ioredis");
 
@@ -71,31 +72,85 @@ function logCanvasPassbackSuccess(bridge) {
 
 // We now wait many minutes for grades to settle
 var DEBOUNCE = 1000 * 60 * 3;
-var RETRY_DELAY = 1000 * 60;
+var FAST_RETRY_DELAY = 1000 * 60;
+var FAST_RETRY_WINDOW = 1000 * 60 * 60;
+var SLOW_RETRY_DELAY = 1000 * 60 * 60;
+var MAX_RETRY_WINDOW = 1000 * 60 * 60 * 24;
+var BOUNDARY_QUEUE = 'gradebook-boundaries';
+
+function clearRetryState(bridge) {
+    bridge.passbackRetryStartedAt = undefined;
+    bridge.passbackRetryAttempts = 0;
+    bridge.passbackNextRetryAt = undefined;
+    bridge.passbackRetryExhaustedAt = undefined;
+}
 
 function retryBridge(bridge, callback) {
-    var retryAt = Date.now() + RETRY_DELAY;
+    var now = Date.now();
+    var startedAt = bridge.passbackRetryStartedAt
+        ? new Date(bridge.passbackRetryStartedAt).getTime()
+        : now;
+    var elapsed = now - startedAt;
+    var delay;
+    var retryAt;
 
-    client.zadd(
-        'gradebook',
-        retryAt,
-        bridge._id.toString(),
-        function(err) {
-            if (err) {
-                callback(err);
-                return;
-            }
+    if (elapsed >= MAX_RETRY_WINDOW) {
+        bridge.passbackRetryStartedAt = new Date(startedAt);
+        bridge.passbackRetryExhaustedAt = new Date(now);
+        bridge.passbackNextRetryAt = undefined;
 
-            console.log(
-                'Requeued Canvas grade passback for bridge ' +
-                bridge._id +
-                ' (' + bridge.repository + '/' + bridge.path + ')' +
-                ' after transient failure'
-            );
+        bridge.save()
+            .then(function() {
+                console.log(
+                    'Stopped automatic Canvas passback retries after 24 hours for bridge ' +
+                    bridge._id
+                );
+                callback(null);
+            })
+            .catch(callback);
+        return;
+    }
 
-            callback(null);
-        }
+    delay = elapsed < FAST_RETRY_WINDOW
+        ? FAST_RETRY_DELAY
+        : SLOW_RETRY_DELAY;
+    retryAt = Math.min(
+        now + delay,
+        startedAt + MAX_RETRY_WINDOW
     );
+
+    bridge.passbackRetryStartedAt = new Date(startedAt);
+    bridge.passbackRetryAttempts =
+        Number(bridge.passbackRetryAttempts || 0) + 1;
+    bridge.passbackNextRetryAt = new Date(retryAt);
+    bridge.passbackRetryExhaustedAt = undefined;
+
+    bridge.save()
+        .then(function() {
+            client.zadd(
+                'gradebook',
+                retryAt,
+                bridge._id.toString(),
+                function(err) {
+                    if (err) {
+                        callback(err);
+                        return;
+                    }
+
+                    console.log(
+                        'Requeued Canvas grade passback for bridge ' +
+                        bridge._id +
+                        ' (' + bridge.repository + '/' + bridge.path + ')' +
+                        ' after transient failure; attempt=' +
+                        bridge.passbackRetryAttempts +
+                        ', next=' + new Date(retryAt).toISOString()
+                    );
+
+                    callback(null);
+                }
+            );
+        })
+        .catch(callback);
 }
 
 function canvasPointsPossible(bridge) {
@@ -121,15 +176,104 @@ function bridgeIsOpen(bridge, now) {
     );
 }
 
+function boundaryMember(bridge, type, boundaryAt) {
+    return [
+        bridge._id.toString(),
+        type,
+        new Date(boundaryAt).getTime()
+    ].join('|');
+}
+
+function scheduleBridgeBoundaries(bridge, callback) {
+    var now = Date.now();
+    var descriptors = gradeBoundaryPolicy.descriptors(bridge);
+    var future = descriptors.filter(function(descriptor) {
+        return descriptor.boundaryAt.getTime() > now;
+    });
+
+    callback = callback || function() {};
+
+    /*
+     * Immediately reconcile already-passed boundaries. This creates an inferred
+     * zero for a first launch after a deadline, but deliberately refuses to turn
+     * a retroactively moved earlier deadline into authoritative evidence.
+     */
+    async.eachSeries(
+        descriptors,
+        function(descriptor, next) {
+            if (descriptor.boundaryAt.getTime() > now) {
+                next(null);
+                return;
+            }
+
+            progressMilestones.ensureBoundary(
+                bridge,
+                descriptor.type,
+                new Date(now),
+                function(err) {
+                    if (err) {
+                        console.log(
+                            'Error reconciling grade boundary for bridge ' +
+                            bridge._id
+                        );
+                        console.log(err);
+                    }
+                    next(err);
+                }
+            );
+        },
+        function(err) {
+            if (err) {
+                callback(err);
+                return;
+            }
+
+            async.each(
+                future,
+                function(descriptor, next) {
+                    client.zadd(
+                        BOUNDARY_QUEUE,
+                        descriptor.boundaryAt.getTime(),
+                        boundaryMember(
+                            bridge,
+                            descriptor.type,
+                            descriptor.boundaryAt
+                        ),
+                        next
+                    );
+                },
+                callback
+            );
+        }
+    );
+}
+
 function queueBridge(bridge, callback) {
     var debouncedTime = Date.now() + DEBOUNCE;
     var windowEnd = lateGradePolicy.passbackWindowEnd(bridge).time;
 
+    /*
+     * If the debounce would cross the eligibility boundary, intentionally queue
+     * just after it. The worker can then deliver the last server-observed
+     * pre-boundary candidate instead of racing the exact closing timestamp.
+     */
     if (windowEnd !== null && debouncedTime > windowEnd) {
-        debouncedTime = windowEnd;
+        debouncedTime = windowEnd + 1000;
     }
 
-    client.zadd('gradebook', debouncedTime, bridge._id.toString(), callback);
+    scheduleBridgeBoundaries(bridge, function(boundaryErr) {
+        if (boundaryErr) {
+            callback(boundaryErr);
+            return;
+        }
+
+        client.zadd(
+            'gradebook',
+            debouncedTime,
+            bridge._id.toString(),
+            callback
+        );
+    });
 }
 
 function queueBridgeAt(bridge, when, reason, callback) {
@@ -228,8 +372,9 @@ function loadLatePolicyEvidence(bridge, canvasScore, callback) {
 exports.bridgeHasGradePassback = bridgeHasGradePassback;
 exports.bridgeIsOpen = bridgeIsOpen;
 exports.queueBridge = queueBridge;
+exports.scheduleBridgeBoundaries = scheduleBridgeBoundaries;
 
-function recordProgressMilestoneForBridge(req, repositoryName, bridge) {
+function recordProgressMilestoneForBridge(req, repositoryName, bridge, observedAt) {
     if (bridge && bridge.instructionalStaff) {
         return;
     }
@@ -241,7 +386,8 @@ function recordProgressMilestoneForBridge(req, repositoryName, bridge) {
         pointsEarned: req.body && req.body.pointsEarned,
         pointsPossible: req.body && req.body.pointsPossible,
         bridge: bridge,
-        source: 'gradebook'
+        source: 'gradebook',
+        observedAt: observedAt
     }, function(err) {
         if (err) {
             console.log(
@@ -686,7 +832,8 @@ exports.validateGradebookPayload = validateGradebookPayload;
 
 exports.record = function(req, res, next) {
     var repositoryName = req.params.repository;
-    var now = Date.now();
+    var observedAt = new Date();
+    var now = observedAt.getTime();
     var requestPayload = gradebookRequestPayload(req);
     var payloadValidation = validateGradebookPayload(requestPayload);
 
@@ -733,7 +880,44 @@ exports.record = function(req, res, next) {
                         var resultTotalScore;
                         var better;
 
-                        recordProgressMilestoneForBridge(req, repositoryName, bridge);
+                        /*
+                         * Preserve the server receipt time as the trusted score
+                         * observation clock. Reconcile any boundary crossed
+                         * since the previous request before this request can
+                         * replace the bridge candidate.
+                         */
+                        bridge.recentBestScoreObservations =
+                            gradeBoundaryPolicy.appendRecentBest(
+                                bridge.recentBestScoreObservations,
+                                gradeBoundaryPolicy.observationFromBridge(bridge)
+                            );
+
+                        gradeBoundaryPolicy.descriptors(bridge)
+                            .forEach(function(descriptor) {
+                                if (descriptor.boundaryAt.getTime() <= now) {
+                                    progressMilestones.ensureBoundary(
+                                        bridge,
+                                        descriptor.type,
+                                        observedAt,
+                                        function(boundaryErr) {
+                                            if (boundaryErr) {
+                                                console.log(
+                                                    'Error finalizing crossed grade boundary for bridge ' +
+                                                    bridge._id
+                                                );
+                                                console.log(boundaryErr);
+                                            }
+                                        }
+                                    );
+                                }
+                            });
+
+                        recordProgressMilestoneForBridge(
+                            req,
+                            repositoryName,
+                            bridge,
+                            observedAt
+                        );
 
                         /*
                          * Bridges without passback fields cannot sync to Canvas.
@@ -792,6 +976,25 @@ exports.record = function(req, res, next) {
                             ((!bridge.resultTotalScore) || (bridge.resultTotalScore < resultTotalScore))) {
                             bridge.resultScore = resultScore;
                             bridge.resultTotalScore = resultTotalScore;
+                            bridge.resultScoreObservedAt = observedAt;
+                            bridge.resultPointsEarned =
+                                parseFloat(req.body.pointsEarned);
+                            bridge.resultPointsPossible =
+                                parseFloat(req.body.pointsPossible);
+                            bridge.recentBestScoreObservations =
+                                gradeBoundaryPolicy.appendRecentBest(
+                                    bridge.recentBestScoreObservations,
+                                    {
+                                        resultScore: resultScore,
+                                        resultTotalScore: resultTotalScore,
+                                        pointsEarned:
+                                            bridge.resultPointsEarned,
+                                        pointsPossible:
+                                            bridge.resultPointsPossible,
+                                        observedAt: observedAt
+                                    }
+                                );
+                            clearRetryState(bridge);
                             better = true;
                         }
 

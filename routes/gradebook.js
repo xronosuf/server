@@ -14,6 +14,7 @@ var async = require('async');
 var crypto = require('crypto');
 var progressMilestones = require('./progress-milestones');
 var gradeBoundaryPolicy = require('../lib/grade-boundary-policy');
+var gradePassbackCandidate = require('../lib/grade-passback-candidate');
 
 const Redis = require("ioredis");
 
@@ -59,13 +60,15 @@ function logCanvasPassbackFailure(bridge, response, body) {
     }
 }
 
-function logCanvasPassbackSuccess(bridge) {
+function logCanvasPassbackSuccess(bridge, candidate) {
+    candidate = candidate || {};
+
     console.log(
         'Canvas grade passback accepted for bridge ' +
         bridge._id +
         ' (' + bridge.repository + '/' + bridge.path + '): ' +
-        'resultScore=' + bridge.resultScore +
-        ', resultTotalScore=' + bridge.resultTotalScore +
+        'resultScore=' + candidate.resultScore +
+        ', resultTotalScore=' + candidate.resultTotalScore +
         ', pointsPossible=' + bridge.pointsPossible
     );
 }
@@ -417,41 +420,33 @@ function processGradebook(id, callback) {
             }
 
             var passbackWindow = lateGradePolicy.passbackWindowEnd(bridge);
-            var deliveryAfterCutoff =
-                passbackWindow.time !== null &&
-                Date.now() > passbackWindow.time;
-            var scoreObservedAt =
-                gradeBoundaryPolicy.timeValue(
-                    bridge.resultScoreObservedAt
-                );
-            var controllingBoundaryType =
-                passbackWindow.source === 'canvas-until'
-                    ? gradeBoundaryPolicy.UNTIL_TYPE
-                    : (
-                        passbackWindow.source ===
-                        'xronos-due-date-setting'
-                            ? gradeBoundaryPolicy.DUE_TYPE
-                            : null
-                    );
-            var boundaryBackedDelivery =
-                deliveryAfterCutoff &&
-                controllingBoundaryType !== null &&
-                gradeBoundaryPolicy.dateWasKnownByBoundary(
+            var deliveryNow = Date.now();
+            var deliverySelection =
+                gradePassbackCandidate.select(
                     bridge,
-                    controllingBoundaryType
+                    passbackWindow,
+                    deliveryNow
                 );
-            var frozenCandidateEligible =
-                boundaryBackedDelivery &&
-                scoreObservedAt !== null &&
-                scoreObservedAt <= passbackWindow.time;
-            var policyNow = deliveryAfterCutoff && scoreObservedAt !== null
-                ? scoreObservedAt
-                : Date.now();
+            var deliveryCandidate = deliverySelection.candidate;
+            var boundaryBackedDelivery =
+                deliverySelection.boundaryBackedDelivery;
+            var controllingBoundaryType =
+                deliverySelection.boundaryType;
+            var scoreObservedAt = deliveryCandidate
+                ? gradeBoundaryPolicy.timeValue(
+                    deliveryCandidate.observedAt
+                )
+                : null;
+            var policyNow =
+                boundaryBackedDelivery && scoreObservedAt !== null
+                    ? scoreObservedAt
+                    : deliveryNow;
 
-            if (deliveryAfterCutoff && !frozenCandidateEligible) {
+            if (!deliverySelection.eligible || !deliveryCandidate) {
                 console.log(
-                    'Canvas eligibility boundary passed without a trusted pre-boundary candidate for bridge ' +
-                    bridge._id
+                    'Canvas passback has no eligible delivery candidate for bridge ' +
+                    bridge._id +
+                    ' (' + deliverySelection.reason + ')'
                 );
                 callback(null);
                 return null;
@@ -485,9 +480,9 @@ function processGradebook(id, callback) {
                     '/' +
                     bridge.path,
                 resultScore:
-                    bridge.resultScore,
+                    deliveryCandidate.resultScore,
                 resultTotalScore:
-                    bridge.resultTotalScore,
+                    deliveryCandidate.resultTotalScore,
                 submittedAt:
                     boundaryBackedDelivery &&
                     bridge.submissionSubmittedAtAccepted === true &&
@@ -579,16 +574,17 @@ function processGradebook(id, callback) {
                                 )
                             ) {
                                 logCanvasPassbackSuccess(
-                                    bridge
+                                    bridge,
+                                    deliveryCandidate
                                 );
 
                                 var acceptedAt = new Date();
 
                                 bridge.submittedScore = true;
                                 bridge.lastSubmittedResultScore =
-                                    bridge.resultScore;
+                                    deliveryCandidate.resultScore;
                                 bridge.lastSubmittedResultTotalScore =
-                                    bridge.resultTotalScore;
+                                    deliveryCandidate.resultTotalScore;
                                 bridge.lastSubmittedAt = acceptedAt;
                                 clearRetryState(bridge);
 
@@ -737,7 +733,10 @@ function processGradebook(id, callback) {
                             }
 
                             var candidateRawScore =
-                                lateGradeEvidence.candidateRawScore(bridge);
+                                lateGradePolicy.normalizedRawScore(
+                                    deliveryCandidate.resultTotalScore,
+                                    bridge.pointsPossible
+                                );
                             var currentLateIntervals =
                                 lateGradePolicy.lateIntervalNumber(
                                     bridge,

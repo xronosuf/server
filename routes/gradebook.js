@@ -373,6 +373,9 @@ exports.bridgeHasGradePassback = bridgeHasGradePassback;
 exports.bridgeIsOpen = bridgeIsOpen;
 exports.queueBridge = queueBridge;
 exports.scheduleBridgeBoundaries = scheduleBridgeBoundaries;
+// Explicit test seam for the fake Canvas integration harness. Production
+// scheduling still reaches this worker only through the Redis queue.
+exports.processGradebookForTest = processGradebook;
 
 function recordProgressMilestoneForBridge(req, repositoryName, bridge, observedAt) {
     if (bridge && bridge.instructionalStaff) {

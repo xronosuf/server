@@ -633,19 +633,40 @@ function addLmsAccount(req, identifier, profile, done) {
               }
             );
 
-            initializeZeroGradePassback(bridge, function (err) {
-              if (err) {
-                /*
-                 * A zero-grade initialization failure should not block the
-                 * student's LTI launch.  Log it and allow the login flow to
-                 * continue; later progress updates can still queue passback.
-                 */
-                console.log("Error queueing initial zero grade passback");
-                console.log(err);
-              }
+            /*
+             * A Canvas date extension can reopen eligibility for progress that
+             * Xronos recorded after the old cutoff. Queue that latest trusted
+             * score when it is now eligible and better than the last accepted
+             * Canvas result. This is intentionally separate from zero-grade
+             * initialization for first-time bridges.
+             */
+            gradebook.queueCurrentCandidateIfNeeded(
+              bridge,
+              function (queueErr) {
+                if (queueErr) {
+                  console.log(
+                    "Error queueing newly eligible grade after LTI launch"
+                  );
+                  console.log(queueErr);
+                }
 
-              callback(null, bridge);
-            });
+                initializeZeroGradePassback(bridge, function (err) {
+                  if (err) {
+                    /*
+                     * A zero-grade initialization failure should not block the
+                     * student's LTI launch. Log it and allow the login flow to
+                     * continue; later progress updates can still queue passback.
+                     */
+                    console.log(
+                      "Error queueing initial zero grade passback"
+                    );
+                    console.log(err);
+                  }
+
+                  callback(null, bridge);
+                });
+              }
+            );
           })
           .catch(function (err) {
             console.log("Error saving bridge");

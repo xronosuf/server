@@ -43,6 +43,49 @@ describe('grade sync boundary delivery status', function() {
         assert.strictEqual(summary.reason, 'passback-pending');
     });
 
+    it('keeps status deliverable when latest progress is post-cutoff but an exact frozen candidate exists', function() {
+        var b = bridge({
+            resultScore: 0.99,
+            resultTotalScore: 9.9,
+            resultScoreObservedAt:
+                new Date('2026-10-06T00:00:20Z'),
+            recentBestScoreObservations: [
+                {
+                    resultScore: 0.99,
+                    resultTotalScore: 9.9,
+                    observedAt:
+                        new Date('2026-10-06T00:00:20Z')
+                },
+                {
+                    resultScore: 0.97,
+                    resultTotalScore: 9.7,
+                    observedAt:
+                        new Date('2026-10-06T00:00:15Z')
+                },
+                {
+                    resultScore: 0.95,
+                    resultTotalScore: 9.5,
+                    observedAt:
+                        new Date('2026-10-06T00:00:10Z')
+                }
+            ],
+            untilBoundaryCandidate: {
+                boundaryAt:
+                    new Date('2026-10-05T23:59:00Z'),
+                resultScore: 0.87,
+                resultTotalScore: 8.7,
+                observedAt:
+                    new Date('2026-10-05T23:58:47Z')
+            }
+        });
+        var now = Date.parse('2026-10-06T00:00:30Z');
+
+        assert.strictEqual(
+            status.bridgeHasDeliverableFrozenCandidate(b, now),
+            true
+        );
+    });
+
     it('does not treat a post-boundary candidate as deliverable', function() {
         var b = bridge({
             resultScoreObservedAt:

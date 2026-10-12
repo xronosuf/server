@@ -1100,6 +1100,7 @@ exports.record = function(req, res, next) {
                         var resultScore;
                         var resultTotalScore;
                         var better;
+                        var passbackOpen;
 
                         /*
                          * Preserve the server receipt time as the trusted score
@@ -1149,13 +1150,14 @@ exports.record = function(req, res, next) {
                             return;
                         }
 
-                        // Permit late work while the Canvas availability/passback
-                        // window remains open.  processGradebook performs the
-                        // readResult safety check immediately before a late write.
-                        if (!bridgeIsOpen(bridge, now)) {
-                            callback(null);
-                            return;
-                        }
+                        /*
+                         * Continue preserving the student's newest Xronos best
+                         * score even after the current Canvas eligibility window
+                         * closes. A later instructor extension can make that
+                         * observation eligible. Closed-window observations are
+                         * never queued merely because they were recorded here.
+                         */
+                        passbackOpen = bridgeIsOpen(bridge, now);
 
                         pointsPossible = parseFloat(bridge.pointsPossible);
 
@@ -1215,7 +1217,9 @@ exports.record = function(req, res, next) {
                                         observedAt: observedAt
                                     }
                                 );
-                            clearRetryState(bridge);
+                            if (passbackOpen) {
+                                clearRetryState(bridge);
+                            }
                             better = true;
                         }
 
@@ -1225,11 +1229,24 @@ exports.record = function(req, res, next) {
                         }
 
                         console.log('New best score for bridge: '+bridge.resultScore + ' / ' + bridge.resultTotalScore);
-                        bridge.submittedScore = false;
+
+                        if (passbackOpen) {
+                            bridge.submittedScore = false;
+                        }
 
                         bridge
                             .save()
                             .then(function() {
+                                if (!passbackOpen) {
+                                    console.log(
+                                        'Recorded newer Xronos progress after the current Canvas cutoff for bridge ' +
+                                        bridge._id +
+                                        '; not queued for passback.'
+                                    );
+                                    callback(null);
+                                    return;
+                                }
+
                                 queueBridge(
                                     bridge,
                                     function(err) {

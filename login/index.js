@@ -9,6 +9,7 @@ var LtiStrategy = require("./passport-lti").Strategy,
 var gradebook = require("../routes/gradebook");
 var ltiLaunchReference = require("../lib/lti-launch-reference");
 var instructorSettings = require("../lib/instructor-settings");
+var gradeBoundaryPolicy = require("../lib/grade-boundary-policy");
 
 module.exports.githubStrategy = function (rootUrl) {
   return new OAuth2Strategy(
@@ -275,10 +276,34 @@ function updateObservedCanvasDate(
   var existing = bridge[field]
     ? new Date(bridge[field]).getTime()
     : null;
+  var boundaryType =
+    field === "dueDate"
+      ? gradeBoundaryPolicy.DUE_TYPE
+      : (
+          field === "untilDate"
+            ? gradeBoundaryPolicy.UNTIL_TYPE
+            : null
+        );
 
   if (existing !== incoming.getTime()) {
     bridge[field] = incoming;
     bridge[observedField] = observedAt;
+
+    if (boundaryType) {
+      /*
+       * A candidate belongs to one exact Canvas timestamp. Never carry it
+       * across a date edit. A future extension can immediately seed a new
+       * candidate from the latest trusted Xronos observation.
+       */
+      gradeBoundaryPolicy.clearBoundaryCandidate(
+        bridge,
+        boundaryType
+      );
+      gradeBoundaryPolicy.refreshBoundaryCandidate(
+        bridge,
+        boundaryType
+      );
+    }
   } else if (!bridge[observedField]) {
     /*
      * Legacy bridge: we know the date is current, but not when Xronos first
@@ -286,6 +311,13 @@ function updateObservedCanvasDate(
      * earlier authoritative observation.
      */
     bridge[observedField] = observedAt;
+
+    if (boundaryType) {
+      gradeBoundaryPolicy.refreshBoundaryCandidate(
+        bridge,
+        boundaryType
+      );
+    }
   }
 }
 
@@ -329,13 +361,25 @@ function initializeZeroGradePassback(bridge, callback) {
   bridge.resultScoreObservedAt = observedAt;
   bridge.resultPointsEarned = 0;
   bridge.resultPointsPossible = undefined;
-  bridge.recentBestScoreObservations = [{
+  var zeroObservation = {
     resultScore: 0,
     resultTotalScore: 0,
     pointsEarned: 0,
     pointsPossible: null,
     observedAt: observedAt
-  }];
+  };
+
+  bridge.recentBestScoreObservations = [zeroObservation];
+
+  gradeBoundaryPolicy.descriptors(bridge)
+    .forEach(function (descriptor) {
+      gradeBoundaryPolicy.captureBoundaryCandidate(
+        bridge,
+        descriptor.type,
+        zeroObservation
+      );
+    });
+
   bridge.submittedScore = false;
 
   bridge

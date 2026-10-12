@@ -8,7 +8,8 @@
     "test": "NODE_ENV=test mocha --require ./test-support/redis-test-guard.js --recursive --exit",
     "build": "gulp",
     "build:js": "gulp js",
-    "build:css": "gulp css"
+    "build:css": "gulp css",
+    "test:fake-canvas-passback": "NODE_ENV=test node scripts/test-fake-canvas-grade-passback.js"
   },
   "dependencies": {
     "async": "3.2.6",

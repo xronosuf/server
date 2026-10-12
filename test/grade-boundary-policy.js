@@ -104,6 +104,97 @@ describe('grade boundary policy', function() {
         );
     });
 
+
+    it('persists an exact-boundary candidate that post-cutoff progress cannot replace', function() {
+        var b = bridge();
+        var eligible = {
+            resultScore: 0.87,
+            resultTotalScore: 8.7,
+            pointsEarned: 87,
+            pointsPossible: 100,
+            observedAt:
+                new Date('2026-10-05T23:58:57Z')
+        };
+        var late = {
+            resultScore: 0.95,
+            resultTotalScore: 9.5,
+            pointsEarned: 95,
+            pointsPossible: 100,
+            observedAt:
+                new Date('2026-10-05T23:59:20Z')
+        };
+
+        policy.captureBoundaryCandidate(
+            b,
+            policy.DUE_TYPE,
+            eligible
+        );
+        policy.captureBoundaryCandidate(
+            b,
+            policy.DUE_TYPE,
+            late
+        );
+
+        var candidate = policy.boundaryCandidate(
+            b,
+            policy.DUE_TYPE
+        );
+
+        assert.ok(candidate);
+        assert.strictEqual(candidate.resultScore, 0.87);
+        assert.strictEqual(
+            candidate.boundaryAt.toISOString(),
+            '2026-10-05T23:59:00.000Z'
+        );
+    });
+
+    it('reseeds a new future boundary from latest progress after an extension', function() {
+        var b = bridge({
+            untilDate:
+                new Date('2026-10-05T23:59:00Z'),
+            untilDateObservedAt:
+                new Date('2026-10-01T12:00:00Z'),
+            resultScore: 0.95,
+            resultTotalScore: 9.5,
+            resultScoreObservedAt:
+                new Date('2026-10-05T23:59:20Z'),
+            resultPointsEarned: 95,
+            resultPointsPossible: 100,
+            untilBoundaryCandidate: {
+                boundaryAt:
+                    new Date('2026-10-05T23:59:00Z'),
+                resultScore: 0.87,
+                resultTotalScore: 8.7,
+                observedAt:
+                    new Date('2026-10-05T23:58:57Z')
+            }
+        });
+
+        b.untilDate = new Date('2026-10-06T00:10:00Z');
+        b.untilDateObservedAt =
+            new Date('2026-10-06T00:00:00Z');
+
+        policy.clearBoundaryCandidate(
+            b,
+            policy.UNTIL_TYPE
+        );
+        var candidate = policy.refreshBoundaryCandidate(
+            b,
+            policy.UNTIL_TYPE
+        );
+
+        assert.ok(candidate);
+        assert.strictEqual(candidate.resultScore, 0.95);
+        assert.strictEqual(
+            candidate.boundaryAt.toISOString(),
+            '2026-10-06T00:10:00.000Z'
+        );
+        assert.strictEqual(
+            candidate.observedAt.toISOString(),
+            '2026-10-05T23:59:20.000Z'
+        );
+    });
+
     it('describes due and until independently even when they match', function() {
         var at = new Date('2026-10-05T23:59:00Z');
         var descriptions = policy.descriptors(bridge({

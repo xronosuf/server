@@ -1114,6 +1114,21 @@ exports.record = function(req, res, next) {
                                 gradeBoundaryPolicy.observationFromBridge(bridge)
                             );
 
+                        /*
+                         * Backfill exact-boundary correctness state from the
+                         * currently stored observation before this request can
+                         * replace it. This also makes rollout bridges safe even
+                         * if their candidate fields were not present yet.
+                         */
+                        gradeBoundaryPolicy.descriptors(bridge)
+                            .forEach(function(descriptor) {
+                                gradeBoundaryPolicy.captureBoundaryCandidate(
+                                    bridge,
+                                    descriptor.type,
+                                    gradeBoundaryPolicy.observationFromBridge(bridge)
+                                );
+                            });
+
                         gradeBoundaryPolicy.descriptors(bridge)
                             .forEach(function(descriptor) {
                                 if (descriptor.boundaryAt.getTime() <= now) {
@@ -1204,19 +1219,31 @@ exports.record = function(req, res, next) {
                                 parseFloat(req.body.pointsEarned);
                             bridge.resultPointsPossible =
                                 parseFloat(req.body.pointsPossible);
+                            var acceptedObservation = {
+                                resultScore: resultScore,
+                                resultTotalScore: resultTotalScore,
+                                pointsEarned:
+                                    bridge.resultPointsEarned,
+                                pointsPossible:
+                                    bridge.resultPointsPossible,
+                                observedAt: observedAt
+                            };
+
                             bridge.recentBestScoreObservations =
                                 gradeBoundaryPolicy.appendRecentBest(
                                     bridge.recentBestScoreObservations,
-                                    {
-                                        resultScore: resultScore,
-                                        resultTotalScore: resultTotalScore,
-                                        pointsEarned:
-                                            bridge.resultPointsEarned,
-                                        pointsPossible:
-                                            bridge.resultPointsPossible,
-                                        observedAt: observedAt
-                                    }
+                                    acceptedObservation
                                 );
+
+                            gradeBoundaryPolicy.descriptors(bridge)
+                                .forEach(function(descriptor) {
+                                    gradeBoundaryPolicy.captureBoundaryCandidate(
+                                        bridge,
+                                        descriptor.type,
+                                        acceptedObservation
+                                    );
+                                });
+
                             if (passbackOpen) {
                                 clearRetryState(bridge);
                             }

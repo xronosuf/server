@@ -247,3 +247,57 @@ Before production rollout:
 9. test both instructor setting modes (`late-policy` and `due-date`);
 10. verify transient-failure/retry diagnostics if a safe failure simulation is
     available.
+
+
+## Fake Canvas LTI Outcomes regression harness
+
+The grade-boundary branch includes a reusable fake Canvas LTI 1.1 Outcomes
+service for deterministic passback testing without creating a real Canvas
+assignment.
+
+The fake endpoint lives in:
+
+- `test-support/fake-canvas-outcomes.js`
+
+It accepts the same `replaceResult` and `readResult` XML shapes used by
+Xronos, records the OAuth Authorization header and submitted XML, stores one
+result per `sourcedId`, and can inject transient HTTP failures for retry
+tests.
+
+The ordinary Mocha suite includes:
+
+- `test/fake-canvas-outcomes.js`
+- `test/grade-passback-candidate.js`
+
+Those tests verify the real Xronos OAuth/XML transport, readResult round-trip,
+and deterministic boundary-candidate selection. The canonical timing
+regression is represented without wall-clock waiting:
+
+- boundary: 11:59:00
+- trusted Xronos observation: 87% at 11:58:57
+- worker processing time: 11:59:06
+- expected Canvas delivery: 87%
+- expected submittedAt: 11:58:57
+
+The candidate test also verifies that a newer 95% Xronos score observed after
+the cutoff does not replace the frozen 87% Canvas-eligible candidate.
+
+A Mongo-backed integration test exercises the real gradebook worker against the
+fake Outcomes HTTP server:
+
+```bash
+npm run test:fake-canvas-passback
+```
+
+On the disposable test VM this test should be run inside the Xronos container
+(or another container with the test deployment's Mongo configuration). It
+creates uniquely named fake LTI bridge/key records, invokes the production
+gradebook worker through an explicit test-only seam, verifies the XML received
+by fake Canvas, and removes all fixtures afterward.
+
+This harness is intentionally not a complete Canvas emulator. It proves Xronos
+timing, candidate selection, OAuth/XML transport, acceptance persistence,
+readResult behavior, and retry mechanics under our control. A final real
+Canvas test remains necessary to verify UF Canvas interoperability, especially
+the advertised `submissionDetails/submittedAt` extension and Canvas-side late
+status behavior.

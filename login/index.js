@@ -10,6 +10,7 @@ var gradebook = require("../routes/gradebook");
 var ltiLaunchReference = require("../lib/lti-launch-reference");
 var instructorSettings = require("../lib/instructor-settings");
 var gradeBoundaryPolicy = require("../lib/grade-boundary-policy");
+var canvasBoundaryDate = require("../lib/canvas-boundary-date");
 
 module.exports.githubStrategy = function (rootUrl) {
   return new OAuth2Strategy(
@@ -250,75 +251,23 @@ function normalizeRepositoryName(name) {
 
 
 function validCanvasCustomDate(value) {
-  if (!value) return false;
-
-  /*
-   * Canvas may leave substitution variables such as
-   * $Canvas.assignment.dueAt.iso8601 unexpanded. Do not pass those
-   * placeholders to moment, since they are not real dates and trigger
-   * noisy fallback warnings.
-   */
-  if (typeof value === "string" && value.charAt(0) === "$") return false;
-
-  return moment(value).isValid();
+  return canvasBoundaryDate.validDate(value);
 }
 
 function updateObservedCanvasDate(
   bridge,
-  field,
-  observedField,
+  type,
   value,
-  observedAt
+  observedAt,
+  parameterPresent
 ) {
-  if (!validCanvasCustomDate(value)) return;
-
-  var incoming = new Date(value);
-  var existing = bridge[field]
-    ? new Date(bridge[field]).getTime()
-    : null;
-  var boundaryType =
-    field === "dueDate"
-      ? gradeBoundaryPolicy.DUE_TYPE
-      : (
-          field === "untilDate"
-            ? gradeBoundaryPolicy.UNTIL_TYPE
-            : null
-        );
-
-  if (existing !== incoming.getTime()) {
-    bridge[field] = incoming;
-    bridge[observedField] = observedAt;
-
-    if (boundaryType) {
-      /*
-       * A candidate belongs to one exact Canvas timestamp. Never carry it
-       * across a date edit. A future extension can immediately seed a new
-       * candidate from the latest trusted Xronos observation.
-       */
-      gradeBoundaryPolicy.clearBoundaryCandidate(
-        bridge,
-        boundaryType
-      );
-      gradeBoundaryPolicy.refreshBoundaryCandidate(
-        bridge,
-        boundaryType
-      );
-    }
-  } else if (!bridge[observedField]) {
-    /*
-     * Legacy bridge: we know the date is current, but not when Xronos first
-     * learned it. Stamp this launch conservatively rather than inventing an
-     * earlier authoritative observation.
-     */
-    bridge[observedField] = observedAt;
-
-    if (boundaryType) {
-      gradeBoundaryPolicy.refreshBoundaryCandidate(
-        bridge,
-        boundaryType
-      );
-    }
-  }
+  return canvasBoundaryDate.apply(
+    bridge,
+    type,
+    value,
+    observedAt,
+    parameterPresent
+  );
 }
 
 function canvasAcceptsSubmittedAt(profile) {
@@ -522,20 +471,26 @@ function addLmsAccount(req, identifier, profile, done) {
           if (roles) bridge.roles = roles;
           updateObservedCanvasDate(
             bridge,
-            "dueDate",
-            "dueDateObservedAt",
+            gradeBoundaryPolicy.DUE_TYPE,
             profile.custom_due_at,
-            canvasDateObservedAt
+            canvasDateObservedAt,
+            Object.prototype.hasOwnProperty.call(
+              profile,
+              "custom_due_at"
+            )
           );
           if (profile.custom_canvas_assignment_points_possible)
             bridge.pointsPossible =
               profile.custom_canvas_assignment_points_possible;
           updateObservedCanvasDate(
             bridge,
-            "untilDate",
-            "untilDateObservedAt",
+            gradeBoundaryPolicy.UNTIL_TYPE,
             profile.custom_lock_at,
-            canvasDateObservedAt
+            canvasDateObservedAt,
+            Object.prototype.hasOwnProperty.call(
+              profile,
+              "custom_lock_at"
+            )
           );
           if (profile.lis_result_sourcedid)
             bridge.lisResultSourcedid = profile.lis_result_sourcedid;

@@ -106,6 +106,63 @@ describe('Canvas passback candidate selection', function() {
         );
     });
 
+    it('keeps the exact boundary candidate after recent history is entirely post-cutoff', function() {
+        var b = bridge({
+            resultScore: 0.99,
+            resultTotalScore: 9.9,
+            resultScoreObservedAt:
+                new Date('2026-10-05T23:59:40.000Z'),
+            recentBestScoreObservations: [
+                {
+                    resultScore: 0.99,
+                    resultTotalScore: 9.9,
+                    observedAt:
+                        new Date('2026-10-05T23:59:40.000Z')
+                },
+                {
+                    resultScore: 0.97,
+                    resultTotalScore: 9.7,
+                    observedAt:
+                        new Date('2026-10-05T23:59:30.000Z')
+                },
+                {
+                    resultScore: 0.95,
+                    resultTotalScore: 9.5,
+                    observedAt:
+                        new Date('2026-10-05T23:59:20.000Z')
+                }
+            ],
+            untilBoundaryCandidate: {
+                boundaryAt:
+                    new Date('2026-10-05T23:59:00.000Z'),
+                resultScore: 0.87,
+                resultTotalScore: 8.7,
+                pointsEarned: 87,
+                pointsPossible: 100,
+                observedAt:
+                    new Date('2026-10-05T23:58:57.000Z')
+            }
+        });
+        var selected = candidate.select(
+            b,
+            {
+                source: 'canvas-until',
+                time: Date.parse('2026-10-05T23:59:00.000Z')
+            },
+            Date.parse('2026-10-05T23:59:45.000Z')
+        );
+
+        assert.strictEqual(selected.eligible, true);
+        assert.strictEqual(
+            selected.candidate.resultScore,
+            0.87
+        );
+        assert.strictEqual(
+            selected.candidate.observedAt.toISOString(),
+            '2026-10-05T23:58:57.000Z'
+        );
+    });
+
     it('refuses automatic delivery when the boundary was learned retroactively', function() {
         var b = bridge({
             untilDateObservedAt:

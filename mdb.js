@@ -110,6 +110,11 @@ exports.initialize = function initialize(callback) {
         // history remains in ProgressMilestone; these entries protect exact
         // deadline selection while workers and browser updates race.
         recentBestScoreObservations: [Mixed],
+        // Exact-boundary delivery candidates are correctness state, not
+        // diagnostic history. Each candidate is tied to the current exact
+        // Canvas boundaryAt value so later progress cannot evict it.
+        dueBoundaryCandidate: Mixed,
+        untilBoundaryCandidate: Mixed,
         submittedScore: Boolean,
 
         // Persistent retry metadata lets the retry horizon survive process or

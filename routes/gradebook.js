@@ -376,6 +376,48 @@ exports.bridgeHasGradePassback = bridgeHasGradePassback;
 exports.bridgeIsOpen = bridgeIsOpen;
 exports.queueBridge = queueBridge;
 exports.scheduleBridgeBoundaries = scheduleBridgeBoundaries;
+function queueCurrentCandidateIfNeeded(bridge, callback) {
+    callback = callback || function() {};
+
+    if (
+        !bridge ||
+        bridge.instructionalStaff ||
+        !bridgeHasGradePassback(bridge) ||
+        !bridgeIsOpen(bridge, Date.now())
+    ) {
+        callback(null, false);
+        return;
+    }
+
+    var current = gradeBoundaryPolicy.observationFromBridge(bridge);
+    var currentTotal = current && Number(current.resultTotalScore);
+    var lastSubmittedTotal = Number(
+        bridge.lastSubmittedResultTotalScore
+    );
+    var alreadyAccepted =
+        bridge.submittedScore === true &&
+        current &&
+        isFinite(lastSubmittedTotal) &&
+        lastSubmittedTotal >= currentTotal;
+
+    if (!current || alreadyAccepted) {
+        callback(null, false);
+        return;
+    }
+
+    bridge.submittedScore = false;
+    clearRetryState(bridge);
+
+    bridge.save()
+        .then(function() {
+            queueBridge(bridge, function(err) {
+                callback(err, !err);
+            });
+        })
+        .catch(callback);
+}
+
+exports.queueCurrentCandidateIfNeeded = queueCurrentCandidateIfNeeded;
 // Explicit test seam for the fake Canvas integration harness. Production
 // scheduling still reaches this worker only through the Redis queue.
 exports.processGradebookForTest = processGradebook;

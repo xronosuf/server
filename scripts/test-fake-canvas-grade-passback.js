@@ -94,7 +94,8 @@ function cleanup() {
 function bridgeDocument(options) {
     var boundary = options.boundary;
     var observed = options.observed;
-    var preBoundaryObservation = options.preBoundaryObservation;
+    var boundaryCandidate = options.boundaryCandidate;
+    var recentHistory = options.recentHistory;
 
     return new mdb.LtiBridge({
         ltiId: marker + '-' + options.name,
@@ -118,15 +119,27 @@ function bridgeDocument(options) {
         resultPointsEarned: options.resultScore * 100,
         resultPointsPossible: 100,
         recentBestScoreObservations:
-            preBoundaryObservation
-                ? [preBoundaryObservation]
-                : [{
-                    resultScore: options.resultScore,
-                    resultTotalScore: options.resultTotalScore,
-                    pointsEarned: options.resultScore * 100,
-                    pointsPossible: 100,
-                    observedAt: observed
-                }],
+            recentHistory || [{
+                resultScore: options.resultScore,
+                resultTotalScore: options.resultTotalScore,
+                pointsEarned: options.resultScore * 100,
+                pointsPossible: 100,
+                observedAt: observed
+            }],
+        dueBoundaryCandidate:
+            boundaryCandidate
+                ? Object.assign(
+                    { boundaryAt: boundary },
+                    boundaryCandidate
+                )
+                : undefined,
+        untilBoundaryCandidate:
+            boundaryCandidate
+                ? Object.assign(
+                    { boundaryAt: boundary },
+                    boundaryCandidate
+                )
+                : undefined,
         submittedScore: false,
         oauthConsumerKey: ltiKey,
         oauthSignatureMethod: 'HMAC-SHA1',
@@ -172,16 +185,48 @@ mdb.initialize(function(initErr) {
                 boundary: boundary,
                 observed: eligibleObserved,
                 resultScore: 0.87,
-                resultTotalScore: 8.7
+                resultTotalScore: 8.7,
+                boundaryCandidate: eligibleObservation
             });
 
             laterProgressBridge = bridgeDocument({
                 name: 'post-cutoff-progress',
                 boundary: boundary,
-                observed: postCutoffObserved,
-                resultScore: 0.95,
-                resultTotalScore: 9.5,
-                preBoundaryObservation: eligibleObservation
+                observed:
+                    new Date(boundary.getTime() + 40 * 1000),
+                resultScore: 0.99,
+                resultTotalScore: 9.9,
+                boundaryCandidate: eligibleObservation,
+                /*
+                 * Deliberately fill the entire bounded recent-history buffer
+                 * with post-cutoff observations. Correct delivery must still
+                 * come from the persistent exact-boundary candidate.
+                 */
+                recentHistory: [
+                    {
+                        resultScore: 0.99,
+                        resultTotalScore: 9.9,
+                        pointsEarned: 99,
+                        pointsPossible: 100,
+                        observedAt:
+                            new Date(boundary.getTime() + 40 * 1000)
+                    },
+                    {
+                        resultScore: 0.97,
+                        resultTotalScore: 9.7,
+                        pointsEarned: 97,
+                        pointsPossible: 100,
+                        observedAt:
+                            new Date(boundary.getTime() + 30 * 1000)
+                    },
+                    {
+                        resultScore: 0.95,
+                        resultTotalScore: 9.5,
+                        pointsEarned: 95,
+                        pointsPossible: 100,
+                        observedAt: postCutoffObserved
+                    }
+                ]
             });
 
             return Promise.all([
@@ -273,7 +318,7 @@ mdb.initialize(function(initErr) {
                 Number(result.resultTotalScore) !== 8.7
             ) {
                 fail(
-                    'Post-cutoff 95% leaked into Canvas; expected preserved 87%, got ' +
+                    'Post-cutoff progress leaked into Canvas; expected preserved 87%, got ' +
                     result.resultScore + ' / ' +
                     result.resultTotalScore + '.'
                 );
@@ -289,7 +334,7 @@ mdb.initialize(function(initErr) {
             }
 
             console.log(
-                'PASS post-cutoff isolation: Xronos 95% did not replace Canvas-eligible 87%'
+                'PASS post-cutoff isolation: three newer post-cutoff scores did not evict Canvas-eligible 87%'
             );
         })
         .then(function() {

@@ -9,7 +9,7 @@
     "build": "gulp",
     "build:js": "gulp js",
     "build:css": "gulp css",
-    "test:fake-canvas-passback": "NODE_ENV=test node scripts/test-fake-canvas-grade-passback.js"
+    "test:fake-canvas-passback": "NODE_ENV=test node --require ./test-support/redis-test-guard.js scripts/test-fake-canvas-grade-passback.js"
   },
   "dependencies": {
     "async": "3.2.6",

@@ -5,6 +5,7 @@ var gradeSyncPresentation = require('./grade-sync-presentation');
 var gradeSyncSupportReport = require('./grade-sync-support-report');
 var gradeSyncRecoveryPolicy = require('./grade-sync-recovery-policy');
 var tabDormancyPolicy = require('./tab-dormancy-policy');
+var gradebookCardPolicy = require('../../lib/gradebook-card-policy');
 
 var xronosLatestGradeSync = null;
 var xronosLatestGradeSyncDiagnostics = null;
@@ -41,7 +42,7 @@ function xronosScheduleGradeSyncRecheckAfterResume() {
 
     window.setTimeout(function() {
         if ($("main").attr("data-xourse-url")) {
-            exports.update();
+            exports.update('visibility-resume');
         }
     }, Math.max(250, delay));
 }
@@ -599,22 +600,99 @@ var xronosDispatchGradebookRecorded = function(payload, result) {
     }
 };
 
-exports.update = _.debounce( function() {
-    var pointsEarned = 0;
-    
-    $(".activity-card").each( function() {
-	var card = $(this);
-	var weight = parseFloat(card.attr('data-weight'));
-	var completion = parseFloat(card.attr('data-max-completion'));
+var xronosGradebookPageInstanceId =
+    Date.now().toString(36) + "-" +
+    Math.random().toString(36).slice(2, 10);
+var xronosPendingGradebookReasons = {};
 
-	if (! isNaN(weight)) {
-	    if (! isNaN(completion)) {	    
-		var points = weight * completion;
-		pointsEarned = pointsEarned + points;
-	    }
-	}
+function xronosRememberGradebookReason(reason) {
+    reason = typeof reason === 'string' && reason
+        ? reason
+        : 'unspecified';
+
+    xronosPendingGradebookReasons[reason] = true;
+}
+
+function xronosTakeGradebookReasons() {
+    var reasons = Object.keys(xronosPendingGradebookReasons);
+    xronosPendingGradebookReasons = {};
+
+    return reasons.length ? reasons : ['unspecified'];
+}
+
+function xronosGradebookCards() {
+    var cards;
+
+    /*
+     * Activity pages render the assignment cards in .toc.  Xourse pages render
+     * them directly under .xourse.  Prefer those authoritative containers over
+     * a global .activity-card scan so unrelated/temporary card-like UI cannot
+     * affect a grade.
+     */
+    cards = $('.toc .activity-card');
+
+    if (cards.length === 0) {
+        cards = $('.xourse > .activity-card');
+    }
+
+    /*
+     * Compatibility fallback for older generated markup. Duplicate-safe
+     * aggregation below still prevents repeated representations from earning
+     * the same activity more than once.
+     */
+    if (cards.length === 0) {
+        cards = $('.activity-card');
+    }
+
+    return cards;
+}
+
+function xronosGradebookSnapshot(reasons) {
+    var cards = xronosGradebookCards();
+    var descriptors = [];
+
+    cards.each(function() {
+        var card = $(this);
+
+        descriptors.push({
+            repositoryName: card.attr('data-repository-name') || null,
+            activityPath: card.attr('data-path') || null,
+            weight: card.attr('data-weight'),
+            completion: card.attr('data-max-completion')
+        });
     });
 
+    var aggregate = gradebookCardPolicy.aggregate(descriptors);
+
+    return {
+        pointsEarned: aggregate.pointsEarned,
+        pointsPossibleFromCards: aggregate.pointsPossibleFromCards,
+        diagnostic: {
+            pageInstanceId: xronosGradebookPageInstanceId,
+            currentActivityPath: $('main').attr('data-path') || null,
+            reasons: reasons,
+            domCardCount: aggregate.domCardCount,
+            weightedCardCount: aggregate.weightedCardCount,
+            uniqueActivityCount: aggregate.uniqueActivityCount,
+            duplicateActivityCount: aggregate.duplicateActivityCount,
+            duplicateKeys: aggregate.duplicateKeys.slice(0, 20),
+            weightConflictKeys: aggregate.weightConflictKeys.slice(0, 20),
+            contributions: aggregate.contributions.slice(0, 50).map(function(card) {
+                return {
+                    key: card.key,
+                    weight: card.weight,
+                    completion: card.completion,
+                    occurrences: card.occurrences
+                };
+            })
+        }
+    };
+}
+
+var xronosDebouncedGradebookUpdate = _.debounce(function() {
+    var reasons = xronosTakeGradebookReasons();
+    var snapshot = xronosGradebookSnapshot(reasons);
+    var pointsEarned = snapshot.pointsEarned;
     var pointsPossible = parseFloat(
         $("main").attr("data-points")
     );
@@ -622,28 +700,23 @@ exports.update = _.debounce( function() {
 
     /*
      * Older generated xourses provide the aggregate point total through
-     * main[data-points]. Newer generated xourses may omit that aggregate
-     * while retaining each activity card's data-weight. In that case, derive
-     * the same xourse-level denominator by summing the valid card weights.
+     * main[data-points]. Newer generated xourses may omit that aggregate.
+     * Derive the fallback denominator from the same unique activity identities
+     * used for earned points, so duplicate DOM representations cannot inflate
+     * either side of the grade.
      */
     if (isNaN(pointsPossible) || pointsPossible <= 0) {
-        pointsPossible = 0;
-
-        $(".activity-card").each(function() {
-            var weight = parseFloat(
-                $(this).attr("data-weight")
-            );
-
-            if (!isNaN(weight) && weight > 0) {
-                pointsPossible += weight;
-            }
-        });
+        pointsPossible = snapshot.pointsPossibleFromCards;
     }
 
     var payload = {
         pointsEarned: pointsEarned,
-        pointsPossible: pointsPossible
+        pointsPossible: pointsPossible,
+        gradebookDiagnostic: snapshot.diagnostic
     };
+
+    snapshot.diagnostic.pointsEarned = pointsEarned;
+    snapshot.diagnostic.pointsPossible = pointsPossible;
 
     /*
      * A successful HTTP response only means the route handled the request.
@@ -669,31 +742,45 @@ exports.update = _.debounce( function() {
     }
 
     $(".progress.completion-meter").attr('title', 'Submitting grade...' );
-    debugLog.log('Sent gradebook update to Xronos server; Canvas passback may be queued.', payload);
-    
+    debugLog.log(
+        'Sent gradebook update to Xronos server; Canvas passback may be queued.',
+        payload
+    );
+
     $.ajax({
-	url: window.toValidPath('/' + xourseUrl + '/gradebook'),
-	type: 'PUT',
-	data: JSON.stringify(payload),
-	contentType: 'application/json',	
-	success: function( result ) {
-	    debugLog.log('Xronos server accepted gradebook update; Canvas passback may be queued.', payload);
+        url: window.toValidPath('/' + xourseUrl + '/gradebook'),
+        type: 'PUT',
+        data: JSON.stringify(payload),
+        contentType: 'application/json',
+        success: function(result) {
+            debugLog.log(
+                'Xronos server accepted gradebook update; Canvas passback may be queued.',
+                payload
+            );
             xronosLatestGradeSyncDiagnostics =
                 result && result.gradeSyncDiagnostics
                     ? result.gradeSyncDiagnostics
                     : null;
-	    xronosUpdateGradeSyncStatus(result && result.gradeSync);
-	    xronosDispatchGradebookRecorded(payload, result);
-	    $('.progress-bar', ".progress.completion-meter").removeClass( 'bg-danger' );
-	    $('.progress-bar', ".progress.completion-meter").addClass( 'bg-success' );
-	    $(".progress.completion-meter").attr('title', 'Grade submitted at '  + (new Date()).toLocaleTimeString() );
-	},
-	error: function(jqXHR, err, exception) {
-	    debugLog.log('Xronos server did not accept gradebook update; Canvas passback was not queued from this request.', {
-		status: jqXHR && jqXHR.status,
-		error: err,
-		exception: exception
-	    });
+            xronosUpdateGradeSyncStatus(result && result.gradeSync);
+            xronosDispatchGradebookRecorded(payload, result);
+            $('.progress-bar', ".progress.completion-meter").removeClass('bg-danger');
+            $('.progress-bar', ".progress.completion-meter").addClass('bg-success');
+            $(".progress.completion-meter").attr(
+                'title',
+                'Grade submitted at ' + (new Date()).toLocaleTimeString()
+            );
+        },
+        error: function(jqXHR, err, exception) {
+            debugLog.log(
+                'Xronos server did not accept gradebook update; Canvas passback was not queued from this request.',
+                {
+                    status: jqXHR && jqXHR.status,
+                    error: err,
+                    exception: exception,
+                    gradebookDiagnostic: snapshot.diagnostic
+                }
+            );
+
             if (xronosGradeSyncFailureIsDormancyAdjacent()) {
                 debugLog.log(
                     'Deferred grade-sync transport failure after tab dormancy; a fresh foreground check will decide status.'
@@ -707,12 +794,19 @@ exports.update = _.debounce( function() {
             }
 
             xronosLatestGradeSyncDiagnostics = null;
-	    xronosUpdateGradeSyncStatus({state: 'error'});
-	    $(".progress.completion-meter").attr('title', 'Could not submit grade.' );
-	    $('.progress-bar', ".progress.completion-meter").removeClass( 'bg-success' );
-	    $('.progress-bar', ".progress.completion-meter").addClass( 'bg-danger' );
-	    window.setTimeout( exports.update, 1000 );
-	}
+            xronosUpdateGradeSyncStatus({state: 'error'});
+            $(".progress.completion-meter").attr('title', 'Could not submit grade.');
+            $('.progress-bar', ".progress.completion-meter").removeClass('bg-success');
+            $('.progress-bar', ".progress.completion-meter").addClass('bg-danger');
+            window.setTimeout(function() {
+                exports.update('transport-retry');
+            }, 1000);
+        }
     });
-    
-}, 300 );
+}, 300);
+
+exports.update = function(reason) {
+    xronosRememberGradebookReason(reason);
+    xronosDebouncedGradebookUpdate();
+};
+

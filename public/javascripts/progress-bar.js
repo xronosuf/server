@@ -165,7 +165,7 @@ var update = _.debounce( function() {
     $(activityToMonitor).recordCompletion( value );
 
     // total the points in the course (if there is one)
-    gradebook.update();
+    gradebook.update('page-progress');
 
     if (value == 1) {
 	$('#next-activity .page-link').addClass('pulsate');

@@ -462,283 +462,621 @@ function processGradebook(id, callback) {
                 return null;
             }
 
-            var passbackWindow = lateGradePolicy.passbackWindowEnd(bridge);
-            var deliveryNow = Date.now();
-            var deliverySelection =
-                gradePassbackCandidate.select(
-                    bridge,
-                    passbackWindow,
-                    deliveryNow
-                );
-            var deliveryCandidate = deliverySelection.candidate;
-            var boundaryBackedDelivery =
-                deliverySelection.boundaryBackedDelivery;
-            var controllingBoundaryType =
-                deliverySelection.boundaryType;
-            var scoreObservedAt = deliveryCandidate
-                ? gradeBoundaryPolicy.timeValue(
-                    deliveryCandidate.observedAt
-                )
-                : null;
-            var policyNow =
-                boundaryBackedDelivery && scoreObservedAt !== null
-                    ? scoreObservedAt
-                    : deliveryNow;
-
-            if (!deliverySelection.eligible || !deliveryCandidate) {
-                console.log(
-                    'Canvas passback has no eligible delivery candidate for bridge ' +
-                    bridge._id +
-                    ' (' + deliverySelection.reason + ')'
-                );
-                callback(null);
-                return null;
-            }
-
-            if (boundaryBackedDelivery) {
-                progressMilestones.ensureBoundary(
-                    bridge,
-                    controllingBoundaryType,
-                    new Date(),
-                    function(boundaryErr) {
-                        if (boundaryErr) {
-                            console.log(
-                                'Could not finalize controlling boundary before passback for bridge ' +
-                                bridge._id
-                            );
-                            console.log(boundaryErr);
-                        }
-                    }
-                );
-            }
-
-            var pox = passback({
-                messageIdentifier: crypto.randomUUID(),
-                resultDataUrl:
-                    config.root +
-                    '/users/' +
-                    bridge.user._id +
-                    '/' +
-                    bridge.repository +
-                    '/' +
-                    bridge.path,
-                resultScore:
-                    deliveryCandidate.resultScore,
-                resultTotalScore:
-                    deliveryCandidate.resultTotalScore,
-                submittedAt:
-                    boundaryBackedDelivery &&
-                    bridge.submissionSubmittedAtAccepted === true &&
-                    scoreObservedAt !== null
-                        ? new Date(scoreObservedAt).toISOString()
-                        : null,
-                sourcedId:
-                    bridge.lisResultSourcedid
-            });
-
-            var url =
-                bridge.lisOutcomeServiceUrl;
-
             return mdb.KeyAndSecret.findOne({
-                ltiKey:
-                    bridge.oauthConsumerKey
+                ltiKey: bridge.oauthConsumerKey
             })
                 .exec()
                 .then(function(keyAndSecret) {
                     if (!keyAndSecret) {
-                        callback(
-                            "Missing LTI secret."
-                        );
+                        callback("Missing LTI secret.");
                         return;
                     }
 
+                    var url = bridge.lisOutcomeServiceUrl;
                     var oauth = {
-                        callback:
-                            "about:blank",
-                        body_hash:
-                            true,
-                        consumer_key:
-                            keyAndSecret.ltiKey,
-                        consumer_secret:
-                            keyAndSecret.ltiSecret,
-                        signature_method:
-                            bridge.oauthSignatureMethod
+                        callback: "about:blank",
+                        body_hash: true,
+                        consumer_key: keyAndSecret.ltiKey,
+                        consumer_secret: keyAndSecret.ltiSecret,
+                        signature_method: bridge.oauthSignatureMethod
                     };
 
-                    function sendPassback(lateMetadata) {
+                    function candidateSubmittedAt(candidate) {
+                        return passbackSuccessState.candidateSubmittedAt(
+                            bridge,
+                            candidate
+                        );
+                    }
+
+                    function candidatePox(candidate, submittedAt) {
+                        return passback({
+                            messageIdentifier: crypto.randomUUID(),
+                            resultDataUrl:
+                                config.root +
+                                '/users/' +
+                                bridge.user._id +
+                                '/' +
+                                bridge.repository +
+                                '/' +
+                                bridge.path,
+                            resultScore: candidate.resultScore,
+                            resultTotalScore:
+                                candidate.resultTotalScore,
+                            submittedAt: submittedAt,
+                            sourcedId: bridge.lisResultSourcedid
+                        });
+                    }
+
+                    function postCandidate(candidate, submittedAt, done) {
                         legacyHttpClient.postOAuth1Xml(
-                        {
-                            url: url,
-                            body: pox,
-                            callback: oauth.callback,
-                            consumerKey:
-                                oauth.consumer_key,
-                            consumerSecret:
-                                oauth.consumer_secret,
-                            signatureMethod:
-                                oauth.signature_method,
-                            headers: {
-                                'Content-Type':
-                                    'application/xml',
-                                'User-Agent':
-                                    'Xronos/1.0 ' +
-                                    '(University of Florida; ' +
-                                    'https://xronos.clas.ufl.edu)'
-                            }
-                        },
-                        function(
-                            err,
-                            response,
-                            body
-                        ) {
-                            if (err) {
-                                console.log(
-                                    'Error when posting:'
-                                );
-                                console.log(err);
-
-                                if (
-                                    gradebookRetryPolicy.shouldRetry(
-                                        err,
-                                        response
-                                    )
-                                ) {
-                                    retryBridge(
-                                        bridge,
-                                        callback
-                                    );
-                                } else {
-                                    callback(null);
+                            {
+                                url: url,
+                                body: candidatePox(candidate, submittedAt),
+                                callback: oauth.callback,
+                                consumerKey: oauth.consumer_key,
+                                consumerSecret: oauth.consumer_secret,
+                                signatureMethod: oauth.signature_method,
+                                headers: {
+                                    'Content-Type': 'application/xml',
+                                    'User-Agent':
+                                        'Xronos/1.0 ' +
+                                        '(University of Florida; ' +
+                                        'https://xronos.clas.ufl.edu)'
                                 }
-                            } else if (
-                                canvasPassbackSucceeded(
-                                    response,
-                                    body
-                                )
-                            ) {
-                                logCanvasPassbackSuccess(
+                            },
+                            done
+                        );
+                    }
+
+                    function saveBridge(done) {
+                        bridge.save()
+                            .then(function() {
+                                done(null);
+                            })
+                            .catch(done);
+                    }
+
+                    function persistSuccessfulSubmission(
+                        candidate,
+                        submittedAt,
+                        acceptedAt,
+                        done
+                    ) {
+                        passbackSuccessState.applySuccessfulSubmission(
+                            bridge,
+                            candidate,
+                            submittedAt,
+                            acceptedAt
+                        );
+                        bridge.passbackRecoverySubmission = undefined;
+                        clearRetryState(bridge);
+                        saveBridge(done);
+                    }
+
+                    function saveLateObservation(
+                        rawScore,
+                        effectiveScore,
+                        lateIntervals,
+                        observedAt,
+                        done
+                    ) {
+                        var observation =
+                            lateGradeEvidence
+                                .observationFromAcceptedLatePassback(
                                     bridge,
-                                    deliveryCandidate
+                                    rawScore,
+                                    effectiveScore,
+                                    lateIntervals,
+                                    observedAt
                                 );
 
-                                var acceptedAt = new Date();
-
-                                bridge.submittedScore = true;
-                                bridge.lastSubmittedResultScore =
-                                    deliveryCandidate.resultScore;
-                                bridge.lastSubmittedResultTotalScore =
-                                    deliveryCandidate.resultTotalScore;
-                                bridge.lastSubmittedAt = acceptedAt;
-                                clearRetryState(bridge);
-
-                                function saveAcceptedBridge() {
-                                    bridge
-                                        .save()
-                                        .then(function() {
-                                            callback(null);
-                                        })
-                                        .catch(function(err) {
-                                            callback(err);
-                                        });
+                        saveLatePolicyObservation(
+                            observation,
+                            function(observationErr) {
+                                if (observationErr) {
+                                    console.log(
+                                        'Could not save Canvas late-policy observation for bridge ' +
+                                        bridge._id
+                                    );
+                                    console.log(observationErr);
+                                } else {
+                                    console.log(
+                                        'Recorded Canvas late-policy observation for bridge ' +
+                                        bridge._id +
+                                        ': raw=' + rawScore +
+                                        ', effective=' + effectiveScore +
+                                        ', intervals=' + lateIntervals
+                                    );
                                 }
 
-                                if (!lateMetadata) {
-                                    saveAcceptedBridge();
+                                done(null);
+                            }
+                        );
+                    }
+
+                    function processRecovery(recovery) {
+                        if (!recovery) {
+                            callback(null);
+                            return;
+                        }
+
+                        var recoveryObservedAt =
+                            gradeBoundaryPolicy.timeValue(
+                                recovery.observedAt
+                            );
+                        var recoveryExpectedScore =
+                            Number(recovery.expectedEffectiveScore);
+                        var recoveryCandidate = {
+                            resultScore: recovery.resultScore,
+                            resultTotalScore: recovery.resultTotalScore,
+                            observedAt: recovery.observedAt
+                        };
+                        var recoverySubmittedAt =
+                            recoveryObservedAt === null
+                                ? null
+                                : new Date(
+                                    recoveryObservedAt
+                                ).toISOString();
+
+                        if (
+                            recoveryObservedAt === null ||
+                            !isFinite(recoveryExpectedScore)
+                        ) {
+                            console.log(
+                                'Cannot restore Canvas grade for bridge ' +
+                                bridge._id +
+                                ': invalid persisted recovery state'
+                            );
+                            callback(null);
+                            return;
+                        }
+
+                        console.log(
+                            'Restoring last known-good Canvas submission for bridge ' +
+                            bridge._id +
+                            ': resultScore=' +
+                            recoveryCandidate.resultScore +
+                            ', submittedAt=' +
+                            recoverySubmittedAt
+                        );
+
+                        postCandidate(
+                            recoveryCandidate,
+                            recoverySubmittedAt,
+                            function(err, response, body) {
+                                if (
+                                    err ||
+                                    !canvasPassbackSucceeded(response, body)
+                                ) {
+                                    console.log(
+                                        'Canvas recovery passback failed for bridge ' +
+                                        bridge._id
+                                    );
+                                    if (err) {
+                                        console.log(err);
+                                    } else {
+                                        logCanvasPassbackFailure(
+                                            bridge,
+                                            response,
+                                            body
+                                        );
+                                    }
+
+                                    retryBridge(bridge, callback);
                                     return;
                                 }
 
                                 ltiOutcomesClient.readResult(
                                     bridge,
                                     keyAndSecret,
-                                    function(verifyErr, verifiedResult) {
+                                    function(readErr, restoredResult) {
                                         if (
-                                            verifyErr ||
-                                            !verifiedResult ||
-                                            !verifiedResult.ok ||
-                                            !verifiedResult.hasResult
+                                            readErr ||
+                                            !restoredResult ||
+                                            !restoredResult.ok ||
+                                            !restoredResult.hasResult
                                         ) {
                                             console.log(
-                                                'Late Canvas passback accepted but post-write verification failed for bridge ' +
+                                                'Canvas recovery was accepted but could not be verified for bridge ' +
                                                 bridge._id
                                             );
-                                            if (verifyErr) {
-                                                console.log(verifyErr);
+                                            if (readErr) {
+                                                console.log(readErr);
                                             }
-                                            saveAcceptedBridge();
+
+                                            retryBridge(
+                                                bridge,
+                                                callback
+                                            );
                                             return;
                                         }
 
-                                        var observation =
-                                            lateGradeEvidence.observationFromAcceptedLatePassback(
-                                                bridge,
-                                                lateMetadata.rawScore,
-                                                verifiedResult.score,
-                                                lateMetadata.lateIntervals,
-                                                acceptedAt
+                                        if (
+                                            !passbackSuccessState
+                                                .canvasDidNotDecrease(
+                                                    recoveryExpectedScore,
+                                                    restoredResult.score
+                                                )
+                                        ) {
+                                            console.log(
+                                                'HIGH SEVERITY: Canvas recovery did not restore the previous effective grade for bridge ' +
+                                                bridge._id +
+                                                '; expected at least ' +
+                                                recoveryExpectedScore +
+                                                ', read back ' +
+                                                restoredResult.score
                                             );
 
-                                        saveLatePolicyObservation(
-                                            observation,
-                                            function(observationErr) {
-                                                if (observationErr) {
-                                                    console.log(
-                                                        'Could not save Canvas late-policy observation for bridge ' +
-                                                        bridge._id
-                                                    );
-                                                    console.log(observationErr);
-                                                } else {
-                                                    console.log(
-                                                        'Recorded Canvas late-policy observation for bridge ' +
-                                                        bridge._id +
-                                                        ': raw=' + lateMetadata.rawScore +
-                                                        ', effective=' + verifiedResult.score +
-                                                        ', intervals=' + lateMetadata.lateIntervals
-                                                    );
-                                                }
+                                            retryBridge(
+                                                bridge,
+                                                callback
+                                            );
+                                            return;
+                                        }
 
-                                                saveAcceptedBridge();
-                                            }
+                                        console.log(
+                                            'Restored last known-good Canvas grade for bridge ' +
+                                            bridge._id +
+                                            '; effective=' +
+                                            restoredResult.score
+                                        );
+
+                                        bridge.passbackRecoverySubmission =
+                                            undefined;
+                                        bridge.submittedScore = false;
+                                        clearRetryState(bridge);
+                                        saveBridge(callback);
+                                    }
+                                );
+                            }
+                        );
+                    }
+
+                    function beginRecovery(recovery, previousCanvasScore) {
+                        bridge.passbackRecoverySubmission = {
+                            resultScore: recovery.resultScore,
+                            resultTotalScore:
+                                recovery.resultTotalScore,
+                            observedAt: recovery.observedAt,
+                            expectedEffectiveScore:
+                                previousCanvasScore,
+                            startedAt: new Date()
+                        };
+                        bridge.submittedScore = false;
+
+                        saveBridge(function(saveErr) {
+                            if (saveErr) {
+                                callback(saveErr);
+                                return;
+                            }
+
+                            processRecovery(
+                                bridge.passbackRecoverySubmission
+                            );
+                        });
+                    }
+
+                    function handleAcceptedLateCandidate(
+                        deliveryCandidate,
+                        submittedAt,
+                        previousCanvasScore,
+                        candidateRawScore,
+                        currentLateIntervals,
+                        recovery
+                    ) {
+                        var acceptedAt = new Date();
+
+                        ltiOutcomesClient.readResult(
+                            bridge,
+                            keyAndSecret,
+                            function(verifyErr, verifiedResult) {
+                                if (
+                                    verifyErr ||
+                                    !verifiedResult ||
+                                    !verifiedResult.ok ||
+                                    !verifiedResult.hasResult
+                                ) {
+                                    console.log(
+                                        'Late Canvas passback accepted but post-write verification failed for bridge ' +
+                                        bridge._id
+                                    );
+                                    if (verifyErr) {
+                                        console.log(verifyErr);
+                                    }
+
+                                    if (recovery) {
+                                        beginRecovery(
+                                            recovery,
+                                            previousCanvasScore
+                                        );
+                                    } else {
+                                        retryBridge(
+                                            bridge,
+                                            callback
+                                        );
+                                    }
+                                    return;
+                                }
+
+                                if (
+                                    !passbackSuccessState
+                                        .canvasDidNotDecrease(
+                                            previousCanvasScore,
+                                            verifiedResult.score
+                                        )
+                                ) {
+                                    console.log(
+                                        'Late Canvas probe lowered the effective grade for bridge ' +
+                                        bridge._id +
+                                        ': before=' +
+                                        previousCanvasScore +
+                                        ', after=' +
+                                        verifiedResult.score
+                                    );
+
+                                    if (recovery) {
+                                        beginRecovery(
+                                            recovery,
+                                            previousCanvasScore
+                                        );
+                                    } else {
+                                        console.log(
+                                            'HIGH SEVERITY: no exact last-known-good submission is available to compensate bridge ' +
+                                            bridge._id
+                                        );
+                                        callback(null);
+                                    }
+                                    return;
+                                }
+
+                                saveLateObservation(
+                                    candidateRawScore,
+                                    verifiedResult.score,
+                                    currentLateIntervals,
+                                    acceptedAt,
+                                    function() {
+                                        persistSuccessfulSubmission(
+                                            deliveryCandidate,
+                                            submittedAt,
+                                            acceptedAt,
+                                            callback
                                         );
                                     }
                                 );
-                            } else {
-                                logCanvasPassbackFailure(
-                                    bridge,
-                                    response,
-                                    body
-                                );
+                            }
+                        );
+                    }
+
+                    function sendLateCandidate(
+                        deliveryCandidate,
+                        previousCanvasScore,
+                        candidateRawScore,
+                        currentLateIntervals,
+                        recovery
+                    ) {
+                        var submittedAt =
+                            candidateSubmittedAt(
+                                deliveryCandidate
+                            );
+
+                        postCandidate(
+                            deliveryCandidate,
+                            submittedAt,
+                            function(err, response, body) {
+                                if (err) {
+                                    console.log(
+                                        'Error when posting late Canvas grade:'
+                                    );
+                                    console.log(err);
+
+                                    if (
+                                        gradebookRetryPolicy
+                                            .shouldRetry(err, response)
+                                    ) {
+                                        retryBridge(
+                                            bridge,
+                                            callback
+                                        );
+                                    } else {
+                                        callback(null);
+                                    }
+                                    return;
+                                }
 
                                 if (
-                                    gradebookRetryPolicy.shouldRetry(
-                                        null,
-                                        response
+                                    !canvasPassbackSucceeded(
+                                        response,
+                                        body
                                     )
                                 ) {
-                                    retryBridge(
+                                    logCanvasPassbackFailure(
                                         bridge,
-                                        callback
+                                        response,
+                                        body
                                     );
-                                } else {
-                                    callback(null);
+
+                                    if (
+                                        gradebookRetryPolicy
+                                            .shouldRetry(null, response)
+                                    ) {
+                                        retryBridge(
+                                            bridge,
+                                            callback
+                                        );
+                                    } else {
+                                        callback(null);
+                                    }
+                                    return;
                                 }
+
+                                logCanvasPassbackSuccess(
+                                    bridge,
+                                    deliveryCandidate
+                                );
+
+                                handleAcceptedLateCandidate(
+                                    deliveryCandidate,
+                                    submittedAt,
+                                    previousCanvasScore,
+                                    candidateRawScore,
+                                    currentLateIntervals,
+                                    recovery
+                                );
                             }
-                        }
-                    );
+                        );
+                    }
+
+                    if (bridge.passbackRecoverySubmission) {
+                        processRecovery(
+                            bridge.passbackRecoverySubmission
+                        );
+                        return;
+                    }
+
+                    var passbackWindow =
+                        lateGradePolicy.passbackWindowEnd(bridge);
+                    var deliveryNow = Date.now();
+                    var deliverySelection =
+                        gradePassbackCandidate.select(
+                            bridge,
+                            passbackWindow,
+                            deliveryNow
+                        );
+                    var deliveryCandidate =
+                        deliverySelection.candidate;
+                    var boundaryBackedDelivery =
+                        deliverySelection.boundaryBackedDelivery;
+                    var controllingBoundaryType =
+                        deliverySelection.boundaryType;
+                    var scoreObservedAt =
+                        deliveryCandidate
+                            ? gradeBoundaryPolicy.timeValue(
+                                deliveryCandidate.observedAt
+                            )
+                            : null;
+                    var policyNow =
+                        boundaryBackedDelivery &&
+                        scoreObservedAt !== null
+                            ? scoreObservedAt
+                            : deliveryNow;
+
+                    if (
+                        !deliverySelection.eligible ||
+                        !deliveryCandidate
+                    ) {
+                        console.log(
+                            'Canvas passback has no eligible delivery candidate for bridge ' +
+                            bridge._id +
+                            ' (' +
+                            deliverySelection.reason +
+                            ')'
+                        );
+                        callback(null);
+                        return;
                     }
 
                     if (boundaryBackedDelivery) {
+                        progressMilestones.ensureBoundary(
+                            bridge,
+                            controllingBoundaryType,
+                            new Date(),
+                            function(boundaryErr) {
+                                if (boundaryErr) {
+                                    console.log(
+                                        'Could not finalize controlling boundary before passback for bridge ' +
+                                        bridge._id
+                                    );
+                                    console.log(boundaryErr);
+                                }
+                            }
+                        );
+
                         console.log(
                             'Delivering trusted pre-boundary Canvas candidate after cutoff for bridge ' +
                             bridge._id +
                             '; observedAt=' +
                             new Date(scoreObservedAt).toISOString() +
                             ', boundary=' +
-                            new Date(passbackWindow.time).toISOString()
+                            new Date(
+                                passbackWindow.time
+                            ).toISOString()
                         );
                     }
 
-                    if (!lateGradePolicy.bridgeIsLate(bridge, policyNow)) {
-                        sendPassback();
+                    if (
+                        !lateGradePolicy.bridgeIsLate(
+                            bridge,
+                            policyNow
+                        )
+                    ) {
+                        var submittedAt =
+                            candidateSubmittedAt(
+                                deliveryCandidate
+                            );
+
+                        postCandidate(
+                            deliveryCandidate,
+                            submittedAt,
+                            function(err, response, body) {
+                                if (err) {
+                                    console.log(
+                                        'Error when posting:'
+                                    );
+                                    console.log(err);
+
+                                    if (
+                                        gradebookRetryPolicy
+                                            .shouldRetry(err, response)
+                                    ) {
+                                        retryBridge(
+                                            bridge,
+                                            callback
+                                        );
+                                    } else {
+                                        callback(null);
+                                    }
+                                    return;
+                                }
+
+                                if (
+                                    !canvasPassbackSucceeded(
+                                        response,
+                                        body
+                                    )
+                                ) {
+                                    logCanvasPassbackFailure(
+                                        bridge,
+                                        response,
+                                        body
+                                    );
+
+                                    if (
+                                        gradebookRetryPolicy
+                                            .shouldRetry(null, response)
+                                    ) {
+                                        retryBridge(
+                                            bridge,
+                                            callback
+                                        );
+                                    } else {
+                                        callback(null);
+                                    }
+                                    return;
+                                }
+
+                                logCanvasPassbackSuccess(
+                                    bridge,
+                                    deliveryCandidate
+                                );
+
+                                persistSuccessfulSubmission(
+                                    deliveryCandidate,
+                                    submittedAt,
+                                    new Date(),
+                                    callback
+                                );
+                            }
+                        );
                         return;
                     }
 
@@ -748,7 +1086,10 @@ function processGradebook(id, callback) {
                             policyNow
                         );
 
-                    if (!boundaryBackedDelivery && boundaryDecision.defer) {
+                    if (
+                        !boundaryBackedDelivery &&
+                        boundaryDecision.defer
+                    ) {
                         queueBridgeAt(
                             bridge,
                             boundaryDecision.retryAt,
@@ -762,7 +1103,11 @@ function processGradebook(id, callback) {
                         bridge,
                         keyAndSecret,
                         function(readErr, canvasResult) {
-                            if (readErr || !canvasResult || !canvasResult.ok) {
+                            if (
+                                readErr ||
+                                !canvasResult ||
+                                !canvasResult.ok
+                            ) {
                                 console.log(
                                     'Could not verify Canvas grade before late passback for bridge ' +
                                     bridge._id
@@ -771,20 +1116,26 @@ function processGradebook(id, callback) {
                                     console.log(readErr);
                                 }
 
-                                retryBridge(bridge, callback);
+                                retryBridge(
+                                    bridge,
+                                    callback
+                                );
                                 return;
                             }
 
                             var candidateRawScore =
-                                lateGradePolicy.normalizedRawScore(
-                                    deliveryCandidate.resultTotalScore,
-                                    bridge.pointsPossible
-                                );
+                                lateGradePolicy
+                                    .normalizedRawScore(
+                                        deliveryCandidate
+                                            .resultTotalScore,
+                                        bridge.pointsPossible
+                                    );
                             var currentLateIntervals =
-                                lateGradePolicy.lateIntervalNumber(
-                                    bridge,
-                                    policyNow
-                                );
+                                lateGradePolicy
+                                    .lateIntervalNumber(
+                                        bridge,
+                                        policyNow
+                                    );
 
                             loadLatePolicyEvidence(
                                 bridge,
@@ -800,36 +1151,80 @@ function processGradebook(id, callback) {
                                         return;
                                     }
 
-                                    var decision = lateGradePolicy.latePassbackDecision({
-                                        canvasHasResult: canvasResult.hasResult,
-                                        canvasScore: canvasResult.score,
-                                        candidateRawScore: candidateRawScore,
-                                        currentLateIntervals: currentLateIntervals,
-                                        localObservation: evidence.localObservation,
-                                        contextPolicy: evidence.contextPolicy
-                                    });
+                                    var decision =
+                                        lateGradePolicy
+                                            .latePassbackDecision({
+                                                canvasHasResult:
+                                                    canvasResult.hasResult,
+                                                canvasScore:
+                                                    canvasResult.score,
+                                                candidateRawScore:
+                                                    candidateRawScore,
+                                                currentLateIntervals:
+                                                    currentLateIntervals,
+                                                localObservation:
+                                                    evidence.localObservation,
+                                                contextPolicy:
+                                                    evidence.contextPolicy
+                                            });
+                                    var recovery =
+                                        passbackSuccessState
+                                            .successfulSubmission(
+                                                bridge
+                                            );
 
-                                    if (!decision.allow) {
+                                    if (decision.allow) {
                                         console.log(
-                                            'Blocked late Canvas passback for bridge ' +
+                                            'Verified safe late Canvas passback for bridge ' +
                                             bridge._id +
-                                            ': ' + decision.reason
+                                            ': ' +
+                                            decision.reason +
+                                            ', predictedFloorless=' +
+                                            decision.predictedFloorlessScore
                                         );
-                                        callback(null);
+
+                                        sendLateCandidate(
+                                            deliveryCandidate,
+                                            canvasResult.score,
+                                            candidateRawScore,
+                                            currentLateIntervals,
+                                            recovery
+                                        );
+                                        return;
+                                    }
+
+                                    if (
+                                        decision.reason ===
+                                            'insufficient-late-policy-evidence' &&
+                                        canvasResult.hasResult &&
+                                        recovery &&
+                                        candidateSubmittedAt(
+                                            deliveryCandidate
+                                        )
+                                    ) {
+                                        console.log(
+                                            'Probing unknown Canvas late policy for bridge ' +
+                                            bridge._id +
+                                            ' with compensating rollback available.'
+                                        );
+
+                                        sendLateCandidate(
+                                            deliveryCandidate,
+                                            canvasResult.score,
+                                            candidateRawScore,
+                                            currentLateIntervals,
+                                            recovery
+                                        );
                                         return;
                                     }
 
                                     console.log(
-                                        'Verified safe late Canvas passback for bridge ' +
+                                        'Blocked late Canvas passback for bridge ' +
                                         bridge._id +
-                                        ': ' + decision.reason +
-                                        ', predictedFloorless=' +
-                                        decision.predictedFloorlessScore
+                                        ': ' +
+                                        decision.reason
                                     );
-                                    sendPassback({
-                                        rawScore: candidateRawScore,
-                                        lateIntervals: currentLateIntervals
-                                    });
+                                    callback(null);
                                 }
                             );
                         }

@@ -66,7 +66,7 @@ var createActivityCard = function() {
 	database.onCompletion( repositoryName, activityPath, function(c) {
 	    displayProgress( activityCard, c );
 	    activityCard.attr('data-max-completion', c );
-	    gradebook.update();	    
+	    gradebook.update('activity-completion-callback');	    
 	});
     }
 };

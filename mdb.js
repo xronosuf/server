@@ -131,6 +131,17 @@ exports.initialize = function initialize(callback) {
         lastSubmittedResultTotalScore: Number,
         lastSubmittedAt: Date,
 
+        /*
+         * Exact last-known-good outbound submission. These fields advance only
+         * after Xronos has read Canvas back and confirmed that a late passback
+         * did not lower the effective Canvas grade. The observed timestamp is
+         * the submissionDetails/submittedAt value used for that accepted
+         * result, not the later server acceptance time.
+         */
+        lastSuccessfulSubmittedResultScore: Number,
+        lastSuccessfulSubmittedResultTotalScore: Number,
+        lastSuccessfulSubmittedObservedAt: Date,
+
         oauthConsumerKey: String,
         oauthSignatureMethod: String,
         lisResultSourcedid: String,

@@ -60,18 +60,12 @@ exports.progressProportion = function(proportion) {
 
     progressBar.toggleClass('progress-bar-striped', proportion > 0.9999);
 
-    // Progress bar in xourse
-    var otherProgressBar = $('.activity-card.active div.progress-bar');
-    
-    otherProgressBar.attr('aria-valuenow', Math.round(percent));
-    otherProgressBar.attr('aria-valuemax', 100);
-    otherProgressBar.css('width', percent.toString() + '%' );
-    $('span', otherProgressBar).text('');
-    otherProgressBar.toggleClass('progress-bar-striped', proportion > 0.9999);    
-
-    // the activity card get attribute 'max-completion' set
-    var activityCard = $('.activity-card.active');
-    activityCard.attr('data-max-completion', proportion );
+    /*
+     * Do not write the current attempt's proportion into the activity card.
+     * Activity-card progress represents historical completion credit and is
+     * owned by database.js/onCompletion().  Erase or Another may legitimately
+     * lower the current page-state proportion without lowering earned credit.
+     */
 };    
 
 

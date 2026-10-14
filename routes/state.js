@@ -6,6 +6,7 @@ var crypto = require('crypto');
 var repositories = require('./repositories');
 var config = require('../config');
 var initialStateProtocol = require('../public/javascripts/initial-state-protocol');
+var completionPolicy = require('../lib/completion-policy');
 const Redis = require("ioredis");
 
 var CANON = require('canon');
@@ -516,34 +517,72 @@ handlers.completion = function(c) {
         };
     }
 
+    var reportedCompletion =
+        completionPolicy.normalize(c.complete);
+
+    if (reportedCompletion === null) {
+        winston.error(
+            'Ignoring invalid completion value for ' +
+            String(c.repositoryName || '<repository>') +
+            '/' +
+            String(c.activityPath || '<activity>')
+        );
+        return;
+    }
+
     /*
-     * Legacy behavior performed the broadcasts from the update
-     * callback regardless of whether updateOne reported an
-     * error. Preserve that behavior by invoking finish() from
-     * both promise outcomes.
+     * Completion is earned historical credit, not current-attempt state.
+     * Enforce the invariant atomically in Mongo so an erased/restarted page,
+     * a stale browser tab, or out-of-order WebSocket delivery can never lower
+     * the student's previously earned activity completion.
+     *
+     * Read the post-update document back and broadcast that authoritative
+     * maximum rather than the incoming value.
      */
-    mdb.Completion.updateOne(
+    mdb.Completion.findOneAndUpdate(
         query,
         {
+            $max: {
+                complete: reportedCompletion
+            },
             $set: {
-                complete: c.complete,
                 date: new Date()
             }
         },
         {
-            upsert: true
+            upsert: true,
+            new: true,
+            setDefaultsOnInsert: true
         }
     )
         .exec()
-        .then(finish, finish);
+        .then(function(completion) {
+            if (!completion) {
+                winston.error(
+                    'Completion max update returned no document for ' +
+                    String(c.repositoryName || '<repository>') +
+                    '/' +
+                    String(c.activityPath || '<activity>')
+                );
+                return;
+            }
 
-    function finish() {
+            finish(completion.complete);
+        })
+        .catch(function(err) {
+            winston.error(
+                'Could not persist historical completion maximum: ' +
+                String(err)
+            );
+        });
+
+    function finish(authoritativeCompletion) {
         var payload = [{
             activityPath: c.activityPath,
             userId: userId,
             repositoryName:
                 c.repositoryName,
-            complete: c.complete
+            complete: authoritativeCompletion
         }];
 
         // Tell other browsers viewing this user

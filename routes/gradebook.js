@@ -721,11 +721,33 @@ function processGradebook(id, callback) {
                                             restoredResult.score
                                         );
 
-                                        bridge.passbackRecoverySubmission =
-                                            undefined;
-                                        bridge.submittedScore = false;
-                                        clearRetryState(bridge);
-                                        saveBridge(callback);
+                                        var recoveryRawScore =
+                                            lateGradePolicy
+                                                .normalizedRawScore(
+                                                    recoveryCandidate
+                                                        .resultTotalScore,
+                                                    bridge.pointsPossible
+                                                );
+                                        var recoveryLateIntervals =
+                                            lateGradePolicy
+                                                .lateIntervalNumber(
+                                                    bridge,
+                                                    recoveryObservedAt
+                                                );
+
+                                        saveLateObservation(
+                                            recoveryRawScore,
+                                            restoredResult.score,
+                                            recoveryLateIntervals,
+                                            new Date(),
+                                            function() {
+                                                bridge.passbackRecoverySubmission =
+                                                    undefined;
+                                                bridge.submittedScore = false;
+                                                clearRetryState(bridge);
+                                                saveBridge(callback);
+                                            }
+                                        );
                                     }
                                 );
                             }
@@ -798,7 +820,15 @@ function processGradebook(id, callback) {
                                     return;
                                 }
 
+                                var hadPreviousCanvasScore =
+                                    previousCanvasScore !== null &&
+                                    previousCanvasScore !== undefined &&
+                                    isFinite(
+                                        Number(previousCanvasScore)
+                                    );
+
                                 if (
+                                    hadPreviousCanvasScore &&
                                     !passbackSuccessState
                                         .canvasDidNotDecrease(
                                             previousCanvasScore,
@@ -814,18 +844,26 @@ function processGradebook(id, callback) {
                                         verifiedResult.score
                                     );
 
-                                    if (recovery) {
-                                        beginRecovery(
-                                            recovery,
-                                            previousCanvasScore
-                                        );
-                                    } else {
-                                        console.log(
-                                            'HIGH SEVERITY: no exact last-known-good submission is available to compensate bridge ' +
-                                            bridge._id
-                                        );
-                                        callback(null);
-                                    }
+                                    saveLateObservation(
+                                        candidateRawScore,
+                                        verifiedResult.score,
+                                        currentLateIntervals,
+                                        acceptedAt,
+                                        function() {
+                                            if (recovery) {
+                                                beginRecovery(
+                                                    recovery,
+                                                    previousCanvasScore
+                                                );
+                                            } else {
+                                                console.log(
+                                                    'HIGH SEVERITY: no exact last-known-good submission is available to compensate bridge ' +
+                                                    bridge._id
+                                                );
+                                                callback(null);
+                                            }
+                                        }
+                                    );
                                     return;
                                 }
 

@@ -13,6 +13,19 @@ var displayProgress = function( card, progress ) {
 
 var createActivityCard = function() {
     var activityCard = $(this);
+
+    /*
+     * Both xourse.js and activity.js legitimately discover navigation cards on
+     * activity pages.  Initialization is a subscription operation, however,
+     * so running it twice registers duplicate database.onCompletion callbacks
+     * and duplicate gradebook update triggers.  Make card setup idempotent
+     * without coupling either caller to page type or initialization order.
+     */
+    if (activityCard.attr('data-xronos-activity-card-initialized') === 'true') {
+        return;
+    }
+
+    activityCard.attr('data-xronos-activity-card-initialized', 'true');
     var href = activityCard.attr('data-path');
 
     ////////////////////////////////////////////////////////////////

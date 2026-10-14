@@ -1461,6 +1461,66 @@ function gradebookRequestPayload(req) {
     };
 }
 
+function compactGradebookBrowserDiagnostic(req) {
+    var body = (req && req.body) || {};
+    var diagnostic = body.gradebookDiagnostic;
+
+    if (!diagnostic || typeof diagnostic !== 'object' || Array.isArray(diagnostic)) {
+        return null;
+    }
+
+    function finite(value) {
+        var number = Number(value);
+        return isFinite(number) ? number : null;
+    }
+
+    function text(value, limit) {
+        if (value === undefined || value === null) {
+            return null;
+        }
+
+        return String(value).slice(0, limit || 200);
+    }
+
+    function stringArray(value, limit) {
+        if (!Array.isArray(value)) {
+            return [];
+        }
+
+        return value.slice(0, limit || 20).map(function(item) {
+            return text(item, 200);
+        });
+    }
+
+    var contributions = Array.isArray(diagnostic.contributions)
+        ? diagnostic.contributions.slice(0, 30).map(function(item) {
+            item = item || {};
+            return {
+                key: text(item.key, 240),
+                weight: finite(item.weight),
+                completion: finite(item.completion),
+                occurrences: finite(item.occurrences)
+            };
+        })
+        : [];
+
+    return {
+        pageInstanceId: text(diagnostic.pageInstanceId, 120),
+        currentActivityPath: text(diagnostic.currentActivityPath, 240),
+        reasons: stringArray(diagnostic.reasons, 10),
+        domCardCount: finite(diagnostic.domCardCount),
+        weightedCardCount: finite(diagnostic.weightedCardCount),
+        uniqueActivityCount: finite(diagnostic.uniqueActivityCount),
+        duplicateActivityCount: finite(diagnostic.duplicateActivityCount),
+        duplicateKeys: stringArray(diagnostic.duplicateKeys, 20),
+        weightConflictKeys: stringArray(diagnostic.weightConflictKeys, 20),
+        pointsEarned: finite(diagnostic.pointsEarned),
+        pointsPossible: finite(diagnostic.pointsPossible),
+        contributions: contributions
+    };
+}
+
+
 function finiteGradebookNumber(value) {
     var number;
 
@@ -1504,6 +1564,22 @@ function validateGradebookPayload(payload) {
             valid: false,
             field: 'pointsPossible',
             message: 'pointsPossible must be a finite number greater than zero.'
+        };
+    }
+
+    if (pointsEarned < 0) {
+        return {
+            valid: false,
+            field: 'pointsEarned',
+            message: 'pointsEarned must not be negative.'
+        };
+    }
+
+    if (pointsEarned > pointsPossible) {
+        return {
+            valid: false,
+            field: 'pointsEarned',
+            message: 'pointsEarned must not exceed pointsPossible.'
         };
     }
 
@@ -1562,6 +1638,16 @@ exports.record = function(req, res, next) {
         req.body.pointsPossible = payloadValidation.pointsPossible;
 
         console.log('gradebook.record for ' + req.user._id + ' (' + repositoryName +'/'+ req.params.path +')');
+
+        var browserDiagnostic = compactGradebookBrowserDiagnostic(req);
+        if (browserDiagnostic) {
+            console.log(
+                'gradebook.browser ' +
+                req.user._id +
+                ' (' + repositoryName + '/' + req.params.path + '): ' +
+                JSON.stringify(browserDiagnostic)
+            );
+        }
 
         mdb.LtiBridge.find({
             user: req.user._id,

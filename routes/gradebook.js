@@ -15,6 +15,7 @@ var crypto = require('crypto');
 var progressMilestones = require('./progress-milestones');
 var gradeBoundaryPolicy = require('../lib/grade-boundary-policy');
 var gradePassbackCandidate = require('../lib/grade-passback-candidate');
+var passbackSuccessState = require('../lib/passback-success-state');
 
 const Redis = require("ioredis");
 

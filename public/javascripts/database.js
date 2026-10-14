@@ -6,6 +6,7 @@ var _ = require('underscore');
 var async = require('async');
 var jsondiffpatch = require('jsondiffpatch');
 var initialStateProtocol = require("./initial-state-protocol");
+var completionPolicy = require('../../lib/completion-policy');
 
 var debugLog = require('./debug-log');
 var pageRuntime = require('./page-runtime');
@@ -1029,23 +1030,11 @@ function connectToServer() {
 
     handlers.completions = function(completions) {
 	_.each( completions, function(c) {
-	    var url = c.repositoryName + '/' + c.activityPath;
-	    var changed = false;
-	    if (url in COMPLETIONS) {
-		if (COMPLETIONS[url] < c.complete) {
-		    COMPLETIONS[url] = c.complete;
-		    changed = true;
-		}
-	    } else {
-		COMPLETIONS[url] = c.complete;
-		changed = true;		
-	    }
-	    
-	    if ((changed) && (completionCallbacks[url])) {
-		_.each( completionCallbacks[url], function(callback) {
-		    callback(c.complete);
-		});
-	    }
+	    acceptCompletionMaximum(
+		c.repositoryName,
+		c.activityPath,
+		c.complete
+	    );
 	});
     };
 
@@ -1151,34 +1140,115 @@ $(document).ready(function() {
     connectToServer();
 });
 
+function completionUrl(repositoryName, activityPath) {
+    return repositoryName + '/' + activityPath;
+}
+
+function notifyCompletionCallbacks(url, complete) {
+    if (!completionCallbacks[url]) {
+	return;
+    }
+
+    _.each(completionCallbacks[url], function(callback) {
+	callback(complete);
+    });
+}
+
+function acceptCompletionMaximum(repositoryName, activityPath, complete) {
+    var url = completionUrl(repositoryName, activityPath);
+    var hadCompletion =
+	Object.prototype.hasOwnProperty.call(COMPLETIONS, url);
+    var previous = hadCompletion
+	? COMPLETIONS[url]
+	: undefined;
+    var best = completionPolicy.maximum(
+	previous,
+	complete
+    );
+
+    if (best === null) {
+	return null;
+    }
+
+    if (!hadCompletion || best !== previous) {
+	COMPLETIONS[url] = best;
+	notifyCompletionCallbacks(url, best);
+    }
+
+    return best;
+}
+
 module.exports.setCompletion = function(repositoryName, activityPath, complete) {
+    /*
+     * Completion is historical credit.  Update the browser's authoritative
+     * maximum immediately so Erase/Another can change the current page state
+     * without lowering the activity tile or assignment-level grade.
+     */
+    var best = acceptCompletionMaximum(
+	repositoryName,
+	activityPath,
+	complete
+    );
+
+    if (best === null) {
+	debugLog.log(
+	    'Ignored invalid page completion value.',
+	    {
+		repositoryName: repositoryName,
+		activityPath: activityPath,
+		complete: complete
+	    }
+	);
+	return;
+    }
+
     if (!socket) {
-	saveWorkStatus( 'error', "No socket for progress bar" );	
+	saveWorkStatus( 'error', "No socket for progress bar" );
 	return;
     }
 
     if (socket.readyState !== WebSocket.OPEN) {
-	saveWorkStatus( 'error', "Socket not open for progress bar" );	
+	saveWorkStatus( 'error', "Socket not open for progress bar" );
 	return;
     }
 
-    socket.sendJSON( 'completion', {repositoryName: repositoryName, activityPath: activityPath, complete: complete} );
+    /*
+     * Send the historical maximum rather than the current attempt value.
+     * The server independently enforces the same max-only invariant.
+     */
+    socket.sendJSON(
+	'completion',
+	{
+	    repositoryName: repositoryName,
+	    activityPath: activityPath,
+	    complete: best
+	}
+    );
     debugLog.log('Sent page progress update to Xronos server.', {
 	repositoryName: repositoryName,
 	activityPath: activityPath,
-	complete: complete
+	complete: best,
+	currentAttemptCompletion:
+	    completionPolicy.normalize(complete)
     });
 };
 
 module.exports.onCompletion = function(repositoryName, activityPath, callback) {
-    var url = repositoryName + '/' + activityPath;
-    
+    var url = completionUrl(
+	repositoryName,
+	activityPath
+    );
+
     if (!(url in completionCallbacks))
 	completionCallbacks[url] = [];
 
     completionCallbacks[url].unshift(callback);
 
-    if (COMPLETIONS[url]) {
+    /*
+     * Zero is a valid known completion.  Test key existence rather than
+     * truthiness so a 0% tile can initialize consistently.
+     */
+    if (Object.prototype.hasOwnProperty.call(COMPLETIONS, url)) {
 	callback(COMPLETIONS[url]);
     }
 };

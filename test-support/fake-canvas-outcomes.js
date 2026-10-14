@@ -106,6 +106,10 @@ function FakeCanvasOutcomesServer(options) {
     this.results = Object.create(null);
     this.requests = [];
     this.failureQueue = [];
+    this.resultTransform =
+        typeof options.resultTransform === 'function'
+            ? options.resultTransform
+            : null;
 }
 
 FakeCanvasOutcomesServer.prototype.url = function() {
@@ -189,7 +193,7 @@ FakeCanvasOutcomesServer.prototype.start = function(callback) {
                 var totalText = nestedTextString(body, 'resultTotalScore');
                 var submittedAt = firstTag(body, 'submittedAt');
 
-                self.results[String(sourcedId)] = {
+                var storedResult = {
                     sourcedId: sourcedId,
                     resultScore:
                         scoreText === null || scoreText === ''
@@ -204,6 +208,19 @@ FakeCanvasOutcomesServer.prototype.start = function(callback) {
                     authorization: req.headers.authorization || null,
                     rawBody: body
                 };
+
+                /*
+                 * Tests may model Canvas-side policies (for example automatic
+                 * late deductions) while preserving the exact outbound request
+                 * for assertions and rollback verification.
+                 */
+                if (self.resultTransform) {
+                    storedResult =
+                        self.resultTransform(storedResult) ||
+                        storedResult;
+                }
+
+                self.results[String(sourcedId)] = storedResult;
 
                 res.statusCode = 200;
                 res.setHeader('Content-Type', 'application/xml');

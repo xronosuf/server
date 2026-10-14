@@ -66,6 +66,26 @@ describe('gradebook payload validation', function() {
         assert.strictEqual(result.field, 'pointsPossible');
     });
 
+    it('rejects a negative earned value', function() {
+        var result = validate({
+            pointsEarned: -1,
+            pointsPossible: 10
+        });
+
+        assert.strictEqual(result.valid, false);
+        assert.strictEqual(result.field, 'pointsEarned');
+    });
+
+    it('rejects earned points above the assignment total', function() {
+        var result = validate({
+            pointsEarned: 11,
+            pointsPossible: 10
+        });
+
+        assert.strictEqual(result.valid, false);
+        assert.strictEqual(result.field, 'pointsEarned');
+    });
+
     it('rejects nonnumeric values', function() {
         var earnedResult = validate({
             pointsEarned: 'not-a-number',

@@ -124,6 +124,14 @@ exports.initialize = function initialize(callback) {
         passbackNextRetryAt: Date,
         passbackRetryExhaustedAt: Date,
 
+        /*
+         * If an exploratory late passback lowers Canvas, persist the exact
+         * last-known-good outbound submission before attempting compensation.
+         * A worker/process restart therefore resumes restoration instead of
+         * probing the newer candidate again.
+         */
+        passbackRecoverySubmission: Mixed,
+
         // Raw Xronos result last accepted by Canvas.  Keep this
         // separate from resultScore/resultTotalScore, which continue
         // to represent the newest candidate waiting for passback.

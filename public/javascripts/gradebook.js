@@ -718,6 +718,10 @@ var xronosDebouncedGradebookUpdate = _.debounce(function() {
     snapshot.diagnostic.pointsEarned = pointsEarned;
     snapshot.diagnostic.pointsPossible = pointsPossible;
 
+    if (typeof window !== 'undefined') {
+        window.xronosLastGradebookDiagnostic = snapshot.diagnostic;
+    }
+
     /*
      * A successful HTTP response only means the route handled the request.
      * Do not submit an unusable score payload that the server cannot convert
@@ -726,10 +730,12 @@ var xronosDebouncedGradebookUpdate = _.debounce(function() {
     if (
         !isFinite(pointsEarned) ||
         !isFinite(pointsPossible) ||
-        pointsPossible <= 0
+        pointsPossible <= 0 ||
+        pointsEarned < 0 ||
+        pointsEarned > pointsPossible
     ) {
         debugLog.log(
-            "Did not send gradebook update because the xourse point total is invalid.",
+            "Did not send gradebook update because the calculated xourse grade is invalid.",
             payload
         );
 

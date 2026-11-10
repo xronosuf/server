@@ -17,7 +17,7 @@ describe('user API secret authorization', function() {
             'utf8'
         );
         var mockMdb = {
-            ObjectId: function(id) { return id; },
+            ObjectId: function(id) { this.value = id; },
             User: {
                 updateOne: function(filter, update) {
                     updates.push({ filter: filter, update: update });
@@ -75,6 +75,6 @@ describe('user API secret authorization', function() {
         assert.strictEqual(updates.length, 1);
         assert.ok(res.body.apiKey);
         assert.ok(res.body.apiSecret);
-        assert.strictEqual(updates[0].filter._id, 'own-user');
+        assert.strictEqual(updates[0].filter._id.value, 'own-user');
     });
 });

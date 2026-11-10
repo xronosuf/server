@@ -1074,7 +1074,10 @@ app.get('/sw.js', function(req, res) {
     app.delete('/users/:id/github', function( req, res, next ) { user.deleteLinkedAccount( req, res, next, 'github' ); } );
     app.delete('/users/:id/twitter', function( req, res, next ) { user.deleteLinkedAccount( req, res, next, 'twitter' ); } );
 
-    app.put('/users/:id/secret', function( req, res ) { user.putSecret( req, res ); } );
+    // Pass Express error handling through to the async handler.
+    app.put('/users/:id/secret', function(req, res, next) {
+        return user.putSecret(req, res, next).catch(next);
+    });
 
     app.delete('/users/:id/bridges/:bridge', function( req, res, next ) { user.deleteBridge( req, res, next ); } );    
 

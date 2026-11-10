@@ -116,18 +116,13 @@ exports.putSecret = async function(req, res, next){
     var id = req.params.id;
 
     if (!req.user) {
-        res.send(401);
+        res.sendStatus(401);
         return;
     }
 
     // BADBAD: should include more nuanced security here
     if (req.user._id.toString() != id) {
-        res.status(500);
-        next(
-            new Error(
-                'No permission to access other users.'
-            )
-        );
+        res.sendStatus(403);
         return;
     }
 
